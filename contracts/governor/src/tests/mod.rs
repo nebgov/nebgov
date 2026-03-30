@@ -8,7 +8,7 @@ mod transitions;
 // wasm32-unknown-unknown`. The unit tests below focus on the auth guard,
 // which is the security-critical invariant.
 
-use crate::{GovernorContract, GovernorContractClient, GovernorSettings, VoteType};
+use crate::{GovernorContract, GovernorContractClient, GovernorSettings, VoteType, VotingStrategy};
 use soroban_sdk::{
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     Address, BytesN, Env, IntoVal,
@@ -106,6 +106,7 @@ fn update_config_rejects_caller_that_is_not_the_contract_address() {
         use_dynamic_quorum: false,
         reflector_oracle: None,
         min_quorum_usd: 0,
+        voting_strategy: VotingStrategy::Single,
     };
 
     env.mock_auths(&[MockAuth {
@@ -162,6 +163,7 @@ fn update_config_succeeds_with_contract_self_auth() {
         use_dynamic_quorum: false,
         reflector_oracle: None,
         min_quorum_usd: 0,
+        voting_strategy: VotingStrategy::Single,
     };
 
     client.update_config(&new_settings);

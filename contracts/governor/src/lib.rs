@@ -134,25 +134,6 @@ pub struct MigrateData {
     pub new_version: u32,
 }
 
-/// Governor configuration settings that can be updated via governance proposal.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct GovernorSettings {
-    pub voting_delay: u32,
-    pub voting_period: u32,
-    pub quorum_numerator: u32,
-    pub proposal_threshold: i128,
-    pub guardian: Address,
-    pub vote_type: VoteType,
-    pub proposal_grace_period: u32,
-    /// When true, quorum is the max of the static quorum and a USD-denominated floor.
-    pub use_dynamic_quorum: bool,
-    /// Address of the Reflector oracle used for dynamic quorum pricing.
-    pub reflector_oracle: Option<Address>,
-    /// Minimum quorum expressed in USD (6-decimal format, matching Reflector prices).
-    pub min_quorum_usd: i128,
-}
-
 /// Vote support options.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -171,33 +152,45 @@ pub enum VoteType {
     Quadratic, // weight = sqrt(tokens)
 }
 
+/// Packed governor configuration stored under a single instance key.
+///
+/// All fields that were previously stored as individual `DataKey` variants
+/// (`VotingDelay`, `VotingPeriod`, `QuorumNumerator`, `ProposalThreshold`,
+/// `Guardian`, `VoteType`, `ProposalGracePeriod`, `UseDynamicQuorum`,
+/// `ReflectorOracle`, `MinQuorumUsd`, `VotingStrategy`) are now packed here.
+/// This reduces 11 separate instance reads/writes to 1.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GovernorConfig {
+    pub voting_delay: u32,
+    pub voting_period: u32,
+    pub quorum_numerator: u32,
+    pub proposal_threshold: i128,
+    pub guardian: Address,
+    pub vote_type: VoteType,
+    pub proposal_grace_period: u32,
+    pub use_dynamic_quorum: bool,
+    pub reflector_oracle: Option<Address>,
+    pub min_quorum_usd: i128,
+    pub voting_strategy: VotingStrategy,
+}
+
+/// Governor configuration settings that can be updated via governance proposal.
+/// Type alias for [`GovernorConfig`], kept for public API compatibility.
+pub type GovernorSettings = GovernorConfig;
+
 /// Storage keys.
 #[contracttype]
 pub enum DataKey {
     Proposal(u64),
     ProposalCount,
-    VotingDelay,
-    VotingPeriod,
-    QuorumNumerator,
-    ProposalThreshold,
     Timelock,
     VotesToken,
     Admin,
-    Guardian,
-    VoteType,
-    ProposalGracePeriod,
     HasVoted(u64, Address),
     VoteReason(u64, Address),
-    /// The timelock op-id (Bytes) for a proposal after queue() is called.
-    QueuedOpId(u64),
-    /// Active voting strategy (Single or MultiToken).
-    VotingStrategy,
-    /// Whether dynamic quorum is enabled.
-    UseDynamicQuorum,
-    /// Address of the Reflector oracle for dynamic quorum.
-    ReflectorOracle,
-    /// Minimum quorum floor in USD (6-decimal format).
-    MinQuorumUsd,
+    /// Packed governor configuration (replaces 11 individual keys).
+    Config,
 }
 
 #[contract]
@@ -221,34 +214,22 @@ impl GovernorContract {
     ) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage()
-            .instance()
-            .set(&DataKey::VotesToken, &votes_token);
+        env.storage().instance().set(&DataKey::VotesToken, &votes_token);
         env.storage().instance().set(&DataKey::Timelock, &timelock);
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingDelay, &voting_delay);
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingPeriod, &voting_period);
-        env.storage()
-            .instance()
-            .set(&DataKey::QuorumNumerator, &quorum_numerator);
-        env.storage()
-            .instance()
-            .set(&DataKey::ProposalThreshold, &proposal_threshold);
-        env.storage().instance().set(&DataKey::Guardian, &guardian);
-        env.storage().instance().set(&DataKey::VoteType, &vote_type);
-        env.storage()
-            .instance()
-            .set(&DataKey::ProposalGracePeriod, &proposal_grace_period);
         env.storage().instance().set(&DataKey::ProposalCount, &0u64);
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingStrategy, &VotingStrategy::Single);
-        env.storage()
-            .instance()
-            .set(&DataKey::UseDynamicQuorum, &false);
+        env.storage().instance().set(&DataKey::Config, &GovernorConfig {
+            voting_delay,
+            voting_period,
+            quorum_numerator,
+            proposal_threshold,
+            guardian,
+            vote_type,
+            proposal_grace_period,
+            use_dynamic_quorum: false,
+            reflector_oracle: None,
+            min_quorum_usd: 0,
+            voting_strategy: VotingStrategy::Single,
+        });
     }
 
     /// Create a new governance proposal.
@@ -281,14 +262,14 @@ impl GovernorContract {
         let proposer_votes = Self::compute_proposer_votes(&env, &proposer);
 
         // Enforce proposal threshold
-        let threshold: i128 = env
+        let config: GovernorConfig = env
             .storage()
             .instance()
-            .get(&DataKey::ProposalThreshold)
-            .unwrap_or(0);
+            .get(&DataKey::Config)
+            .expect("not initialized");
 
         assert!(
-            proposer_votes >= threshold,
+            proposer_votes >= config.proposal_threshold,
             "proposer votes below threshold"
         );
 
@@ -299,17 +280,6 @@ impl GovernorContract {
             .unwrap_or(0);
         let proposal_id = count + 1;
 
-        let voting_delay: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::VotingDelay)
-            .unwrap_or(100);
-        let voting_period: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::VotingPeriod)
-            .unwrap_or(1000);
-
         let current = env.ledger().sequence();
         let proposal = Proposal {
             id: proposal_id,
@@ -318,8 +288,8 @@ impl GovernorContract {
             targets: targets.clone(),
             fn_names: fn_names.clone(),
             calldatas: calldatas.clone(),
-            start_ledger: current + voting_delay,
-            end_ledger: current + voting_delay + voting_period,
+            start_ledger: current + config.voting_delay,
+            end_ledger: current + config.voting_delay + config.voting_period,
             votes_for: 0,
             votes_against: 0,
             votes_abstain: 0,
@@ -345,8 +315,8 @@ impl GovernorContract {
                 targets,
                 fn_names,
                 calldatas,
-                current + voting_delay,
-                current + voting_delay + voting_period,
+                current + config.voting_delay,
+                current + config.voting_delay + config.voting_period,
             ),
         );
 
@@ -377,13 +347,12 @@ impl GovernorContract {
 
     /// Validate vote support against configured vote type.
     fn validate_vote_support(env: &Env, support: &VoteSupport) -> Result<(), GovernorError> {
-        let vote_type: VoteType = env
+        let config: GovernorConfig = env
             .storage()
             .instance()
-            .get(&DataKey::VoteType)
-            .unwrap_or(VoteType::Extended);
-        
-        match vote_type {
+            .get(&DataKey::Config)
+            .expect("not initialized");
+        match config.vote_type {
             VoteType::Simple => {
                 if matches!(support, VoteSupport::Abstain) {
                     Err(GovernorError::InvalidSupport)
@@ -427,12 +396,12 @@ impl GovernorContract {
         assert!(raw_weight > 0, "zero voting power");
 
         // Apply vote type weighting
-        let vote_type: VoteType = env
+        let config: GovernorConfig = env
             .storage()
             .instance()
-            .get(&DataKey::VoteType)
-            .unwrap_or(VoteType::Extended);
-        let weight = Self::apply_vote_type(vote_type, raw_weight);
+            .get(&DataKey::Config)
+            .expect("not initialized");
+        let weight = Self::apply_vote_type(config.vote_type, raw_weight);
 
         match support {
             VoteSupport::For => proposal.votes_for += weight,
@@ -601,14 +570,14 @@ impl GovernorContract {
             .expect("proposal not found");
         
         let state = Self::state(env.clone(), proposal_id);
-        let guardian: Address = env
+        let config: GovernorConfig = env
             .storage()
             .instance()
-            .get(&DataKey::Guardian)
-            .expect("guardian not set");
+            .get(&DataKey::Config)
+            .expect("not initialized");
 
         let can_cancel = (caller == proposal.proposer && state == ProposalState::Pending)
-            || (caller == guardian && state == ProposalState::Active);
+            || (caller == config.guardian && state == ProposalState::Active);
 
         if !can_cancel {
             env.panic_with_error(GovernorError::UnauthorizedCancel);
@@ -666,12 +635,12 @@ impl GovernorContract {
 
         if quorum_met && for_wins {
             // Check if succeeded proposal has expired
-            let grace_period: u32 = env
+            let config: GovernorConfig = env
                 .storage()
                 .instance()
-                .get(&DataKey::ProposalGracePeriod)
-                .unwrap_or(120_960); // Default ~7 days
-            let grace_end = proposal.end_ledger + grace_period;
+                .get(&DataKey::Config)
+                .expect("not initialized");
+            let grace_end = proposal.end_ledger + config.proposal_grace_period;
             if current > grace_end {
                 ProposalState::Expired
             } else {
@@ -695,57 +664,43 @@ impl GovernorContract {
             .get(&DataKey::Proposal(proposal_id))
             .expect("proposal not found");
 
+        let config: GovernorConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("not initialized");
+
+        // If quorum is configured as 0%, no need to query token supply from
+        // the votes contract. This also keeps state()/queue() robust in
+        // tests where the votes token might be a placeholder address.
+        if config.quorum_numerator == 0 {
+            return 0;
+        }
+
         let votes_token_addr: Address = env
             .storage()
             .instance()
             .get(&DataKey::VotesToken)
             .expect("votes token not set");
 
-        let quorum_numerator: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::QuorumNumerator)
-            .unwrap_or(0);
-
-        // If quorum is configured as 0%, no need to query token supply from
-        // the votes contract. This also keeps state()/queue() robust in
-        // tests where the votes token might be a placeholder address.
-        if quorum_numerator == 0 {
-            return 0;
-        }
-
         let votes_client = VotesClient::new(&env, &votes_token_addr);
         let supply = votes_client.get_past_total_supply(&proposal.start_ledger);
 
-        let static_quorum = (supply * quorum_numerator as i128) / 100;
+        let static_quorum = (supply * config.quorum_numerator as i128) / 100;
 
-        let use_dynamic: bool = env
-            .storage()
-            .instance()
-            .get(&DataKey::UseDynamicQuorum)
-            .unwrap_or(false);
-        if !use_dynamic {
+        if !config.use_dynamic_quorum {
             return static_quorum;
         }
 
         // Try to fetch token price from Reflector oracle.
-        let oracle_opt: Option<Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::ReflectorOracle);
-        if let Some(oracle_addr) = oracle_opt {
-            let min_quorum_usd: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::MinQuorumUsd)
-                .unwrap_or(0);
-            if min_quorum_usd > 0 {
+        if let Some(oracle_addr) = config.reflector_oracle {
+            if config.min_quorum_usd > 0 {
                 // Call oracle — fall back to static if it fails or returns None/zero.
                 let oracle = ReflectorOracleClient::new(&env, &oracle_addr);
                 let price_opt = oracle.try_lastprice(&votes_token_addr);
                 if let Ok(Ok(Some(price))) = price_opt {
                     if price > 0 {
-                        let usd_quorum = min_quorum_usd / price;
+                        let usd_quorum = config.min_quorum_usd / price;
                         return static_quorum.max(usd_quorum);
                     }
                 }
@@ -770,85 +725,23 @@ impl GovernorContract {
 
     /// Get governor configuration.
     pub fn voting_delay(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::VotingDelay)
-            .unwrap_or(100)
+        Self::get_config(&env).voting_delay
     }
 
     pub fn voting_period(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::VotingPeriod)
-            .unwrap_or(1000)
+        Self::get_config(&env).voting_period
     }
 
     pub fn proposal_threshold(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::ProposalThreshold)
-            .unwrap_or(0)
+        Self::get_config(&env).proposal_threshold
     }
 
     pub fn quorum_numerator(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::QuorumNumerator)
-            .unwrap_or(0)
+        Self::get_config(&env).quorum_numerator
     }
 
     pub fn get_settings(env: Env) -> GovernorSettings {
-        GovernorSettings {
-            voting_delay: env
-                .storage()
-                .instance()
-                .get(&DataKey::VotingDelay)
-                .unwrap_or(100),
-            voting_period: env
-                .storage()
-                .instance()
-                .get(&DataKey::VotingPeriod)
-                .unwrap_or(1000),
-            quorum_numerator: env
-                .storage()
-                .instance()
-                .get(&DataKey::QuorumNumerator)
-                .unwrap_or(0),
-            proposal_threshold: env
-                .storage()
-                .instance()
-                .get(&DataKey::ProposalThreshold)
-                .unwrap_or(0),
-            guardian: env
-                .storage()
-                .instance()
-                .get(&DataKey::Guardian)
-                .expect("guardian not set"),
-            vote_type: env
-                .storage()
-                .instance()
-                .get(&DataKey::VoteType)
-                .unwrap_or(VoteType::Extended),
-            proposal_grace_period: env
-                .storage()
-                .instance()
-                .get(&DataKey::ProposalGracePeriod)
-                .unwrap_or(120_960),
-            use_dynamic_quorum: env
-                .storage()
-                .instance()
-                .get(&DataKey::UseDynamicQuorum)
-                .unwrap_or(false),
-            reflector_oracle: env
-                .storage()
-                .instance()
-                .get(&DataKey::ReflectorOracle),
-            min_quorum_usd: env
-                .storage()
-                .instance()
-                .get(&DataKey::MinQuorumUsd)
-                .unwrap_or(0),
-        }
+        Self::get_config(&env)
     }
 
     /// Update governor configuration parameters.
@@ -857,47 +750,8 @@ impl GovernorContract {
     /// This means the call must originate from an executed on-chain proposal.
     pub fn update_config(env: Env, new_settings: GovernorSettings) {
         env.current_contract_address().require_auth();
-
-        let old_settings = Self::get_settings(env.clone());
-
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingDelay, &new_settings.voting_delay);
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingPeriod, &new_settings.voting_period);
-        env.storage()
-            .instance()
-            .set(&DataKey::QuorumNumerator, &new_settings.quorum_numerator);
-        env.storage()
-            .instance()
-            .set(&DataKey::ProposalThreshold, &new_settings.proposal_threshold);
-        env.storage()
-            .instance()
-            .set(&DataKey::Guardian, &new_settings.guardian);
-        env.storage()
-            .instance()
-            .set(&DataKey::VoteType, &new_settings.vote_type);
-        env.storage()
-            .instance()
-            .set(&DataKey::ProposalGracePeriod, &new_settings.proposal_grace_period);
-        env.storage()
-            .instance()
-            .set(&DataKey::UseDynamicQuorum, &new_settings.use_dynamic_quorum);
-        env.storage()
-            .instance()
-            .set(&DataKey::MinQuorumUsd, &new_settings.min_quorum_usd);
-        match new_settings.reflector_oracle {
-            Some(ref addr) => env
-                .storage()
-                .instance()
-                .set(&DataKey::ReflectorOracle, addr),
-            None => env
-                .storage()
-                .instance()
-                .remove(&DataKey::ReflectorOracle),
-        }
-
+        let old_settings = Self::get_config(&env);
+        env.storage().instance().set(&DataKey::Config, &new_settings);
         env.events().publish(
             (Symbol::new(&env, "ConfigUpdated"),),
             (old_settings, new_settings),
@@ -921,10 +775,7 @@ impl GovernorContract {
 
     /// Get the active voting strategy.
     pub fn voting_strategy(env: Env) -> VotingStrategy {
-        env.storage()
-            .instance()
-            .get(&DataKey::VotingStrategy)
-            .unwrap_or(VotingStrategy::Single)
+        Self::get_config(&env).voting_strategy
     }
 
     /// Set the voting strategy (governance-gated: must be called via proposal).
@@ -935,9 +786,9 @@ impl GovernorContract {
         if let VotingStrategy::MultiToken(ref tokens) = strategy {
             assert!(tokens.len() <= 5, "max 5 tokens in MultiToken strategy");
         }
-        env.storage()
-            .instance()
-            .set(&DataKey::VotingStrategy, &strategy);
+        let mut config = Self::get_config(&env);
+        config.voting_strategy = strategy;
+        env.storage().instance().set(&DataKey::Config, &config);
     }
 
     /// Update Reflector oracle settings for dynamic quorum (governance-gated).
@@ -948,32 +799,17 @@ impl GovernorContract {
         use_dynamic: bool,
     ) {
         env.current_contract_address().require_auth();
-        env.storage()
-            .instance()
-            .set(&DataKey::UseDynamicQuorum, &use_dynamic);
-        env.storage()
-            .instance()
-            .set(&DataKey::MinQuorumUsd, &min_quorum_usd);
-        match oracle {
-            Some(addr) => env
-                .storage()
-                .instance()
-                .set(&DataKey::ReflectorOracle, &addr),
-            None => env
-                .storage()
-                .instance()
-                .remove(&DataKey::ReflectorOracle),
-        }
+        let mut config = Self::get_config(&env);
+        config.use_dynamic_quorum = use_dynamic;
+        config.min_quorum_usd = min_quorum_usd;
+        config.reflector_oracle = oracle;
+        env.storage().instance().set(&DataKey::Config, &config);
     }
 
     /// Compute snapshot vote weight for `voter` at `ledger` using the active strategy.
     fn compute_votes(env: &Env, voter: &Address, ledger: &u32) -> i128 {
-        let strategy: VotingStrategy = env
-            .storage()
-            .instance()
-            .get(&DataKey::VotingStrategy)
-            .unwrap_or(VotingStrategy::Single);
-        match strategy {
+        let config = Self::get_config(env);
+        match config.voting_strategy {
             VotingStrategy::Single => {
                 let votes_token: Address = env
                     .storage()
@@ -996,12 +832,8 @@ impl GovernorContract {
 
     /// Compute current vote weight for `proposer` using the active strategy.
     fn compute_proposer_votes(env: &Env, proposer: &Address) -> i128 {
-        let strategy: VotingStrategy = env
-            .storage()
-            .instance()
-            .get(&DataKey::VotingStrategy)
-            .unwrap_or(VotingStrategy::Single);
-        match strategy {
+        let config = Self::get_config(env);
+        match config.voting_strategy {
             VotingStrategy::Single => {
                 let votes_token: Address = env
                     .storage()
@@ -1019,6 +851,14 @@ impl GovernorContract {
                 total
             }
         }
+    }
+
+    /// Read the packed governor configuration from instance storage.
+    fn get_config(env: &Env) -> GovernorConfig {
+        env.storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("not initialized")
     }
 
     /// Upgrade the governor contract to a new WASM implementation.
