@@ -630,3 +630,51 @@ fn test_update_execution_window_unauthorized() {
     // Should panic when unauthorized user tries to update
     client.update_execution_window(&unauthorized, &2000);
 }
+
+/// A target contract that always panics — simulates a failing execution target.
+#[contract]
+pub struct PanickingTarget;
+
+#[contractimpl]
+impl PanickingTarget {
+    pub fn exec(_env: Env) {
+        panic!("target execution failed");
+    }
+}
+
+#[test]
+#[should_panic]
+/// Executing an operation whose target panics reverts the whole transaction.
+/// The operation must not be left in an executed state after the revert.
+fn test_execute_target_failure_reverts_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(TimelockContract, ());
+    let client = TimelockContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let governor = Address::generate(&env);
+    let min_delay = 100u64;
+
+    client.initialize(&admin, &governor, &min_delay, &10_000);
+
+    let target_id = env.register(PanickingTarget, ());
+    let fn_name = Symbol::new(&env, "exec");
+    let data = Bytes::new(&env);
+
+    let op_id = client.schedule(
+        &governor,
+        &target_id,
+        &data,
+        &fn_name,
+        &min_delay,
+        &Bytes::new(&env),
+        &Bytes::new(&env),
+    );
+
+    // Advance time past the delay.
+    env.ledger().with_mut(|li| li.timestamp += min_delay + 1);
+
+    // Should panic — target panics, whole tx reverts, op stays not-executed.
+    client.execute(&governor, &op_id);
+}

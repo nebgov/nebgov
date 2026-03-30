@@ -12,6 +12,10 @@ pub enum GovernorError {
     UnauthorizedCancel = 1,
     InvalidSupport = 2,
     ProposalExpired = 3,
+    /// Cross-contract call to the token-votes contract failed.
+    VotesCallFailed = 4,
+    /// Cross-contract call to the timelock contract failed.
+    TimelockCallFailed = 5,
 }
 
 /// Cross-contract interface for the Timelock contract.
@@ -482,7 +486,15 @@ impl GovernorContract {
 
         // Use the timelock's own minimum delay to guarantee the configured
         // execution window is respected.
-        let delay = timelock.min_delay();
+        let delay = timelock.try_min_delay()
+            .unwrap_or_else(|_| {
+                env.events().publish((symbol_short!("tl_err"), symbol_short!("queue")), proposal_id);
+                env.panic_with_error(GovernorError::TimelockCallFailed)
+            })
+            .unwrap_or_else(|_| {
+                env.events().publish((symbol_short!("tl_err"), symbol_short!("queue")), proposal_id);
+                env.panic_with_error(GovernorError::TimelockCallFailed)
+            });
 
         let ready_at = env.ledger().timestamp() + delay;
 
@@ -493,7 +505,15 @@ impl GovernorContract {
             let target = proposal.targets.get(i).unwrap();
             let fn_name = proposal.fn_names.get(i).unwrap();
             let calldata = proposal.calldatas.get(i).unwrap();
-            let op_id = timelock.schedule(&gov_addr, &target, &calldata, &fn_name, &delay, &empty_bytes, &empty_bytes);
+            let op_id = timelock.try_schedule(&gov_addr, &target, &calldata, &fn_name, &delay, &empty_bytes, &empty_bytes)
+                .unwrap_or_else(|_| {
+                    env.events().publish((symbol_short!("tl_err"), symbol_short!("sched")), proposal_id);
+                    env.panic_with_error(GovernorError::TimelockCallFailed)
+                })
+                .unwrap_or_else(|_| {
+                    env.events().publish((symbol_short!("tl_err"), symbol_short!("sched")), proposal_id);
+                    env.panic_with_error(GovernorError::TimelockCallFailed)
+                });
             op_ids.push_back(op_id);
         }
 
@@ -545,7 +565,15 @@ impl GovernorContract {
         for i in 0..proposal.op_ids.len() {
             let op_id = proposal.op_ids.get(i).unwrap();
             // The timelock will verify if the operation is ready (delay passed).
-            timelock.execute(&gov_addr, &op_id);
+            timelock.try_execute(&gov_addr, &op_id)
+                .unwrap_or_else(|_| {
+                    env.events().publish((symbol_short!("tl_err"), symbol_short!("exec")), proposal_id);
+                    env.panic_with_error(GovernorError::TimelockCallFailed)
+                })
+                .unwrap_or_else(|_| {
+                    env.events().publish((symbol_short!("tl_err"), symbol_short!("exec")), proposal_id);
+                    env.panic_with_error(GovernorError::TimelockCallFailed)
+                });
         }
 
         proposal.executed = true;
@@ -684,7 +712,16 @@ impl GovernorContract {
             .expect("votes token not set");
 
         let votes_client = VotesClient::new(&env, &votes_token_addr);
-        let supply = votes_client.get_past_total_supply(&proposal.start_ledger);
+        let supply = votes_client
+            .try_get_past_total_supply(&proposal.start_ledger)
+            .unwrap_or_else(|_| {
+                env.events().publish((symbol_short!("vc_err"), symbol_short!("supply")), proposal_id);
+                env.panic_with_error(GovernorError::VotesCallFailed)
+            })
+            .unwrap_or_else(|_| {
+                env.events().publish((symbol_short!("vc_err"), symbol_short!("supply")), proposal_id);
+                env.panic_with_error(GovernorError::VotesCallFailed)
+            });
 
         let static_quorum = (supply * config.quorum_numerator as i128) / 100;
 
@@ -816,13 +853,30 @@ impl GovernorContract {
                     .instance()
                     .get(&DataKey::VotesToken)
                     .expect("votes token not set");
-                VotesClient::new(env, &votes_token).get_past_votes(voter, ledger)
+                VotesClient::new(env, &votes_token)
+                    .try_get_past_votes(voter, ledger)
+                    .unwrap_or_else(|_| {
+                        env.events().publish((symbol_short!("vc_err"), symbol_short!("votes")), voter.clone());
+                        env.panic_with_error(GovernorError::VotesCallFailed)
+                    })
+                    .unwrap_or_else(|_| {
+                        env.events().publish((symbol_short!("vc_err"), symbol_short!("votes")), voter.clone());
+                        env.panic_with_error(GovernorError::VotesCallFailed)
+                    })
             }
             VotingStrategy::MultiToken(tokens) => {
                 let mut total: i128 = 0;
                 for wt in tokens.iter() {
-                    let votes =
-                        VotesClient::new(env, &wt.token).get_past_votes(voter, ledger);
+                    let votes = VotesClient::new(env, &wt.token)
+                        .try_get_past_votes(voter, ledger)
+                        .unwrap_or_else(|_| {
+                            env.events().publish((symbol_short!("vc_err"), symbol_short!("votes")), voter.clone());
+                            env.panic_with_error(GovernorError::VotesCallFailed)
+                        })
+                        .unwrap_or_else(|_| {
+                            env.events().publish((symbol_short!("vc_err"), symbol_short!("votes")), voter.clone());
+                            env.panic_with_error(GovernorError::VotesCallFailed)
+                        });
                     total += (votes * wt.weight_bps as i128) / 10_000;
                 }
                 total
@@ -840,12 +894,30 @@ impl GovernorContract {
                     .instance()
                     .get(&DataKey::VotesToken)
                     .expect("votes token not set");
-                VotesClient::new(env, &votes_token).get_votes(proposer)
+                VotesClient::new(env, &votes_token)
+                    .try_get_votes(proposer)
+                    .unwrap_or_else(|_| {
+                        env.events().publish((symbol_short!("vc_err"), symbol_short!("prop")), proposer.clone());
+                        env.panic_with_error(GovernorError::VotesCallFailed)
+                    })
+                    .unwrap_or_else(|_| {
+                        env.events().publish((symbol_short!("vc_err"), symbol_short!("prop")), proposer.clone());
+                        env.panic_with_error(GovernorError::VotesCallFailed)
+                    })
             }
             VotingStrategy::MultiToken(tokens) => {
                 let mut total: i128 = 0;
                 for wt in tokens.iter() {
-                    let votes = VotesClient::new(env, &wt.token).get_votes(proposer);
+                    let votes = VotesClient::new(env, &wt.token)
+                        .try_get_votes(proposer)
+                        .unwrap_or_else(|_| {
+                            env.events().publish((symbol_short!("vc_err"), symbol_short!("prop")), proposer.clone());
+                            env.panic_with_error(GovernorError::VotesCallFailed)
+                        })
+                        .unwrap_or_else(|_| {
+                            env.events().publish((symbol_short!("vc_err"), symbol_short!("prop")), proposer.clone());
+                            env.panic_with_error(GovernorError::VotesCallFailed)
+                        });
                     total += (votes * wt.weight_bps as i128) / 10_000;
                 }
                 total
@@ -1539,6 +1611,80 @@ mod test {
             fallback_q, 1_000_000,
             "should fall back to static quorum when dynamic is disabled"
         );
+    }
+
+    /// A votes contract that always panics — simulates a broken/malicious token.
+    #[contract]
+    pub struct PanickingVotesContract;
+
+    #[contractimpl]
+    impl PanickingVotesContract {
+        pub fn get_votes(_env: Env, _account: Address) -> i128 { panic!("votes unavailable") }
+        pub fn get_past_votes(_env: Env, _account: Address, _ledger: u32) -> i128 { panic!("votes unavailable") }
+        pub fn get_past_total_supply(_env: Env, _ledger: u32) -> i128 { panic!("supply unavailable") }
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_propose_emits_error_when_votes_call_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let broken_votes = env.register(PanickingVotesContract, ());
+        let timelock = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let proposer = Address::generate(&env);
+
+        // threshold > 0 so the votes call is actually made
+        client.initialize(&admin, &broken_votes, &timelock, &100, &1000, &0, &1, &guardian, &VoteType::Extended, &120_960);
+
+        let target = Address::generate(&env);
+        let mut targets = soroban_sdk::Vec::new(&env);
+        targets.push_back(target);
+        let mut fn_names = soroban_sdk::Vec::new(&env);
+        fn_names.push_back(Symbol::new(&env, "exec"));
+        let mut calldatas = soroban_sdk::Vec::new(&env);
+        calldatas.push_back(Bytes::new(&env));
+
+        // Should panic with VotesCallFailed (#4)
+        client.propose(&proposer, &String::from_str(&env, "test"), &targets, &fn_names, &calldatas);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_cast_vote_emits_error_when_votes_call_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let good_votes = env.register(MockVotesContract, ());
+        let broken_votes = env.register(PanickingVotesContract, ());
+        let timelock = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let proposer = Address::generate(&env);
+        let voter = Address::generate(&env);
+
+        // Initialize with good votes so propose() succeeds, then swap to broken
+        client.initialize(&admin, &good_votes, &timelock, &0, &100, &0, &0, &guardian, &VoteType::Extended, &120_960);
+
+        let proposal_id = propose_dummy(&env, &client, &proposer);
+
+        // Swap votes token to the panicking one before cast_vote
+        let mut config = client.get_settings();
+        config.voting_strategy = VotingStrategy::Single;
+        env.storage()
+            .instance()
+            .set(&crate::DataKey::VotesToken, &broken_votes);
+
+        env.ledger().with_mut(|li| li.sequence_number += 1);
+
+        // Should panic with VotesCallFailed (#4)
+        client.cast_vote(&voter, &proposal_id, &VoteSupport::For);
     }
 }
 

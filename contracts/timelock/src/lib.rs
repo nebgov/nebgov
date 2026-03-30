@@ -15,6 +15,8 @@ pub enum TimelockError {
     PredecessorNotFound = 2,
     /// Operation has expired and can no longer be executed.
     OperationExpired = 3,
+    /// Cross-contract invocation of the target contract failed.
+    TargetCallFailed = 4,
 }
 
 /// An operation scheduled in the timelock.
@@ -200,14 +202,16 @@ impl TimelockContract {
             }
         }
 
-        // Mark as executed before invocation to prevent reentrancy issues
+        // Mark as executed before invocation to prevent reentrancy.
+        // If the invocation panics, the entire transaction reverts atomically,
+        // including this state write — so no inconsistent state is possible.
         let mut op = op;
         op.executed = true;
         env.storage()
             .persistent()
             .set(&DataKey::Operation(op_id.clone()), &op);
 
-        // Invoke the target contract
+        // Invoke the target contract. Any panic here reverts the full transaction.
         env.invoke_contract::<()>(&op.target, &op.fn_name, Vec::new(&env));
 
         env.events().publish((symbol_short!("execute"),), op_id);
