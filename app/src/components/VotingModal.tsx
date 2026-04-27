@@ -49,6 +49,15 @@ function getVoteSigner(): Keypair {
   return Keypair.fromSecret(secret);
 }
 
+function explorerTxUrl(txHash: string): string {
+  const network = process.env.NEXT_PUBLIC_NETWORK || "testnet";
+  const base =
+    network === "mainnet"
+      ? "https://stellar.expert/explorer/public"
+      : "https://stellar.expert/explorer/testnet";
+  return `${base}/tx/${txHash}`;
+}
+
 export function VotingModal({
   open,
   onClose,
@@ -106,8 +115,16 @@ export function VotingModal({
     try {
       const client = getGovernorClientFromEnv();
       const signer = getVoteSigner();
-      await client.castVote(signer, proposalId, support);
-      toast.success("Vote submitted successfully");
+      const txHash = await client.castVote(signer, proposalId, support);
+      toast.success(
+        <div>
+          Vote submitted!{" "}
+          <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="underline">
+            View on Explorer →
+          </a>
+        </div>,
+        { duration: 8000 },
+      );
       onVoted();
       onClose();
     } catch (err) {

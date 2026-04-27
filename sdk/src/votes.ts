@@ -41,10 +41,11 @@ export class VotesClient {
   }
 
   /**
-   * Delegate voting power to another address.
-   * TODO issue #33: add self-delegation option and UI flow.
+   * Delegate voting power to another address (or self-delegate to activate votes).
+   *
+   * @returns The Stellar transaction hash, suitable for linking to a block explorer.
    */
-  async delegate(signer: Keypair, delegatee: string): Promise<void> {
+  async delegate(signer: Keypair, delegatee: string): Promise<string> {
     const account = await this.server.getAccount(signer.publicKey());
 
     const tx = new TransactionBuilder(account, {
@@ -63,7 +64,20 @@ export class VotesClient {
 
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
-    await this.server.sendTransaction(prepared);
+    const result = await this.server.sendTransaction(prepared);
+    if (result.status === "ERROR") {
+      throw new Error(`delegate failed: ${JSON.stringify(result)}`);
+    }
+    return result.hash;
+  }
+
+  /**
+   * Revoke delegation and move voting power back to self.
+   *
+   * @returns The Stellar transaction hash, suitable for linking to a block explorer.
+   */
+  async undelegate(signer: Keypair): Promise<string> {
+    return this.delegate(signer, signer.publicKey());
   }
 
   /**

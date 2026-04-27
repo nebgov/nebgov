@@ -134,7 +134,7 @@ export class GovernorClient {
     fnNames: string[],
     calldatas: (Buffer | Uint8Array)[],
     signUnsignedXdr: (xdr: string) => Promise<string>
-  ): Promise<bigint> {
+  ): Promise<{ proposalId: bigint; txHash: string }> {
     if (
       targets.length !== fnNames.length ||
       targets.length !== calldatas.length
@@ -172,7 +172,8 @@ export class GovernorClient {
     }
     const confirmed = await this.pollForConfirmation(result.hash);
     const returnVal = confirmed.returnValue;
-    return returnVal ? BigInt(scValToNative(returnVal)) : 0n;
+    const proposalId = returnVal ? BigInt(scValToNative(returnVal)) : 0n;
+    return { proposalId, txHash: result.hash };
   }
 
   /** Minimum voting power required to create a proposal (`proposal_threshold`). */
@@ -293,7 +294,7 @@ export class GovernorClient {
     signer: Keypair,
     proposalId: bigint,
     support: VoteSupport
-  ): Promise<void> {
+  ): Promise<string> {
     const account = await this.server.getAccount(signer.publicKey());
 
     const supportScVal = xdr.ScVal.scvVec([
@@ -322,6 +323,7 @@ export class GovernorClient {
       throw new Error(`castVote failed: ${JSON.stringify(result)}`);
     }
     await this.pollForConfirmation(result.hash);
+    return result.hash;
   }
 
   /**

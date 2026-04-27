@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
+import toast from "react-hot-toast";
 import { VotesClient, type Network } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
 
@@ -46,6 +47,15 @@ function getDelegateSigner(): Keypair {
   return Keypair.fromSecret(secret);
 }
 
+function explorerTxUrl(txHash: string): string {
+  const network = process.env.NEXT_PUBLIC_NETWORK || "testnet";
+  const base =
+    network === "mainnet"
+      ? "https://stellar.expert/explorer/public"
+      : "https://stellar.expert/explorer/testnet";
+  return `${base}/tx/${txHash}`;
+}
+
 export function DelegateModal({ open, onClose, onDelegated, prefillAddress }: Props) {
   const [delegatee, setDelegatee] = useState(prefillAddress || "");
   const [submitting, setSubmitting] = useState(false);
@@ -70,10 +80,21 @@ export function DelegateModal({ open, onClose, onDelegated, prefillAddress }: Pr
 
       const client = getVotesClientFromEnv();
       const signer = getDelegateSigner();
-      await client.delegate(signer, delegatee.trim());
-
+      const txHash = await client.delegate(signer, delegatee.trim());
+      toast.success(
+        <div>
+          Delegation submitted!{" "}
+          <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="underline">
+            View on Explorer →
+          </a>
+        </div>,
+        { duration: 8000 },
+      );
       onDelegated?.();
       onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Delegation failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }

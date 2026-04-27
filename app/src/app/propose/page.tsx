@@ -11,6 +11,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import toast from "react-hot-toast";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -115,6 +116,15 @@ function loadDraft(): Draft {
 
 function saveDraft(d: Draft) {
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+}
+
+function explorerTxUrl(txHash: string): string {
+  const network = process.env.NEXT_PUBLIC_NETWORK || "testnet";
+  const base =
+    network === "mainnet"
+      ? "https://stellar.expert/explorer/public"
+      : "https://stellar.expert/explorer/testnet";
+  return `${base}/tx/${txHash}`;
 }
 
 function buildDescription(title: string, body: string, ipfs: string): string {
@@ -315,7 +325,7 @@ function ProposeWizardInner() {
         draft.actions,
         clients.governorAddress,
       );
-      const id = await clients.governor.proposeWithSign(
+      const { proposalId, txHash } = await clients.governor.proposeWithSign(
         publicKey,
         description,
         targets,
@@ -323,9 +333,18 @@ function ProposeWizardInner() {
         calldatas,
         signTransaction,
       );
+      toast.success(
+        <div>
+          Proposal submitted!{" "}
+          <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="underline">
+            View on Explorer →
+          </a>
+        </div>,
+        { duration: 8000 },
+      );
       sessionStorage.removeItem(STORAGE_KEY);
       setDraft({ title: "", description: "", ipfsRef: "", actions: [] });
-      router.push(`/propose?step=4&id=${id.toString()}`);
+      router.push(`/propose?step=4&id=${proposalId.toString()}`);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "Submit failed");
     } finally {
