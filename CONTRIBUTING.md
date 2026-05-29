@@ -166,6 +166,8 @@ When opening a new issue, please choose one of the repository's issue templates 
 
 Issues tagged `good first issue` are recommended for first-time contributors.
 
+Frontend pages that can throw during client-side rendering or data loading should be wrapped in `PageErrorBoundary` so users get page-specific recovery instead of a blank screen.
+
 ## Branch Naming
 
 - `feat/issue-<number>-<description>` for features
