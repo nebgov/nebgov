@@ -241,6 +241,7 @@ If you find a security vulnerability, do not open a public issue. Follow the pri
 - Strict TypeScript, no `any` types
 - Run `pnpm lint` before pushing
 - Use named exports
+- All frontend modals must be keyboard dismissible with Escape, unless there is a documented security reason not to close them.
 
 ### Coverage
 

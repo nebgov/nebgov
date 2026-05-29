@@ -1,4 +1,5 @@
 import React from "react";
+import { fireEvent, render } from "@testing-library/react";
 import renderer from "react-test-renderer";
 
 // Mock heavy deps that require browser/wallet APIs
@@ -42,5 +43,20 @@ describe("DelegateModal", () => {
       )
       .toJSON();
     expect(tree).toMatchSnapshot();
+  });
+
+  it("closes when Escape is pressed", () => {
+    function Wrapper() {
+      const [open, setOpen] = React.useState(true);
+      return <DelegateModal open={open} onClose={() => setOpen(false)} />;
+    }
+
+    const { queryByRole } = render(<Wrapper />);
+
+    expect(queryByRole("dialog")).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(queryByRole("dialog")).toBeNull();
   });
 });
