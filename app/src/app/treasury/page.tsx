@@ -81,6 +81,12 @@ export default function TreasuryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [activeTab, setActiveTab] = useState<"quick" | "advanced">("quick");
+  const [quickRecipient, setQuickRecipient] = useState("");
+  const [quickAmount, setQuickAmount] = useState("");
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<Record<string, boolean>>({});
+
   const [submitTarget, setSubmitTarget] = useState("");
   const [submitFn, setSubmitFn] = useState("");
   const [calldataMode, setCalldataMode] = useState<"builder" | "raw">(
@@ -306,6 +312,78 @@ export default function TreasuryPage() {
     }
   }
 
+  async function handleReject(txId: bigint) {
+    if (!treasuryClient || !publicKey || !canWrite) return;
+    const key = txId.toString();
+    setRejecting((m) => ({ ...m, [key]: true }));
+    try {
+      await treasuryClient.cancel(publicKey, Number(txId), signTransaction);
+      await fetchPendingTxs(readViewer);
+      toast.success("Transaction cancelled successfully.");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Reject failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setRejecting((m) => ({ ...m, [key]: false }));
+    }
+  }
+
+  async function handleQuickTransfer(e: React.FormEvent) {
+    e.preventDefault();
+    if (!treasuryClient || !publicKey || !canWrite) return;
+
+    const rawAmount = parseFloat(quickAmount);
+    if (isNaN(rawAmount) || rawAmount <= 0) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+
+    const amountVal = BigInt(Math.round(rawAmount * 10000000)); // 7 decimals
+    
+    // Check spending cap
+    if (spendingCap && (spentThisPeriod + amountVal > spendingCap.maxAmount)) {
+      setLimitError("Transaction exceeds the configured daily spending cap.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const rows: CalldataArgRow[] = [
+        { id: "from", kind: "address", value: treasuryContractAddress },
+        { id: "to", kind: "address", value: quickRecipient.trim() },
+        { id: "amount", kind: "i128", value: amountVal.toString() }
+      ];
+
+      const data = encodeCallableCalldata("transfer", rows);
+
+      const newId = await treasuryClient.submit(
+        publicKey,
+        treasuryTokenAddress,
+        "transfer",
+        data,
+        signTransaction
+      );
+
+      setQuickRecipient("");
+      setQuickAmount("");
+      setLimitError(null);
+      await fetchPendingTxs(readViewer);
+      toast.success(
+        newId > 0n
+          ? `Submitted treasury transaction #${newId}.`
+          : "Treasury transaction submitted."
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Submit failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleSubmitTx(e: React.FormEvent) {
     e.preventDefault();
     if (!treasuryClient || !publicKey || !canWrite) return;
@@ -411,14 +489,14 @@ export default function TreasuryPage() {
       {loading ? (
         <TreasuryBalanceSkeleton />
       ) : (
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div data-testid="treasury-balance" className="grid grid-cols-2 gap-4 mb-8">
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-500 dark:text-gray-400">USDC Balance</p>
-            <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-white">{`${usdcBalance} USDC`}</p>
+            <p data-testid="usdc-balance" className="text-2xl font-bold mt-1 text-gray-900 dark:text-white">{`${usdcBalance} USDC`}</p>
           </div>
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
             <p className="text-sm text-gray-500 dark:text-gray-400">XLM Balance</p>
-            <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-white">{`${xlmBalance} XLM`}</p>
+            <p data-testid="xlm-balance" className="text-2xl font-bold mt-1 text-gray-900 dark:text-white">{`${xlmBalance} XLM`}</p>
           </div>
         </div>
       )}
@@ -497,8 +575,109 @@ export default function TreasuryPage() {
         )}
       </div>
 
-      {/* Submit */}
-      {(!isConnected || ownerCheckComplete) && (
+      {/* Tab Selector */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+        <button
+          onClick={() => setActiveTab("quick")}
+          className={`py-2.5 px-4 text-sm font-semibold border-b-2 transition-all ${
+            activeTab === "quick"
+              ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+          }`}
+        >
+          Quick Transfer
+        </button>
+        <button
+          onClick={() => setActiveTab("advanced")}
+          className={`py-2.5 px-4 text-sm font-semibold border-b-2 transition-all ${
+            activeTab === "advanced"
+              ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+          }`}
+        >
+          Advanced Transaction Builder
+        </button>
+      </div>
+
+      {/* Quick Transfer Tab Content */}
+      {activeTab === "quick" && (!isConnected || ownerCheckComplete) && (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+            Quick Transfer
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Propose a simple USDC transfer. Once threshold is met, the transfer executes automatically.
+          </p>
+
+          {!canWrite && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 italic">
+              Read-only — owner wallet required to submit.
+            </p>
+          )}
+
+          <form onSubmit={handleQuickTransfer} className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                Recipient Address
+              </label>
+              <input
+                type="text"
+                data-testid="transfer-recipient"
+                value={quickRecipient}
+                onChange={(e) => {
+                  setQuickRecipient(e.target.value);
+                  setLimitError(null);
+                }}
+                placeholder="G…"
+                disabled={!canWrite}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-50 dark:disabled:bg-gray-600"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                Amount (USDC)
+              </label>
+              <input
+                type="number"
+                step="any"
+                data-testid="transfer-amount"
+                value={quickAmount}
+                onChange={(e) => {
+                  setQuickAmount(e.target.value);
+                  setLimitError(null);
+                }}
+                placeholder="0.00"
+                disabled={!canWrite}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-50 dark:disabled:bg-gray-600"
+                required
+              />
+            </div>
+
+            {limitError && (
+              <div 
+                data-testid="limit-error"
+                className="text-sm text-red-600 dark:text-red-400 font-medium"
+              >
+                {limitError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              data-testid="submit-transfer"
+              disabled={!canWrite || submitting || !treasuryClient || !publicKey}
+              className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {submitting ? "Submitting…" : "Submit transfer"}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Submit / Advanced Builder */}
+      {activeTab === "advanced" && (!isConnected || ownerCheckComplete) && (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-8">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
           Submit transaction
@@ -687,7 +866,7 @@ export default function TreasuryPage() {
       <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         Pending transactions
       </h2>
-      <div className="space-y-3">
+      <div data-testid="pending-transfers" className="space-y-3">
         {loading && <TreasuryPendingSkeleton />}
 
         {txs.length === 0 && !loading && (
@@ -741,29 +920,46 @@ export default function TreasuryPage() {
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => handleApprove(tx.id)}
-                disabled={
-                  !isConnected ||
-                  !canWrite ||
-                  has ||
-                  approving[tx.id.toString()] ||
-                  !treasuryClient ||
-                  !publicKey
-                }
-                className={`shrink-0 text-sm rounded-lg px-4 py-2 font-medium border transition-colors ${
-                  has
-                    ? "text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 cursor-not-allowed"
-                    : "text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {has
-                  ? "You approved"
-                  : approving[tx.id.toString()]
-                    ? "Approving…"
-                    : "Approve"}
-              </button>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleApprove(tx.id)}
+                  disabled={
+                    !isConnected ||
+                    !canWrite ||
+                    has ||
+                    approving[tx.id.toString()] ||
+                    !treasuryClient ||
+                    !publicKey
+                  }
+                  className={`text-sm rounded-lg px-4 py-2 font-medium border transition-colors ${
+                    has
+                      ? "text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 cursor-not-allowed"
+                      : "text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {has
+                    ? "You approved"
+                    : approving[tx.id.toString()]
+                      ? "Approving…"
+                      : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  data-testid="reject-btn"
+                  onClick={() => handleReject(tx.id)}
+                  disabled={
+                    !isConnected ||
+                    !canWrite ||
+                    rejecting[tx.id.toString()] ||
+                    !treasuryClient ||
+                    !publicKey
+                  }
+                  className="text-sm rounded-lg px-4 py-2 font-medium border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {rejecting[tx.id.toString()] ? "Rejecting…" : "Reject"}
+                </button>
+              </div>
             </div>
           );
         })}

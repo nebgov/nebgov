@@ -106,8 +106,8 @@ describe("FactoryClient", () => {
       mockSimulate.mockResolvedValueOnce(responseEntry);
     }
 
-    scValToNative.mockImplementation((raw: unknown) => {
-      if (typeof raw === "object" && raw?.toString?.() === "ScVal") {
+    scValToNative.mockImplementation((raw: any) => {
+      if (raw && typeof raw === "object" && (raw._arm === "map" || raw.arm === "map" || raw.arm?.() === "map")) {
         return { id: 1n, governor: "G1", timelock: "T1", token: "TO1", deployer: "D1" };
       }
       return 55n;
@@ -136,8 +136,8 @@ describe("FactoryClient", () => {
       mockSimulate.mockResolvedValueOnce(responseEntry);
     }
 
-    scValToNative.mockImplementation((raw: unknown) => {
-      if (typeof raw === "object" && raw?.toString?.() === "ScVal") {
+    scValToNative.mockImplementation((raw: any) => {
+      if (raw && typeof raw === "object" && (raw._arm === "map" || raw.arm === "map" || raw.arm?.() === "map")) {
         return { id: 6n, governor: "G6", timelock: "T6", token: "TO6", deployer: "D6" };
       }
       return 10n;
@@ -168,6 +168,7 @@ describe("FactoryClient", () => {
       publicKey: () => "GTESTSIGNER",
     } as any;
 
+    const { VoteType } = require("../types");
     const id = await client.deploy(signer, "GOV_TOKEN", {
       votingDelay: 10,
       votingPeriod: 100,

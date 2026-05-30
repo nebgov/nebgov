@@ -80,7 +80,7 @@ export function VotingModal({
   const { isConnected, connect, publicKey } = useWallet();
   const resolvedOpen = open ?? isOpen ?? false;
   const resolvedProposalId = typeof proposalId === "bigint" ? proposalId : BigInt(proposalId);
-  const resolvedDelegatee = delegatee ?? publicKey ?? null;
+  const resolvedDelegatee = delegatee === undefined ? (publicKey ?? null) : delegatee;
   const resolvedVotingPower = votingPower ?? 0n;
   const [support, setSupport] = useState<VoteSupport | null>(preselectedSupport ?? null);
   const [reason, setReason] = useState("");
@@ -239,15 +239,15 @@ export function VotingModal({
   return (
     <div 
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="voting-modal-title"
-      aria-describedby="voting-modal-description"
     >
       <div 
         id="voting-modal"
         className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-xl"
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voting-modal-title"
+        aria-describedby="voting-modal-description"
       >
         <div className="flex items-start justify-between mb-3">
           <div>

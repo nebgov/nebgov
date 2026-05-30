@@ -1,6 +1,3 @@
-import { GovernorClient } from "../governor";
-import { VoteSupport } from "../types";
-
 // Mocking Stellar SDK
 var mockSimulate = jest.fn();
 var mockGetAccount = jest.fn();
@@ -9,6 +6,9 @@ var mockSendTransaction = jest.fn();
 var mockGetTransaction = jest.fn();
 var mockIsSimulationError = jest.fn();
 var mockScValToNative = jest.fn();
+
+import { GovernorClient } from "../governor";
+import { VoteSupport } from "../types";
 
 jest.mock("@stellar/stellar-sdk", () => {
   const actual = jest.requireActual("@stellar/stellar-sdk");
@@ -27,6 +27,11 @@ jest.mock("@stellar/stellar-sdk", () => {
       })),
       Api: {
         isSimulationError: mockIsSimulationError,
+        GetTransactionStatus: {
+          SUCCESS: "SUCCESS",
+          FAILED: "FAILED",
+          NOT_FOUND: "NOT_FOUND",
+        },
       },
     },
     Contract: jest.fn().mockImplementation((addr) => ({
@@ -94,9 +99,9 @@ describe("SDK Retry Logic", () => {
     mockScValToNative.mockReturnValue(42n);
 
     const id = await client.propose(
-      { sign: jest.fn() } as any,
+      { sign: jest.fn(), publicKey: () => validGAddr } as any,
       "Title",
-      "hash",
+      "3665313936616466316231366230623362346231613963316131613262336334",
       "uri",
       [validCAddr],
       ["fn"],
@@ -115,7 +120,7 @@ describe("SDK Retry Logic", () => {
     });
 
     await expect(client.castVote(
-      { sign: jest.fn() } as any,
+      { sign: jest.fn(), publicKey: () => validGAddr } as any,
       1n,
       VoteSupport.For
     )).rejects.toThrow();
@@ -132,7 +137,7 @@ describe("SDK Retry Logic", () => {
     });
 
     await expect(client.castVote(
-      { sign: jest.fn() } as any,
+      { sign: jest.fn(), publicKey: () => validGAddr } as any,
       1n,
       VoteSupport.For
     )).rejects.toThrow();
@@ -154,7 +159,7 @@ describe("SDK Retry Logic", () => {
     });
 
     await client.castVote(
-      { sign: jest.fn() } as any,
+      { sign: jest.fn(), publicKey: () => validGAddr } as any,
       1n,
       VoteSupport.For
     );

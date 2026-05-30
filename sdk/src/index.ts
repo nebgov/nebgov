@@ -30,6 +30,8 @@ export {
   VotesErrorCode,
   TreasuryError,
   TreasuryErrorCode,
+  RpcConnectionError,
+  DeserializationError,
   parseGovernorError,
   parseTimelockError,
   parseVotesError,
