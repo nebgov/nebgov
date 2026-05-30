@@ -196,6 +196,39 @@ export class VotesClient {
   }
 
   /**
+   * Get the current nonce for an account (replay protection for delegate_by_sig).
+   *
+   * Returns 0n for addresses that have never used delegate_by_sig, and increments
+   * with each successful delegate_by_sig call.
+   *
+   * @param address - Stellar address to query.
+   * @returns The current nonce, or 0n if the address has never delegated by sig.
+   */
+  async getNonce(address: string): Promise<bigint> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount(address)),
+          { fee: BASE_FEE, networkPassphrase: this.networkPassphrase },
+        )
+          .addOperation(
+            this.contract.call(
+              "get_nonce",
+              nativeToScVal(address, { type: "address" }),
+            ),
+          )
+          .setTimeout(30)
+          .build(),
+      );
+
+      if (SorobanRpc.Api.isSimulationError(result)) return 0n;
+      const raw = (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result?.retval;
+      return raw ? BigInt(scValToNative(raw)) : 0n;
+    });
+  }
+
+  /**
    * Get the current voting power of an address.
    *
    * @param account Stellar address to query.
@@ -224,6 +257,40 @@ export class VotesClient {
         .result?.retval;
       return raw ? BigInt(scValToNative(raw)) : 0n;
     });
+  }
+
+  /**
+   * Get voting power for multiple addresses in parallel.
+   *
+   * This keeps higher-level analytics code from issuing vote lookups one by
+   * one, which cuts page-load latency on delegate-heavy datasets.
+   */
+  async getVotingPowers(
+    accounts: string[],
+    concurrency = 10,
+  ): Promise<Array<{ account: string; votingPower: bigint }>> {
+    const results: Array<{ account: string; votingPower: bigint }> = [];
+
+    for (let i = 0; i < accounts.length; i += concurrency) {
+      const chunk = accounts.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        chunk.map(async (account) => ({
+          account,
+          votingPower: await this.getVotes(account),
+        })),
+      );
+
+      for (let j = 0; j < chunk.length; j++) {
+        const outcome = settled[j];
+        if (outcome.status === "fulfilled") {
+          results.push(outcome.value);
+        } else {
+          results.push({ account: chunk[j], votingPower: 0n });
+        }
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -259,7 +326,10 @@ export class VotesClient {
   }
 
   /**
-   * Get current base voting power (raw tokens) of an address.
+   * Get current base (unweighted) voting power from raw token balance of an address.
+   *
+   * @param account - Stellar address to query
+   * @returns Raw token balance as voting power, or 0n on error
    */
   async getBaseVotes(account: string): Promise<bigint> {
     const result = await this.server.simulateTransaction(
@@ -284,7 +354,42 @@ export class VotesClient {
   }
 
   /**
-   * Get base voting power at a past ledger sequence.
+   * Get base votes for multiple addresses in parallel.
+   */
+  async getBaseVotesBatch(
+    accounts: string[],
+    concurrency = 10,
+  ): Promise<Array<{ account: string; baseVotes: bigint }>> {
+    const results: Array<{ account: string; baseVotes: bigint }> = [];
+
+    for (let i = 0; i < accounts.length; i += concurrency) {
+      const chunk = accounts.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        chunk.map(async (account) => ({
+          account,
+          baseVotes: await this.getBaseVotes(account),
+        })),
+      );
+
+      for (let j = 0; j < chunk.length; j++) {
+        const outcome = settled[j];
+        if (outcome.status === "fulfilled") {
+          results.push(outcome.value);
+        } else {
+          results.push({ account: chunk[j], baseVotes: 0n });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get base (unweighted) voting power at a past ledger sequence.
+   *
+   * @param account - Stellar address to query
+   * @param ledger - Ledger sequence number to query at
+   * @returns Raw token balance at the specified ledger, or 0n on error
    */
   async getPastBaseVotes(account: string, ledger: number): Promise<bigint> {
     const result = await this.server.simulateTransaction(
@@ -310,7 +415,10 @@ export class VotesClient {
   }
 
   /**
-   * Get current delegatee of an account.
+   * Get the current delegatee for an account.
+   *
+   * @param account - Stellar address to query
+   * @returns The delegatee address, or null if the account has not delegated
    */
   async getDelegatee(account: string): Promise<string | null> {
     return this.retry(async () => {
@@ -337,7 +445,9 @@ export class VotesClient {
   }
 
   /**
-   * Get total supply of the voting token.
+   * Get the total supply of the voting token.
+   *
+   * @returns Total token supply in raw units, or 0n on error
    */
   async getTotalSupply(): Promise<bigint> {
     return this.retry(async () => {
@@ -359,7 +469,10 @@ export class VotesClient {
   }
 
   /**
-   * Get total delegated supply at a past ledger sequence.
+   * Get the total delegated supply at a past ledger sequence.
+   *
+   * @param ledger - Ledger sequence number to query at
+   * @returns Total supply at the specified ledger, or 0n on error
    */
   async getPastTotalSupply(ledger: number): Promise<bigint> {
     return this.retry(async () => {
@@ -452,20 +565,21 @@ export class VotesClient {
 
     // Query current voting power for each unique delegate
     const delegateAddresses = Array.from(byDelegate.keys());
-    const powerEntries = await Promise.all(
-      delegateAddresses.map(async (addr) => {
-        const [votingPower, baseVotes] = await Promise.all([
-          this.getVotes(addr),
-          this.getBaseVotes(addr),
-        ]);
-        return {
-          address: addr,
-          votingPower,
-          baseVotes,
-          delegatorCount: byDelegate.get(addr)!.size,
-        };
-      }),
+    const [votingPowers, baseVotes] = await Promise.all([
+      this.getVotingPowers(delegateAddresses),
+      this.getBaseVotesBatch(delegateAddresses),
+    ]);
+
+    const baseVotesMap = new Map(
+      baseVotes.map((entry) => [entry.account, entry.baseVotes]),
     );
+
+    const powerEntries = delegateAddresses.map((address, index) => ({
+      address,
+      votingPower: votingPowers[index]?.votingPower ?? 0n,
+      baseVotes: baseVotesMap.get(address) ?? 0n,
+      delegatorCount: byDelegate.get(address)!.size,
+    }));
 
     const delegates = powerEntries
       .filter((d) => d.votingPower > 0n)
@@ -520,8 +634,8 @@ export class VotesClient {
       byDelegate.get(delegatee)!.add(delegator);
     }
 
-    const powers = await Promise.all(
-      Array.from(byDelegate.keys()).map((addr) => this.getVotes(addr)),
+    const powers = (await this.getVotingPowers(Array.from(byDelegate.keys()))).map(
+      (entry) => entry.votingPower,
     );
 
     const activePowers = powers.filter((p) => p > 0n);
@@ -558,12 +672,14 @@ export class VotesClient {
 
     if (delegators.length === 0) return [];
 
-    const results = await Promise.all(
-      delegators.map(async (delegator) => ({
-        delegator,
-        power: await this.getVotes(delegator),
-      })),
+    const votingPowers = await this.getVotingPowers(delegators);
+    const powerMap = new Map(
+      votingPowers.map((entry) => [entry.account, entry.votingPower]),
     );
+    const results = delegators.map((delegator) => ({
+      delegator,
+      power: powerMap.get(delegator) ?? 0n,
+    }));
 
     return results
       .filter((d) => d.power > 0n)
@@ -586,17 +702,13 @@ export class VotesClient {
     const totalSupply = await this.getTotalSupply();
     if (totalSupply === 0n) return [];
 
-    const delegates = await Promise.all(
-      addresses.map(async (address) => {
-        const votes = await this.getVotes(address);
-        return {
-          address,
-          votes,
-          percentOfSupply:
-            totalSupply > 0n ? Number((votes * 10000n) / totalSupply) / 100 : 0,
-        };
-      }),
-    );
+    const votingPowers = await this.getVotingPowers(addresses);
+    const delegates = votingPowers.map(({ account, votingPower }) => ({
+      address: account,
+      votes: votingPower,
+      percentOfSupply:
+        totalSupply > 0n ? Number((votingPower * 10000n) / totalSupply) / 100 : 0,
+    }));
 
     return delegates
       .filter((d) => d.votes > 0n)
@@ -655,7 +767,13 @@ export class VotesClient {
   }
 
   /**
-   * Get the current votes contract settings.
+   * Get the current votes contract configuration settings.
+   *
+   * Queries checkpoint retention period, time-weight voting status, and time-weight scale
+   * in parallel from the on-chain contract.
+   *
+   * @returns Current votes settings
+   * @throws {VotesError} If any of the simulated queries fail
    */
   async getVotesSettings(): Promise<VotesSettings> {
     const retentionResult = await this.server.simulateTransaction(
@@ -704,7 +822,11 @@ export class VotesClient {
   }
 
   /**
-   * Enable or disable time-weighted voting (admin only).
+   * Enable or disable time-weighted voting. Admin-only operation.
+   *
+   * @param signer - Keypair of the contract admin
+   * @param enabled - Whether time-weighting should be active
+   * @throws {VotesError} If the transaction fails
    */
   async setTimeWeightEnabled(signer: Keypair, enabled: boolean): Promise<void> {
     const account = await this.server.getAccount(signer.publicKey());
@@ -727,7 +849,11 @@ export class VotesClient {
   }
 
   /**
-   * Set the time-weighting scale (admin only).
+   * Set the time-weighting scale factor. Admin-only operation.
+   *
+   * @param signer - Keypair of the contract admin
+   * @param scale - New time-weight scale value (u32)
+   * @throws {VotesError} If the transaction fails
    */
   async setTimeWeightScale(signer: Keypair, scale: number): Promise<void> {
     const account = await this.server.getAccount(signer.publicKey());
@@ -754,6 +880,9 @@ export class VotesClient {
 
   /**
    * Get the delegator record (balance and start ledger) for an address.
+   *
+   * @param account - Stellar address to query
+   * @returns The delegator record with balance and start ledger, or null if not found
    */
   async getDelegatorRecord(account: string): Promise<DelegatorRecord | null> {
     // Note: This requires the contract to expose a way to read the DelegatorRecord

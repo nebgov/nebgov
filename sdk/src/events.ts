@@ -1,6 +1,7 @@
 import { SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { GovernorSettings, Network, VoteType } from "./types";
 import { withRetry } from "./utils";
+import { Logger } from "./logger";
 
 const RPC_URLS: Record<Network, string> = {
   mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
@@ -106,6 +107,8 @@ export interface SubscriptionOptions {
   network: Network;
   rpcUrl?: string;
   intervalMs?: number;
+  /** Maximum polling delay in milliseconds when backoff is active (default: 60000). */
+  pollMaxDelayMs?: number;
   /** Maximum number of retry attempts for RPC calls (default: 3) */
   maxAttempts?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000) */
@@ -128,13 +131,21 @@ function toBigInt(value: unknown): bigint | null {
   }
 }
 
-/** Decoded `veto` (proposal vetoed from queue) event */
+/**
+ * Decoded `veto` (proposal vetoed from queue) event.
+ */
 export interface ProposalVetoedEventData {
   proposalId: bigint;
   queueTime: bigint;
   currentLedger: bigint;
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalVetoedEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data, or null if the event topic or value format is invalid
+ */
 export function parseProposalVetoedEvent(
   event: SorobanEvent
 ): ProposalVetoedEventData | null {
@@ -233,6 +244,22 @@ function createTopicSubscription(
   let cursor = 0;
   let initialized = false;
   let stopped = false;
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollDelayMs = intervalMs;
+  const maxPollDelayMs = opts.pollMaxDelayMs ?? 60_000;
+
+  function stopScheduledPoll() {
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function scheduleNextPoll(delayMs: number) {
+    if (stopped) return;
+    stopScheduledPoll();
+    pollTimer = setTimeout(() => void poll(), delayMs);
+  }
 
   async function poll(): Promise<void> {
     if (stopped) return;
@@ -260,27 +287,42 @@ function createTopicSubscription(
       }
 
       cursor = latestLedger + 1;
+      pollDelayMs = intervalMs;
     } catch {
-      // Retry on the next interval.
+      pollDelayMs = Math.min(pollDelayMs * 2, maxPollDelayMs);
     }
+
+    const jitter = 0.2;
+    const factor = (1 - jitter) + Math.random() * jitter * 2;
+    scheduleNextPoll(Math.max(0, Math.round(pollDelayMs * factor)));
   }
 
   void poll();
-  const handle = setInterval(() => void poll(), intervalMs);
 
   return () => {
     stopped = true;
-    clearInterval(handle);
+    stopScheduledPoll();
   };
 }
 
+/**
+ * Fetch Soroban contract events matching a topic filter, with retry support.
+ *
+ * @param server - Soroban RPC server instance
+ * @param contractId - Contract address to filter events for
+ * @param topicFilter - XDR ScVal topic segments to match
+ * @param startLedger - Ledger sequence to start scanning from
+ * @param opts - Optional retry configuration
+ * @returns Batch of decoded events and the latest scanned ledger
+ */
 export async function fetchEvents(
   server: SorobanRpc.Server,
   contractId: string,
   topicFilter: xdr.ScVal[],
   startLedger: number,
-  opts: { maxAttempts?: number; baseDelayMs?: number } = {}
+  opts: { maxAttempts?: number; baseDelayMs?: number; debug?: boolean } = {}
 ): Promise<{ events: SorobanEvent[]; latestLedger: number }> {
+  const log = new Logger(opts.debug ?? false);
   return withRetry(async () => {
     const response = await server.getEvents({
       startLedger,
@@ -302,11 +344,19 @@ export async function fetchEvents(
     maxAttempts: opts.maxAttempts ?? 3,
     baseDelayMs: opts.baseDelayMs ?? 1000,
     onRetry: (attempt, error) => {
-      console.debug(`[fetchEvents] Retry attempt ${attempt} due to error:`, error);
+      log.debug(`[fetchEvents] Retry attempt ${attempt} due to error:`, error);
     }
   });
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalCreatedEventData.
+ *
+ * Supports both the modern `ProposalCreated` topic and the legacy `prop_crtd` topic.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data, or null if parsing fails
+ */
 export function parseProposalCreatedEvent(
   event: SorobanEvent
 ): ProposalCreatedEventData | null {
@@ -357,6 +407,14 @@ export function parseProposalCreatedEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded VoteCastEventData.
+ *
+ * Supports both the modern `VoteCast` topic and the legacy `vote` topic.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data, or null if parsing fails
+ */
 export function parseVoteCastEvent(event: SorobanEvent): VoteCastEventData | null {
   if (event.topic[0] === TOPICS.legacyVoteCast) {
     if (!Array.isArray(event.value) || event.value.length < 3 || event.topic.length < 2) {
@@ -392,6 +450,12 @@ export function parseVoteCastEvent(event: SorobanEvent): VoteCastEventData | nul
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded VoteCastWithReasonEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data including reason string, or null if parsing fails
+ */
 export function parseVoteCastWithReasonEvent(
   event: SorobanEvent
 ): VoteCastWithReasonEventData | null {
@@ -412,6 +476,12 @@ export function parseVoteCastWithReasonEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalQueuedEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with proposal ID and ETA, or null if parsing fails
+ */
 export function parseProposalQueuedEvent(
   event: SorobanEvent
 ): ProposalQueuedEventData | null {
@@ -437,6 +507,14 @@ export function parseProposalQueuedEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalExecutedEventData.
+ *
+ * Supports both the modern `ProposalExecuted` topic and the legacy `execute` topic.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with proposal ID and caller, or null if parsing fails
+ */
 export function parseProposalExecutedEvent(
   event: SorobanEvent
 ): ProposalExecutedEventData | null {
@@ -459,6 +537,12 @@ export function parseProposalExecutedEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalCancelledEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with proposal ID and caller, or null if parsing fails
+ */
 export function parseProposalCancelledEvent(
   event: SorobanEvent
 ): ProposalCancelledEventData | null {
@@ -472,6 +556,12 @@ export function parseProposalCancelledEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded ProposalExpiredEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with proposal ID and expiry ledger, or null if parsing fails
+ */
 export function parseProposalExpiredEvent(
   event: SorobanEvent
 ): ProposalExpiredEventData | null {
@@ -487,6 +577,12 @@ export function parseProposalExpiredEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded GovernorUpgradedEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with old and new contract hashes, or null if parsing fails
+ */
 export function parseGovernorUpgradedEvent(
   event: SorobanEvent
 ): GovernorUpgradedEventData | null {
@@ -498,6 +594,12 @@ export function parseGovernorUpgradedEvent(
   };
 }
 
+/**
+ * Parse a Soroban event into a decoded ConfigUpdatedEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with old and new governor settings, or null if parsing fails
+ */
 export function parseConfigUpdatedEvent(
   event: SorobanEvent
 ): ConfigUpdatedEventData | null {
@@ -514,6 +616,14 @@ export function parseConfigUpdatedEvent(
   };
 }
 
+/**
+ * Subscribe to real-time ProposalCreated events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ProposalCreated event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToProposals(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -522,6 +632,15 @@ export function subscribeToProposals(
   return createTopicSubscription(governorAddress, TOPICS.proposalCreated, callback, opts);
 }
 
+/**
+ * Subscribe to real-time VoteCast events for a specific proposal via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param proposalId - Only fire callback for votes on this proposal ID
+ * @param callback - Fired on each new matching VoteCast event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToVotes(
   governorAddress: string,
   proposalId: bigint,
@@ -537,6 +656,15 @@ export function subscribeToVotes(
   );
 }
 
+/**
+ * Subscribe to real-time VoteCastWithReason events for a specific proposal via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param proposalId - Only fire callback for votes with reason on this proposal ID
+ * @param callback - Fired on each new matching VoteCastWithReason event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToVoteCastWithReason(
   governorAddress: string,
   proposalId: bigint,
@@ -552,6 +680,16 @@ export function subscribeToVoteCastWithReason(
   );
 }
 
+/**
+ * Fetch all ProposalCreated events from a given ledger onward.
+ *
+ * Paginates through all available events up to the latest ledger.
+ *
+ * @param governorAddress - Governor contract address to query
+ * @param fromLedger - Earliest ledger to start scanning from
+ * @param opts - Subscription configuration (network, retry)
+ * @returns Array of decoded Soroban events
+ */
 export async function getProposalEvents(
   governorAddress: string,
   fromLedger: number,
@@ -587,6 +725,14 @@ export async function getProposalEvents(
   return events;
 }
 
+/**
+ * Subscribe to real-time ProposalQueued events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ProposalQueued event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToProposalQueued(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -595,6 +741,14 @@ export function subscribeToProposalQueued(
   return createTopicSubscription(governorAddress, TOPICS.proposalQueued, callback, opts);
 }
 
+/**
+ * Subscribe to real-time ProposalExecuted events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ProposalExecuted event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToProposalExecuted(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -603,6 +757,14 @@ export function subscribeToProposalExecuted(
   return createTopicSubscription(governorAddress, TOPICS.proposalExecuted, callback, opts);
 }
 
+/**
+ * Subscribe to real-time ProposalCancelled events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ProposalCancelled event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToProposalCancelled(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -611,6 +773,14 @@ export function subscribeToProposalCancelled(
   return createTopicSubscription(governorAddress, TOPICS.proposalCancelled, callback, opts);
 }
 
+/**
+ * Subscribe to real-time ProposalExpired events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ProposalExpired event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToProposalExpired(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -619,6 +789,14 @@ export function subscribeToProposalExpired(
   return createTopicSubscription(governorAddress, TOPICS.proposalExpired, callback, opts);
 }
 
+/**
+ * Subscribe to real-time GovernorUpgraded events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new GovernorUpgraded event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToGovernorUpgraded(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -627,6 +805,14 @@ export function subscribeToGovernorUpgraded(
   return createTopicSubscription(governorAddress, TOPICS.governorUpgraded, callback, opts);
 }
 
+/**
+ * Subscribe to real-time ConfigUpdated events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new ConfigUpdated event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToConfigUpdated(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,
@@ -635,6 +821,12 @@ export function subscribeToConfigUpdated(
   return createTopicSubscription(governorAddress, TOPICS.configUpdated, callback, opts);
 }
 
+/**
+ * Parse a Soroban event into a decoded PauseEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with pauser address and ledger, or null if parsing fails
+ */
 export function parsePauseEvent(event: SorobanEvent): PauseEventData | null {
   if (event.topic[0] !== TOPICS.paused) return null;
   if (!isRecord(event.value)) return null;
@@ -654,6 +846,12 @@ export function parsePauseEvent(event: SorobanEvent): PauseEventData | null {
   return { pauser, ledger };
 }
 
+/**
+ * Parse a Soroban event into a decoded UnpauseEventData.
+ *
+ * @param event - Raw Soroban event to parse
+ * @returns Decoded event data with ledger, or null if parsing fails
+ */
 export function parseUnpauseEvent(event: SorobanEvent): UnpauseEventData | null {
   if (event.topic[0] !== TOPICS.unpaused) return null;
   if (!isRecord(event.value)) return null;
@@ -672,6 +870,14 @@ export function subscribeToPauseEvents(
   return createTopicSubscription(governorAddress, TOPICS.paused, callback, opts);
 }
 
+/**
+ * Subscribe to real-time Unpaused events via polling.
+ *
+ * @param governorAddress - Governor contract address to monitor
+ * @param callback - Fired on each new Unpaused event
+ * @param opts - Subscription configuration (network, interval, retry)
+ * @returns Unsubscribe function to stop polling
+ */
 export function subscribeToUnpauseEvents(
   governorAddress: string,
   callback: (event: SorobanEvent) => void,

@@ -1,0 +1,60 @@
+name: Weekly Benchmarks
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  contract-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Run contract load tests
+        run: cargo test load_test_1000_votes load_test_concurrent_votes_round_robin -- --nocapture
+        working-directory: ./contracts
+
+  frontend-perf:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build SDK
+        run: pnpm --filter @nebgov/sdk run build
+        working-directory: .
+      - name: Build app
+        env:
+          NEXT_PUBLIC_NETWORK: testnet
+          NEXT_PUBLIC_GOVERNOR_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+          NEXT_PUBLIC_TIMELOCK_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+          NEXT_PUBLIC_VOTES_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+        run: pnpm next build
+      - name: Start app
+        run: pnpm dev &
+        env:
+          NEXT_PUBLIC_NETWORK: testnet
+          NEXT_PUBLIC_GOVERNOR_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+          NEXT_PUBLIC_TIMELOCK_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+          NEXT_PUBLIC_VOTES_ADDRESS: GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF
+      - name: Wait for app ready
+        run: npx wait-on http://localhost:3000
+      - name: Run benchmark E2E tests
+        run: pnpm test:e2e -- --grep "renders 100 proposals"
