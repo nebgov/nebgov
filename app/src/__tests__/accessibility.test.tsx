@@ -4,7 +4,7 @@
 /// <reference types="@testing-library/jest-dom" />
 
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 declare global {
@@ -15,18 +15,21 @@ declare global {
   }
 }
 import { VotingModal } from '../components/VotingModal';
+import { DelegateModal } from '../components/DelegateModal';
 import { VoteSupport } from '@nebgov/sdk';
 
 // Extend Jest matchers
 expect.extend(toHaveNoViolations);
 
 // Mock the wallet context
+const mockUseWallet = jest.fn(() => ({
+  isConnected: true,
+  connect: jest.fn(),
+  publicKey: 'GTEST123...',
+}));
+
 jest.mock('../lib/wallet-context', () => ({
-  useWallet: () => ({
-    isConnected: true,
-    connect: jest.fn(),
-    publicKey: 'GTEST123...',
-  }),
+  useWallet: () => mockUseWallet(),
 }));
 
 // Mock react-hot-toast
@@ -106,7 +109,13 @@ describe('Accessibility Tests', () => {
       });
     });
 
-    it('should provide context for disabled state', () => {
+    it('should provide context for disabled state when no delegatee is available and wallet is disconnected', () => {
+      mockUseWallet.mockReturnValueOnce({
+        isConnected: false,
+        connect: jest.fn(),
+        publicKey: null,
+      });
+
       const propsWithoutDelegatee = {
         ...defaultProps,
         delegatee: null,
@@ -117,6 +126,34 @@ describe('Accessibility Tests', () => {
       const confirmButton = getByRole('button', { name: /confirm & sign/i });
       expect(confirmButton).toBeDisabled();
       expect(confirmButton).toHaveAttribute('aria-describedby', 'delegation-required');
+    });
+  });
+
+  describe('DelegateModal', () => {
+    const defaultDelegateProps = {
+      open: true,
+      onClose: jest.fn(),
+      currentDelegatee: 'GTEST123...',
+      prefillAddress: 'GBFUUXATVOGXGD4KS3I423QFZSPE4ZFOQ3TCJVWFUYSIPULXIRVRE2DT',
+    };
+
+    it('should not have accessibility violations', async () => {
+      const { container } = render(<DelegateModal {...defaultDelegateProps} />);
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it('should have proper ARIA attributes for modal', () => {
+      const { getByRole } = render(<DelegateModal {...defaultDelegateProps} />);
+      const dialog = getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'delegate-modal-title');
+      expect(dialog).toHaveAttribute('aria-describedby', 'delegate-modal-description');
+    });
+
+    it('should move focus to the delegate address input when opened', async () => {
+      const { getByTestId } = render(<DelegateModal {...defaultDelegateProps} />);
+      await waitFor(() => expect(document.activeElement).toBe(getByTestId('delegatee-input')));
     });
   });
 

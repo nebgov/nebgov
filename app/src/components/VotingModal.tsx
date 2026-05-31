@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import toast from "react-hot-toast";
 import { GovernorClient, VoteSupport, VoteType, computeQuadraticWeight, type Network } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
+import { AccessibleDialog } from "./AccessibleDialog";
 
 interface Props {
   open?: boolean;
@@ -83,6 +84,7 @@ export function VotingModal({
   const resolvedDelegatee = delegatee ?? publicKey ?? null;
   const resolvedVotingPower = votingPower ?? 0n;
   const [support, setSupport] = useState<VoteSupport | null>(preselectedSupport ?? null);
+  const firstOptionRef = useRef<HTMLButtonElement | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [estimatingFee, setEstimatingFee] = useState(false);
@@ -139,37 +141,6 @@ export function VotingModal({
       cancelled = true;
     };
   }, [governorClient, resolvedDelegatee, resolvedOpen, resolvedProposalId, support]);
-
-  // Focus management for modal
-  useEffect(() => {
-    if (resolvedOpen) {
-      // Focus the modal when it opens
-      const modal = document.getElementById('voting-modal');
-      if (modal) {
-        modal.focus();
-      }
-    }
-  }, [resolvedOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && resolvedOpen) {
-        onClose();
-      }
-    };
-    
-    if (resolvedOpen) {
-      document.addEventListener('keydown', handleEscape);
-      // Prevent body scroll when modal is open
-      document.body.style.overflow = 'hidden';
-    }
-    
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
-    };
-  }, [resolvedOpen, onClose]);
 
   if (!resolvedOpen) return null;
 
@@ -238,18 +209,15 @@ export function VotingModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center sm:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="voting-modal-title"
-      aria-describedby="voting-modal-description"
+    <AccessibleDialog
+      open={resolvedOpen}
+      onClose={onClose}
+      labelledBy="voting-modal-title"
+      describedBy="voting-modal-description"
+      initialFocusRef={firstOptionRef}
+      className=""
     >
-      <div
-        id="voting-modal"
-        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800"
-        tabIndex={-1}
-      >
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800">
         <div className="flex items-start justify-between mb-3">
           <div>
             <h2 id="voting-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">Cast Your Vote</h2>
@@ -347,9 +315,10 @@ export function VotingModal({
               { label: "For", value: VoteSupport.For, color: "border-green-500 text-green-700 bg-green-50" },
               { label: "Against", value: VoteSupport.Against, color: "border-red-500 text-red-700 bg-red-50" },
               { label: "Abstain", value: VoteSupport.Abstain, color: "border-gray-400 text-gray-600 bg-gray-50" },
-            ].map(({ label, value, color }) => (
+            ].map(({ label, value, color }, index) => (
               <button
                 key={label}
+                ref={index === 0 ? firstOptionRef : undefined}
                 onClick={() => setSupport(value)}
                 className={`flex-1 border-2 rounded-lg py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                   support === value ? color : "border-gray-200 text-gray-500 hover:border-gray-300"
@@ -403,6 +372,6 @@ export function VotingModal({
           </div>
         )}
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }

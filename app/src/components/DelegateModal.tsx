@@ -4,11 +4,12 @@
  * Delegation modal - lets users delegate or revoke delegation.
  */
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import toast from "react-hot-toast";
 import { VotesClient, type Network } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
+import { AccessibleDialog } from "./AccessibleDialog";
 
 interface Props {
   open: boolean;
@@ -67,23 +68,11 @@ export function DelegateModal({
   const [delegatee, setDelegatee] = useState(prefillAddress || "");
   const [submitting, setSubmitting] = useState(false);
   const { isConnected, publicKey } = useWallet();
+  const initialFocusRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setDelegatee(prefillAddress ?? "");
   }, [open, prefillAddress]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -194,19 +183,20 @@ export function DelegateModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center sm:p-6"
-      data-testid="delegate-modal"
+    <AccessibleDialog
+      open={open}
+      onClose={onClose}
+      labelledBy="delegate-modal-title"
+      describedBy="delegate-modal-description"
+      initialFocusRef={initialFocusRef}
+      className=""
+      testId="delegate-modal"
     >
-      <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-      >
-        <h2 className="mb-1 text-lg font-bold text-gray-900">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h2 id="delegate-modal-title" className="mb-1 text-lg font-bold text-gray-900">
           Delegate Voting Power
         </h2>
-        <p className="mb-4 text-sm text-gray-500">
+        <p id="delegate-modal-description" className="mb-4 text-sm text-gray-500">
           Delegate to yourself to activate your voting power, or choose another
           address.
         </p>
@@ -240,6 +230,7 @@ export function DelegateModal({
           </div>
 
           <input
+            ref={initialFocusRef}
             type="text"
             placeholder="Stellar address (G...)"
             data-testid="delegatee-input"
@@ -299,6 +290,6 @@ export function DelegateModal({
           </div>
         </form>
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }
