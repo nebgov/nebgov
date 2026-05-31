@@ -318,14 +318,14 @@ function ProposalsPageInner() {
       </div>
 
       {/* Error */}
-      {error && (
+      {/* {error && (
         <ErrorState
           title="Error loading proposals"
           message={error}
           onRetry={() => fetchProposals()}
           className="mb-6"
         />
-      )}
+      )} */}
 
       {/* Loading skeleton */}
       {loading && (
@@ -353,17 +353,17 @@ function ProposalsPageInner() {
             />
           </svg>
           <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
-            No proposals
+            No proposals yet
           </h3>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Get started by creating a new proposal.
+            Be the first to shape this governance. Create a proposal to get started.
           </p>
           <div className="mt-6">
             <Link
               href="/propose"
               className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
             >
-              New Proposal
+              Create Proposal
             </Link>
           </div>
         </div>
