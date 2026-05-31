@@ -54,6 +54,8 @@ export enum GovernorErrorCode {
   TransactionTimeout = 103,
   InvalidArguments = 104,
   UnknownState = 105,
+  ContractPanic = 106,
+  VotingPeriodClosed = 107,
 }
 
 const GOVERNOR_MESSAGES: Record<GovernorErrorCode, string> = {
@@ -106,10 +108,12 @@ const GOVERNOR_MESSAGES: Record<GovernorErrorCode, string> = {
   [GovernorErrorCode.TransactionTimeout]: "Transaction timed out",
   [GovernorErrorCode.InvalidArguments]: "Invalid arguments",
   [GovernorErrorCode.UnknownState]: "Unknown proposal state",
+  [GovernorErrorCode.ContractPanic]: "Contract panicked during execution",
+  [GovernorErrorCode.VotingPeriodClosed]: "Voting period has closed",
 };
 
 export class GovernorError extends Error {
-  readonly name = "GovernorError";
+  readonly name: string = "GovernorError";
 
   constructor(
     public readonly code: GovernorErrorCode,
@@ -118,6 +122,62 @@ export class GovernorError extends Error {
   ) {
     super(message);
     Object.setPrototypeOf(this, GovernorError.prototype);
+  }
+
+  static ContractPanic = class ContractPanic extends GovernorError {
+    readonly name = "ContractPanic";
+    constructor(message: string, cause?: unknown) {
+      super(GovernorErrorCode.ContractPanic, message, cause);
+      Object.setPrototypeOf(this, ContractPanic.prototype);
+    }
+  };
+
+  static ProposalNotFound = class ProposalNotFound extends GovernorError {
+    readonly name = "ProposalNotFound";
+    constructor(message: string, cause?: unknown) {
+      super(GovernorErrorCode.ProposalNotFound, message, cause);
+      Object.setPrototypeOf(this, ProposalNotFound.prototype);
+    }
+  };
+
+  static VotingPeriodClosed = class VotingPeriodClosed extends GovernorError {
+    readonly name = "VotingPeriodClosed";
+    constructor(message: string, cause?: unknown) {
+      super(GovernorErrorCode.VotingPeriodClosed, message, cause);
+      Object.setPrototypeOf(this, VotingPeriodClosed.prototype);
+    }
+  };
+
+  static AlreadyVoted = class AlreadyVoted extends GovernorError {
+    readonly name = "AlreadyVoted";
+    constructor(message: string, cause?: unknown) {
+      super(GovernorErrorCode.AlreadyVoted, message, cause);
+      Object.setPrototypeOf(this, AlreadyVoted.prototype);
+    }
+  };
+
+  static ProposalNotSucceeded = class ProposalNotSucceeded extends GovernorError {
+    readonly name = "ProposalNotSucceeded";
+    constructor(message: string, cause?: unknown) {
+      super(GovernorErrorCode.ProposalNotSucceeded, message, cause);
+      Object.setPrototypeOf(this, ProposalNotSucceeded.prototype);
+    }
+  };
+}
+
+export class RpcConnectionError extends GovernorError {
+  readonly name = "RpcConnectionError";
+  constructor(message: string, cause?: unknown) {
+    super(GovernorErrorCode.RpcNotFound, message, cause);
+    Object.setPrototypeOf(this, RpcConnectionError.prototype);
+  }
+}
+
+export class DeserializationError extends GovernorError {
+  readonly name = "DeserializationError";
+  constructor(message: string, cause?: unknown) {
+    super(GovernorErrorCode.SimulationFailed, message, cause);
+    Object.setPrototypeOf(this, DeserializationError.prototype);
   }
 }
 
@@ -215,6 +275,7 @@ export interface SorobanRpcError {
 
 function errorText(raw: SorobanRpcError | string | null | undefined): string {
   if (typeof raw === "string") return raw;
+  if (raw instanceof Error) return raw.message;
   if (!raw || typeof raw !== "object") return "";
   return typeof raw.error === "string" ? raw.error : "";
 }
@@ -262,26 +323,69 @@ export function extractContractErrorCode(
 export function parseGovernorError(
   raw: SorobanRpcError | string | null | undefined,
   cause?: unknown,
-): GovernorError {
+  context?: string,
+): GovernorError | RpcConnectionError {
+  const errStr = errorText(raw) || "";
+  const errStrLower = errStr.toLowerCase();
+
+  if (
+    errStrLower.includes("econnrefused") ||
+    errStrLower.includes("connection refused") ||
+    errStrLower.includes("fetch failed") ||
+    errStrLower.includes("rpc unreachable") ||
+    errStrLower.includes("invalid-rpc")
+  ) {
+    return new RpcConnectionError(
+      context ? `${context}: ${errStr || "RPC unreachable"}` : (errStr || "RPC unreachable"),
+      cause,
+    );
+  }
+
+  if (errStrLower.includes("panic")) {
+    return new GovernorError.ContractPanic(
+      context ? `${context}: ${errStr || "Contract panicked"}` : (errStr || "Contract panicked"),
+      cause,
+    );
+  }
+
   const contractCode = extractContractErrorCode(raw);
   if (contractCode !== null) {
     const code = contractCode as GovernorErrorCode;
-    const message =
+    let message =
       GOVERNOR_MESSAGES[code] ?? `Governor contract error #${contractCode}`;
-    return new GovernorError(code, message, cause);
+    if (context) {
+      message = `${context}: ${message}`;
+    }
+    
+    switch (code) {
+      case GovernorErrorCode.ProposalNotFound:
+        return new GovernorError.ProposalNotFound(message, cause);
+      case GovernorErrorCode.AlreadyVoted:
+        return new GovernorError.AlreadyVoted(message, cause);
+      case GovernorErrorCode.ProposalNotSucceeded:
+        return new GovernorError.ProposalNotSucceeded(message, cause);
+      case 31 as GovernorErrorCode: // VotingEnded
+        return new GovernorError.VotingPeriodClosed(message, cause);
+      default:
+        return new GovernorError(code, message, cause);
+    }
   }
 
   if (hasErrorStatus(raw)) {
     return new GovernorError(
       GovernorErrorCode.TransactionFailed,
-      `${GOVERNOR_MESSAGES[GovernorErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      context
+        ? `${context}: ${errorText(raw) || "unknown"}`
+        : `${GOVERNOR_MESSAGES[GovernorErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
       cause,
     );
   }
 
   return new GovernorError(
     GovernorErrorCode.SimulationFailed,
-    `${GOVERNOR_MESSAGES[GovernorErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    context
+      ? `${context}: ${errorText(raw) || "unknown"}`
+      : `${GOVERNOR_MESSAGES[GovernorErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
     cause,
   );
 }

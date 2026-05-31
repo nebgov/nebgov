@@ -615,10 +615,8 @@ export class VotesClient {
   async getVotingPowerDistribution(
     fromLedger?: number,
   ): Promise<VotingPowerDistribution> {
-    const [delegationMap, totalSupply] = await Promise.all([
-      this.buildDelegationMap(fromLedger),
-      this.getTotalSupply(),
-    ]);
+    const delegationMap = await this.buildDelegationMap(fromLedger);
+    const totalSupply = await this.getTotalSupply();
 
     if (delegationMap.size === 0) {
       return {
