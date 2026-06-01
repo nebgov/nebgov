@@ -55,6 +55,9 @@ export class TreasuryClient {
     treasuryAddress: string;
     rpcUrl?: string;
   }) {
+    if (typeof window !== "undefined" && (window as any).__MOCK_TREASURY_CLIENT__) {
+      return (window as any).__MOCK_TREASURY_CLIENT__;
+    }
     const rpc = opts.rpcUrl ?? RPC_URLS[opts.network];
     this.server = new SorobanRpc.Server(rpc, { allowHttp: false });
     this.contract = new Contract(opts.treasuryAddress);
@@ -297,6 +300,36 @@ export class TreasuryClient {
     const result = await this.server.sendTransaction(signed);
     if (result.status === "ERROR") {
       throw new Error(`approve failed: ${JSON.stringify(result)}`);
+    }
+    await this.pollSuccess(result.hash);
+  }
+
+  async cancel(
+    signerPublicKey: string,
+    txId: number,
+    signUnsignedXdr: (xdr: string) => Promise<string>
+  ): Promise<void> {
+    const account = await this.server.getAccount(signerPublicKey);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "cancel",
+          nativeToScVal(signerPublicKey, { type: "address" }),
+          nativeToScVal(txId, { type: "u64" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await this.server.prepareTransaction(tx);
+    const signedXdr = await signUnsignedXdr(prepared.toXDR());
+    const signed = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);
+    const result = await this.server.sendTransaction(signed);
+    if (result.status === "ERROR") {
+      throw new Error(`cancel failed: ${JSON.stringify(result)}`);
     }
     await this.pollSuccess(result.hash);
   }

@@ -83,6 +83,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Initialise the kit once — only on the client
   useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).__MOCK_WALLET__) {
+      const mock = (window as any).__MOCK_WALLET__;
+      setAddress(truncateAddress(mock.publicKey));
+      setPublicKey(mock.publicKey);
+    }
     const network = appWalletNetwork();
     kitRef.current = new StellarWalletsKit({
       network,
@@ -92,6 +97,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const connect = useCallback(async () => {
+    if (typeof window !== "undefined" && (window as any).__MOCK_WALLET__) {
+      const mock = (window as any).__MOCK_WALLET__;
+      setAddress(truncateAddress(mock.publicKey));
+      setPublicKey(mock.publicKey);
+      return;
+    }
     const kit = kitRef.current;
     if (!kit) return;
 
@@ -154,6 +165,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const signTransaction = useCallback(
     async (unsignedXdr: string) => {
+      if (typeof window !== "undefined" && (window as any).__MOCK_WALLET__) {
+        const mock = (window as any).__MOCK_WALLET__;
+        if (mock.signTransaction) {
+          return mock.signTransaction(unsignedXdr);
+        }
+        return unsignedXdr;
+      }
       const kit = kitRef.current;
       if (!kit || !publicKey) {
         throw new Error("Connect your wallet first.");

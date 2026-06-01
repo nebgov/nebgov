@@ -61,7 +61,7 @@ export interface MetadataUploadOptions {
   customUploader?: (content: string) => Promise<string>;
 }
 
-import { GovernorError, GovernorErrorCode } from "./errors";
+import { GovernorError, GovernorErrorCode, RpcConnectionError, DeserializationError, parseGovernorError } from "./errors";
 import { hexToBytes32, withRetry } from "./utils";
 import { Logger } from "./logger";
 
@@ -143,6 +143,26 @@ export class GovernorClient {
     fn: () => Promise<T>,
     retryOn?: (e: unknown) => boolean,
   ): Promise<T> {
+    try {
+      return await withRetry(fn, {
+        maxAttempts: this.config.maxAttempts ?? 3,
+        baseDelayMs: this.config.baseDelayMs ?? 1000,
+        retryOn,
+        onRetry: (attempt, error) => {
+          console.debug(`[GovernorClient] Retry attempt ${attempt} due to error:`, error);
+        },
+      });
+    } catch (e) {
+      const parsed = parseGovernorError(e as any);
+      if (parsed.name === "RpcConnectionError" || parsed.name === "ContractPanic") {
+        throw parsed;
+      }
+      if (e instanceof GovernorError) {
+        throw e;
+      }
+      console.debug(`[GovernorClient] Retry execution failed completely:`, e);
+      throw new Error(`Retry attempts exhausted: ${e instanceof Error ? e.message : String(e)}`);
+    }
     return withRetry(fn, {
       maxAttempts: this.config.maxAttempts ?? 3,
       baseDelayMs: this.config.baseDelayMs ?? 1000,
@@ -276,7 +296,7 @@ export class GovernorClient {
 
       const result = await this.server.sendTransaction(prepared);
       if (result.status === "ERROR") {
-        throw new Error(`Transaction failed: ${JSON.stringify(result)}`);
+        throw parseGovernorError(result, undefined, "propose failed");
       }
 
       const confirmed = await this.pollForConfirmation(result.hash);
@@ -794,11 +814,19 @@ export class GovernorClient {
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
       if (result.status === "ERROR") {
-        throw new Error(`castVote failed: ${JSON.stringify(result)}`);
+        throw parseGovernorError(result, undefined, "castVote failed");
       }
       await this.pollForConfirmation(result.hash);
       return result.hash;
     }, (e) => this.isRetryableSubmissionError(e));
+  }
+
+  async vote(
+    signer: Keypair,
+    proposalId: bigint,
+    support: VoteSupport,
+  ): Promise<string> {
+    return this.castVote(signer, proposalId, support);
   }
 
   /**
@@ -1071,7 +1099,7 @@ export class GovernorClient {
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
       if (result.status === "ERROR") {
-        throw new Error(`queue failed: ${JSON.stringify(result)}`);
+        throw parseGovernorError(result, undefined, "queue failed");
       }
       await this.pollForConfirmation(result.hash);
       return result.hash;
@@ -1104,7 +1132,7 @@ export class GovernorClient {
     const signed = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);
     const result = await this.server.sendTransaction(signed);
     if (result.status === "ERROR") {
-      throw new Error(`queueWithSign failed: ${JSON.stringify(result)}`);
+      throw parseGovernorError(result, undefined, "queueWithSign failed");
     }
     await this.pollForConfirmation(result.hash);
     return result.hash;
@@ -1139,7 +1167,7 @@ export class GovernorClient {
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
       if (result.status === "ERROR") {
-        throw new Error(`execute failed: ${JSON.stringify(result)}`);
+        throw parseGovernorError(result, undefined, "execute failed");
       }
       await this.pollForConfirmation(result.hash);
       return result.hash;
@@ -1175,7 +1203,7 @@ export class GovernorClient {
     const signed = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);
     const result = await this.server.sendTransaction(signed);
     if (result.status === "ERROR") {
-      throw new Error(`executeWithSign failed: ${JSON.stringify(result)}`);
+      throw parseGovernorError(result, undefined, "executeWithSign failed");
     }
     await this.pollForConfirmation(result.hash);
     return result.hash;
@@ -1300,19 +1328,23 @@ export class GovernorClient {
       );
 
       if (SorobanRpc.Api.isSimulationError(result)) {
-        throw new Error(`Simulation error: ${result.error}`);
+        throw parseGovernorError(result);
       }
 
       const raw = (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result?.retval;
-      if (!raw) throw new Error("No return value");
+      if (!raw) throw parseGovernorError({ error: "No return value" });
 
-      const [votesFor, votesAgainst, votesAbstain] = scValToNative(raw) as [
-        bigint,
-        bigint,
-        bigint,
-      ];
-      return { votesFor, votesAgainst, votesAbstain };
+      try {
+        const [votesFor, votesAgainst, votesAbstain] = scValToNative(raw) as [
+          bigint,
+          bigint,
+          bigint,
+        ];
+        return { votesFor, votesAgainst, votesAbstain };
+      } catch (e) {
+        throw new DeserializationError("Malformed XDR response", e);
+      }
     });
   }
 
@@ -2378,7 +2410,7 @@ export class GovernorClient {
   private async pollForConfirmation(
     hash: string,
     retries = 10,
-    delayMs = 2000,
+    delayMs = this.config.baseDelayMs ?? 2000,
   ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse> {
     for (let i = 0; i < retries; i++) {
       await new Promise((r) => setTimeout(r, delayMs));
@@ -2415,12 +2447,12 @@ export class GovernorClient {
       );
 
       if (SorobanRpc.Api.isSimulationError(result)) {
-        throw new Error(`Simulation error: ${result.error}`);
+        throw parseGovernorError(result);
       }
 
       const raw = (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result?.retval;
-      if (!raw) throw new Error("No return value");
+      if (!raw) throw parseGovernorError({ error: "No return value" });
 
       return scValToNative(raw) as Proposal;
     });

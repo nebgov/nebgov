@@ -57,9 +57,12 @@ describe("VotesClient", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockScValToNative.mockReset();
+    mockScValToNative.mockReturnValue(1n);
+    mockNativeToScVal.mockReset();
+    mockNativeToScVal.mockReturnValue({} as xdr.ScVal);
     mockGetAccount.mockResolvedValue(new Account(validGAddr, "1"));
     mockIsSimulationError.mockReturnValue(false);
-    mockNativeToScVal.mockReturnValue({} as xdr.ScVal);
     mockGetLatestLedger.mockResolvedValue({ sequence: 100000 });
     mockGetEvents.mockResolvedValue({ events: [] });
 
@@ -386,6 +389,7 @@ describe("VotesClient", () => {
     // Queue scValToNative return values for event decoding phase
     for (const e of events) {
       mockScValToNative
+        .mockReturnValueOnce("del_chsh")                                    // topic[0]
         .mockReturnValueOnce(e.delegator)                                   // topic[1]
         .mockReturnValueOnce([e.previousDelegate, e.newDelegatee]);        // value
     }
@@ -405,12 +409,16 @@ describe("VotesClient", () => {
         { delegator: delegatorC, previousDelegate: null, newDelegatee: delegateY, ledger: 99002 },
       ]);
 
-      // getVotes(delegateX) = 200, getVotes(delegateY) = 50
+      // getVotes(delegateX) = 200, getBaseVotes(delegateX) = 200, getVotes(delegateY) = 50, getBaseVotes(delegateY) = 50
       mockSimulate
+        .mockResolvedValueOnce({ result: { retval: {} } })
+        .mockResolvedValueOnce({ result: { retval: {} } })
         .mockResolvedValueOnce({ result: { retval: {} } })
         .mockResolvedValueOnce({ result: { retval: {} } });
       mockScValToNative
         .mockReturnValueOnce(200n)
+        .mockReturnValueOnce(200n)
+        .mockReturnValueOnce(50n)
         .mockReturnValueOnce(50n);
 
       const top = await client.getTopDelegates(2, 99000);
@@ -443,10 +451,16 @@ describe("VotesClient", () => {
       mockSimulate
         .mockResolvedValueOnce({ result: { retval: {} } })
         .mockResolvedValueOnce({ result: { retval: {} } })
+        .mockResolvedValueOnce({ result: { retval: {} } })
+        .mockResolvedValueOnce({ result: { retval: {} } })
+        .mockResolvedValueOnce({ result: { retval: {} } })
         .mockResolvedValueOnce({ result: { retval: {} } });
       mockScValToNative
         .mockReturnValueOnce(300n)
+        .mockReturnValueOnce(300n)
         .mockReturnValueOnce(200n)
+        .mockReturnValueOnce(200n)
+        .mockReturnValueOnce(100n)
         .mockReturnValueOnce(100n);
 
       const top = await client.getTopDelegates(1, 99000);
@@ -525,8 +539,10 @@ describe("VotesClient", () => {
       // Event 0: delegatorA → delegateX
       // Event 1: delegatorA → delegateY (re-delegation)
       mockScValToNative
+        .mockReturnValueOnce("del_chsh")
         .mockReturnValueOnce(delegatorA)
         .mockReturnValueOnce([null, delegateX])
+        .mockReturnValueOnce("del_chsh")
         .mockReturnValueOnce(delegatorA)
         .mockReturnValueOnce([delegateX, delegateY]);
 
