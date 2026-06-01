@@ -35,6 +35,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | `contracts/treasury`         | Multi-sig treasury (Rust/Soroban)               |
 | `sdk/`                       | TypeScript SDK (`@nebgov/sdk`)                  |
 | `app/`                       | Next.js governance dashboard                    |
+| `packages/cli`               | Terminal CLI (`@nebgov/cli`)                    |
 
 ---
 
@@ -63,6 +64,17 @@ Then open:
 For full setup instructions and contribution guidelines, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 For a step-by-step local development guide, see [docs/local-development.md](./docs/local-development.md).
+
+### CLI
+
+Interact with any NebGov DAO directly from your terminal:
+
+```bash
+pnpm --filter @nebgov/cli build
+nebgov --help
+```
+
+See [`packages/cli/README.md`](./packages/cli/README.md) for the full command reference.
 
 ---
 
