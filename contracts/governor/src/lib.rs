@@ -47,6 +47,8 @@ pub enum GovernorError {
     VotePeriodTooShort = 28,
     ExecutionWindowZero = 29,
     TooManyCalldataEntries = 30,
+    /// Voting window is not currently open (proposal is pending or voting has ended).
+    VotingNotActive = 31,
 }
 
 /// Cross-contract interface for the Timelock contract.
@@ -802,7 +804,7 @@ impl GovernorContract {
 
         let current = env.ledger().sequence();
         if current < proposal.start_ledger || current > proposal.end_ledger {
-            env.panic_with_error(GovernorError::VotingEnded);
+            env.panic_with_error(GovernorError::VotingNotActive);
         }
 
         // Look up the voter's snapshot voting power at the proposal's start ledger
@@ -877,7 +879,7 @@ impl GovernorContract {
 
         let current = env.ledger().sequence();
         if current < proposal.start_ledger || current > proposal.end_ledger {
-            env.panic_with_error(GovernorError::VotingEnded);
+            env.panic_with_error(GovernorError::VotingNotActive);
         }
 
         // Look up the voter's snapshot voting power at the proposal's start ledger
