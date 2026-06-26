@@ -188,4 +188,77 @@ describe("governor event indexing (integration)", () => {
     expect(rows.rows.length).toBe(1);
     expect(rows.rows[0].new_wasm_hash).toBe("fffefdj");
   });
+
+  it("indexes ProposalCancelled from cancel_queued() — topic=(event, caller), value=(proposal_id, queue_time, ledger)", async () => {
+    // First insert a proposal so the UPDATE has a row to affect
+    await pool.query(
+      `INSERT INTO proposals (id, proposer, description, start_ledger, end_ledger)
+       VALUES ('77', 'GCALLER00000000000000000000000000000000000000000000000000', 'cancel_queued test', 1, 100)
+       ON CONFLICT (id) DO NOTHING`,
+    );
+
+    // cancel_queued() raw event shape:
+    //   topic[0] = Symbol("ProposalCancelled")
+    //   topic[1] = caller address (NOT proposal_id)
+    //   value    = tuple (proposal_id: u32, queue_time: u32, current_ledger: u32)
+    const cancelQueuedEvent = {
+      type: "contract",
+      ledger: 210,
+      contractId: GOVERNOR,
+      topic: [
+        nativeToScVal("ProposalCancelled", { type: "symbol" }),
+        nativeToScVal("GCALLER00000000000000000000000000000000000000000000000000", { type: "address" }),
+      ],
+      value: nativeToScVal([77n, 50n, 210n]),
+    } as unknown as SorobanRpc.Api.EventResponse;
+
+    const server = new FakeServer([cancelQueuedEvent]) as unknown as SorobanRpc.Server;
+    await processEvents(
+      server,
+      { rpcUrl: "http://fake", governorAddress: GOVERNOR, pollIntervalMs: 1 },
+      1,
+    );
+
+    const rows = await pool.query(
+      "SELECT cancelled FROM proposals WHERE id = '77'",
+    );
+    expect(rows.rows.length).toBe(1);
+    expect(rows.rows[0].cancelled).toBe(true);
+  });
+
+  it("indexes ProposalCancelled from cancel() — topic=(event, proposal_id), value=(caller)", async () => {
+    await pool.query(
+      `INSERT INTO proposals (id, proposer, description, start_ledger, end_ledger)
+       VALUES ('78', 'GPROPOSER0000000000000000000000000000000000000000000000000', 'cancel test', 1, 100)
+       ON CONFLICT (id) DO NOTHING`,
+    );
+
+    // cancel() event shape:
+    //   topic[0] = Symbol("ProposalCancelled")
+    //   topic[1] = proposal_id (bigint)
+    //   value    = caller address
+    const cancelEvent = {
+      type: "contract",
+      ledger: 211,
+      contractId: GOVERNOR,
+      topic: [
+        nativeToScVal("ProposalCancelled", { type: "symbol" }),
+        nativeToScVal(78n, { type: "u64" }),
+      ],
+      value: nativeToScVal("GPROPOSER0000000000000000000000000000000000000000000000000", { type: "address" }),
+    } as unknown as SorobanRpc.Api.EventResponse;
+
+    const server = new FakeServer([cancelEvent]) as unknown as SorobanRpc.Server;
+    await processEvents(
+      server,
+      { rpcUrl: "http://fake", governorAddress: GOVERNOR, pollIntervalMs: 1 },
+      1,
+    );
+
+    const rows = await pool.query(
+      "SELECT cancelled FROM proposals WHERE id = '78'",
+    );
+    expect(rows.rows.length).toBe(1);
+    expect(rows.rows[0].cancelled).toBe(true);
+  });
 });

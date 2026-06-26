@@ -30,6 +30,8 @@ const TOPIC_MAP: Record<string, string> = {
   GovernorUpgraded: "GovernorUpgraded",
   ProposalExpired: "ProposalExpired",
   ProposalCancelled: "ProposalCancelled",
+  // cancel_queued() emits a raw symbol without PascalCase — map to same handler
+  proposal_cancelled: "ProposalCancelled",
   Paused: "Paused",
   Unpaused: "Unpaused",
 };
@@ -498,9 +500,23 @@ async function handleProposalCancelled(
   event: SorobanRpc.Api.EventResponse,
   topics: unknown[],
 ): Promise<void> {
-  // topic: (event_name, proposal_id)
-  // value: (caller)
-  const proposalId = String(topics[1] as bigint);
+  // cancel() shape:      topic=(event_name, proposal_id),  value=(caller)
+  // cancel_queued() shape: topic=(event_name, caller),     value=(proposal_id, queue_time, current_ledger)
+  //
+  // Distinguish by checking whether topics[1] looks like an address (string)
+  // or a numeric proposal id (bigint). When topics[1] is a bigint it is the
+  // cancel() shape; otherwise it is the cancel_queued() shape and the proposal
+  // id is the first element of the data tuple.
+  let proposalId: string;
+  if (typeof topics[1] === "bigint") {
+    // cancel() shape
+    proposalId = String(topics[1]);
+  } else {
+    // cancel_queued() shape: value = (proposal_id, queue_time, current_ledger)
+    const data = scValToNative(event.value) as unknown[];
+    proposalId = String(data[0] as bigint);
+  }
+
   await pool.query("UPDATE proposals SET cancelled = true WHERE id = $1", [
     proposalId,
   ]);
