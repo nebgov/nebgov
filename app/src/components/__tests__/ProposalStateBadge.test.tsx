@@ -21,11 +21,15 @@ describe("ProposalStateBadge", () => {
   });
 
   it.each(STATES)("renders a non-empty badge for state %s", (state) => {
-    const tree = renderer.create(<ProposalStateBadge state={state} />).toJSON();
+    // ProposalStateBadge always renders a single root <span>, not a
+    // fragment, so toJSON() returns one ReactTestRendererJSON node (not the
+    // array variant its return type also allows).
+    const tree = renderer.create(<ProposalStateBadge state={state} />)
+      .toJSON() as renderer.ReactTestRendererJSON;
     expect(tree).toBeTruthy();
     expect(tree).toHaveProperty("type", "span");
     expect(tree).toHaveProperty("children");
     expect(Array.isArray(tree.children)).toBe(true);
-    expect(tree.children.length).toBeGreaterThan(0);
+    expect(tree.children!.length).toBeGreaterThan(0);
   });
 });

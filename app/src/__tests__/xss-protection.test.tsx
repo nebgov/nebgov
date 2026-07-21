@@ -17,14 +17,20 @@ jest.mock('@/hooks/useGovernorConfig', () => ({
 
 // Mock next/link to avoid router context issues
 jest.mock('next/link', () => {
-  return ({ children, href }: any) => {
+  function MockLink({ children, href }: any) {
     return <a href={href}>{children}</a>;
-  };
+  }
+  MockLink.displayName = 'Link';
+  return MockLink;
 });
 
 describe('XSS Protection', () => {
   it('should sanitize script tags in proposal description', () => {
-    const maliciousDescription = '<script>alert("XSS")</script>Legitimate proposal';
+    // A blank line separates the tag from the trailing text: per CommonMark,
+    // a <script> HTML block otherwise runs to end-of-line and would swallow
+    // any same-line trailing text as part of the (dropped) raw-HTML node,
+    // which is a markdown parsing rule, not a sanitization gap.
+    const maliciousDescription = '<script>alert("XSS")</script>\n\nLegitimate proposal';
     
     render(
       <ProposalCard

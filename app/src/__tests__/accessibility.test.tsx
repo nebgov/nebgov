@@ -17,17 +17,18 @@ declare global {
 import { VotingModal } from '../components/VotingModal';
 import { ProposalStateBadge } from '../components/ProposalStateBadge';
 import { ProposalState, VoteSupport } from '@nebgov/sdk';
+import { useWallet } from '../lib/wallet-context';
 
 // Extend Jest matchers
 expect.extend(toHaveNoViolations);
 
 // Mock the wallet context
 jest.mock('../lib/wallet-context', () => ({
-  useWallet: () => ({
+  useWallet: jest.fn(() => ({
     isConnected: true,
     connect: jest.fn(),
     publicKey: 'GTEST123...',
-  }),
+  })),
 }));
 
 // Mock react-hot-toast
@@ -108,13 +109,23 @@ describe('Accessibility Tests', () => {
     });
 
     it('should provide context for disabled state', () => {
+      // VotingModal falls back to the connected wallet's own address when no
+      // explicit `delegatee` is passed (self-delegation implied — see
+      // `resolvedDelegatee` in VotingModal.tsx), so disabling the confirm
+      // button genuinely requires no address at all, not just a null prop.
+      (useWallet as jest.Mock).mockReturnValueOnce({
+        isConnected: true,
+        connect: jest.fn(),
+        publicKey: null,
+      });
+
       const propsWithoutDelegatee = {
         ...defaultProps,
         delegatee: null,
       };
-      
+
       const { getByRole } = render(<VotingModal {...propsWithoutDelegatee} />);
-      
+
       const confirmButton = getByRole('button', { name: /confirm & sign/i });
       expect(confirmButton).toBeDisabled();
       expect(confirmButton).toHaveAttribute('aria-describedby', 'delegation-required');

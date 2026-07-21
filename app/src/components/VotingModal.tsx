@@ -248,16 +248,16 @@ export function VotingModal({
   }
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="voting-modal-title"
-      aria-describedby="voting-modal-description"
     >
-      <div 
+      <div
         id="voting-modal"
         className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voting-modal-title"
+        aria-describedby="voting-modal-description"
         tabIndex={-1}
       >
         <div className="flex items-start justify-between mb-3">

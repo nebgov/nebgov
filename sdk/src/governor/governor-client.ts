@@ -12,6 +12,7 @@ import {
 import {
   GovernorConfig,
   GovernorSettings,
+  GovernorSettingsValidationLimits,
   VoteSupport,
   VoteType,
   Network,
@@ -20,10 +21,22 @@ import {
   ProposalVotes,
   CanProposeResult,
   VotingHistoryEntry,
+  TimelockInfo,
+  ExecutionGasEstimate,
 } from "../types";
 
 import { GovernorError, GovernorErrorCode, parseGovernorError } from "../errors";
 import { hexToBytes32, withRetry } from "../utils";
+
+// These modules import `GovernorClient` from this file too (each free
+// function takes the client as its first argument). The cycle is safe here
+// because every usage below is inside a method body, not at module-eval
+// time, so by the time these run, both modules have finished loading.
+import * as proposalsModule from "./proposals";
+import * as votingModule from "./voting";
+import * as queriesModule from "./queries";
+import * as executionModule from "./execution";
+import * as eventsModule from "./events";
 
 const RPC_URLS: Record<Network, string> = {
   mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
@@ -267,4 +280,228 @@ export class GovernorClient {
     }
     return proposals;
   }
+
+  /**
+   * Queue a succeeded proposal in the Timelock, starting its execution delay.
+   *
+   * The proposal must be in the Succeeded state. After queuing, it enters
+   * the Queued state and can be executed once the delay has elapsed.
+   *
+   * @param signer     Keypair authorising the call
+   * @param proposalId The ID of the proposal to queue
+   */
+  async queue(signer: Keypair, proposalId: bigint): Promise<void> {
+    return this.retry(async () => {
+      const account = await this.server.getAccount(signer.publicKey());
+
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.contract.call("queue", nativeToScVal(proposalId, { type: "u64" })),
+        )
+        .setTimeout(30)
+        .build();
+
+      const prepared = await this.server.prepareTransaction(tx);
+      prepared.sign(signer);
+
+      const result = await this.server.sendTransaction(prepared);
+      if (result.status === "ERROR") {
+        throw new GovernorError(
+          GovernorErrorCode.TransactionFailed,
+          `queue failed: ${JSON.stringify(result)}`,
+        );
+      }
+
+      await this.pollForConfirmation(result.hash);
+    }, (e) => this.isRetryableSubmissionError(e));
+  }
+
+  // ─── Delegating wrappers ────────────────────────────────────────────────
+  //
+  // The methods below restore the object-oriented call surface
+  // (`client.propose(...)`) on top of the modular free functions introduced
+  // when this class was split into governor/{proposals,voting,queries,
+  // execution,events}.ts. Each free function already takes `client` as its
+  // first argument, so these are pure 1:1 delegation — no behavior changes.
+
+  propose(...args: TailArgs<typeof proposalsModule.propose>) {
+    return proposalsModule.propose(this, ...args);
+  }
+
+  proposeWithSign(...args: TailArgs<typeof proposalsModule.proposeWithSign>) {
+    return proposalsModule.proposeWithSign(this, ...args);
+  }
+
+  simulateTargetInvocation(...args: TailArgs<typeof proposalsModule.simulateTargetInvocation>) {
+    return proposalsModule.simulateTargetInvocation(this, ...args);
+  }
+
+  simulateProposal(...args: TailArgs<typeof proposalsModule.simulateProposal>) {
+    return proposalsModule.simulateProposal(this, ...args);
+  }
+
+  estimateProposeResources(...args: TailArgs<typeof proposalsModule.estimateProposeResources>) {
+    return proposalsModule.estimateProposeResources(this, ...args);
+  }
+
+  cancel(...args: TailArgs<typeof proposalsModule.cancel>) {
+    return proposalsModule.cancel(this, ...args);
+  }
+
+  cancelByGovernance(...args: TailArgs<typeof proposalsModule.cancelByGovernance>) {
+    return proposalsModule.cancelByGovernance(this, ...args);
+  }
+
+  cancelByGovernanceWithSign(...args: TailArgs<typeof proposalsModule.cancelByGovernanceWithSign>) {
+    return proposalsModule.cancelByGovernanceWithSign(this, ...args);
+  }
+
+  waitForProposalState(...args: TailArgs<typeof proposalsModule.waitForProposalState>) {
+    return proposalsModule.waitForProposalState(this, ...args);
+  }
+
+  getProposal(...args: TailArgs<typeof proposalsModule.getProposal>) {
+    return proposalsModule.getProposal(this, ...args);
+  }
+
+  getQueueTime(...args: TailArgs<typeof proposalsModule.getQueueTime>) {
+    return proposalsModule.getQueueTime(this, ...args);
+  }
+
+  getQueuedOpIds(...args: TailArgs<typeof proposalsModule.getQueuedOpIds>) {
+    return proposalsModule.getQueuedOpIds(this, ...args);
+  }
+
+  getTimelockInfo(...args: TailArgs<typeof proposalsModule.getTimelockInfo>): Promise<TimelockInfo> {
+    return proposalsModule.getTimelockInfo(this, ...args);
+  }
+
+  getProposalsBatch(...args: TailArgs<typeof proposalsModule.getProposalsBatch>) {
+    return proposalsModule.getProposalsBatch(this, ...args);
+  }
+
+  getProposalExpiryLedger(...args: TailArgs<typeof proposalsModule.getProposalExpiryLedger>) {
+    return proposalsModule.getProposalExpiryLedger(this, ...args);
+  }
+
+  buildUpdateConfigProposal(
+    newSettings: GovernorSettings,
+    limits?: GovernorSettingsValidationLimits,
+  ) {
+    return proposalsModule.buildUpdateConfigProposal(this, newSettings, limits);
+  }
+
+  estimateVoteGas(...args: TailArgs<typeof votingModule.estimateVoteGas>) {
+    return votingModule.estimateVoteGas(this, ...args);
+  }
+
+  castVote(...args: TailArgs<typeof votingModule.castVote>) {
+    return votingModule.castVote(this, ...args);
+  }
+
+  castVoteWithSign(...args: TailArgs<typeof votingModule.castVoteWithSign>) {
+    return votingModule.castVoteWithSign(this, ...args);
+  }
+
+  castVoteWithReason(...args: TailArgs<typeof votingModule.castVoteWithReason>) {
+    return votingModule.castVoteWithReason(this, ...args);
+  }
+
+  castVoteWithReasonAndSign(...args: TailArgs<typeof votingModule.castVoteWithReasonAndSign>) {
+    return votingModule.castVoteWithReasonAndSign(this, ...args);
+  }
+
+  getProposalVotes(...args: TailArgs<typeof votingModule.getProposalVotes>): Promise<ProposalVotes> {
+    return votingModule.getProposalVotes(this, ...args);
+  }
+
+  hasVoted(...args: TailArgs<typeof votingModule.hasVoted>) {
+    return votingModule.hasVoted(this, ...args);
+  }
+
+  canPropose(...args: TailArgs<typeof votingModule.canPropose>): Promise<CanProposeResult> {
+    return votingModule.canPropose(this, ...args);
+  }
+
+  getVotingHistory(...args: TailArgs<typeof votingModule.getVotingHistory>): Promise<VotingHistoryEntry[]> {
+    return votingModule.getVotingHistory(this, ...args);
+  }
+
+  getVotesCastByAddress(...args: TailArgs<typeof votingModule.getVotesCastByAddress>) {
+    return votingModule.getVotesCastByAddress(this, ...args);
+  }
+
+  getReceipt(...args: TailArgs<typeof votingModule.getReceipt>) {
+    return votingModule.getReceipt(this, ...args);
+  }
+
+  getVoteReason(...args: TailArgs<typeof votingModule.getVoteReason>) {
+    return votingModule.getVoteReason(this, ...args);
+  }
+
+  proposalThreshold(): Promise<bigint> {
+    return queriesModule.proposalThreshold(this);
+  }
+
+  getSettings(...args: TailArgs<typeof queriesModule.getSettings>): Promise<GovernorSettings> {
+    return queriesModule.getSettings(this, ...args);
+  }
+
+  getProposalState(...args: TailArgs<typeof queriesModule.getProposalState>): Promise<ProposalState> {
+    return queriesModule.getProposalState(this, ...args);
+  }
+
+  getQuorum(...args: TailArgs<typeof queriesModule.getQuorum>): Promise<bigint> {
+    return queriesModule.getQuorum(this, ...args);
+  }
+
+  isQuorumReached(...args: TailArgs<typeof queriesModule.isQuorumReached>): Promise<boolean> {
+    return queriesModule.isQuorumReached(this, ...args);
+  }
+
+  getLatestLedger(): Promise<number> {
+    return queriesModule.getLatestLedger(this);
+  }
+
+  onProposalStateChange(...args: TailArgs<typeof queriesModule.onProposalStateChange>): () => void {
+    return queriesModule.onProposalStateChange(this, ...args);
+  }
+
+  proposalCount(): Promise<bigint> {
+    return queriesModule.proposalCount(this);
+  }
+
+  getProposalFromIndexer(...args: TailArgs<typeof queriesModule.getProposalFromIndexer>) {
+    return queriesModule.getProposalFromIndexer(this, ...args);
+  }
+
+  getLastProposalLedger(...args: TailArgs<typeof queriesModule.getLastProposalLedger>): Promise<number> {
+    return queriesModule.getLastProposalLedger(this, ...args);
+  }
+
+  getProposalsInPeriod(...args: TailArgs<typeof queriesModule.getProposalsInPeriod>): Promise<number> {
+    return queriesModule.getProposalsInPeriod(this, ...args);
+  }
+
+  getProposalsSummaryBatch(...args: TailArgs<typeof queriesModule.getProposalsSummaryBatch>) {
+    return queriesModule.getProposalsSummaryBatch(this, ...args);
+  }
+
+  estimateExecutionGas(...args: TailArgs<typeof executionModule.estimateExecutionGas>): Promise<ExecutionGasEstimate> {
+    return executionModule.estimateExecutionGas(this, ...args);
+  }
+
+  getGuardianActivity(...args: TailArgs<typeof eventsModule.getGuardianActivity>) {
+    return eventsModule.getGuardianActivity(this, ...args);
+  }
+
+  getProposalsForAddress(...args: TailArgs<typeof eventsModule.getProposalsForAddress>) {
+    return eventsModule.getProposalsForAddress(this, ...args);
+  }
 }
+
+/** Parameters of a `(client: GovernorClient, ...rest)` free function, minus `client`. */
+type TailArgs<F> = F extends (client: GovernorClient, ...rest: infer R) => unknown ? R : never;
