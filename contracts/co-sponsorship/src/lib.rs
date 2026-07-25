@@ -71,10 +71,30 @@ pub enum DataKey {
     DraftCoSponsor(u64, Address),
     DraftToProposal(u64),
     DraftExpiredEmitted(u64),
+    /// Last ledger at which an address created a draft (for cooldown). (#856)
+    LastDraftLedger(Address),
+    /// Draft count for an address within a rate-limit period. (#856)
+    DraftsInPeriod(Address, u32),
+    /// Minimum ledgers between drafts from the same creator (cooldown). (#856)
+    DraftCooldown,
+    /// Maximum drafts per creator per period. (#856)
+    MaxDraftsPerPeriod,
+    /// Period duration in ledgers for draft rate limiting. (#856)
+    DraftPeriodDuration,
 }
 
 const MAX_CALLDATA_SIZE: u32 = 10_000;
 const MAX_CALLDATA_COUNT: u32 = 10;
+
+/// Rate-limit defaults for create_draft (Issue #856). Drafts are lighter,
+/// pre-proposal artifacts expected to be created more frequently than full
+/// governor proposals, so these are somewhat more permissive than the
+/// governor's proposal rate limit (cooldown 100 / max 5 per period) while
+/// still bounding spam: a shorter 50-ledger cooldown and up to 10 drafts per
+/// creator per (unchanged) 10_000-ledger period.
+const DEFAULT_DRAFT_COOLDOWN: u32 = 50;
+const DEFAULT_MAX_DRAFTS_PER_PERIOD: u32 = 10;
+const DEFAULT_DRAFT_PERIOD_DURATION: u32 = 10_000;
 
 #[contract]
 pub struct CoSponsorshipContract;
@@ -108,6 +128,17 @@ impl CoSponsorshipContract {
         env.storage()
             .persistent()
             .set(&DataKey::DraftList, &Vec::<u64>::new(&env));
+        // Rate-limit config defaults (Issue #856), governance-tunable via
+        // instance storage. See the DEFAULT_DRAFT_* constants for rationale.
+        env.storage()
+            .instance()
+            .set(&DataKey::DraftCooldown, &DEFAULT_DRAFT_COOLDOWN);
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxDraftsPerPeriod, &DEFAULT_MAX_DRAFTS_PER_PERIOD);
+        env.storage()
+            .instance()
+            .set(&DataKey::DraftPeriodDuration, &DEFAULT_DRAFT_PERIOD_DURATION);
     }
 
     fn must_get_draft(env: &Env, draft_id: u64) -> ProposalDraft {
@@ -190,6 +221,46 @@ impl CoSponsorshipContract {
             env.panic_with_error(CoSponsorshipError::TooManyCalldataEntries);
         }
 
+        // Spam / rate-limit protection (Issue #856), mirroring the governor's
+        // create_proposal_internal cooldown + per-period cap, scoped to this
+        // contract's own storage and keyed by the draft creator.
+        let current_ledger = env.ledger().sequence();
+
+        let cooldown: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DraftCooldown)
+            .unwrap_or(DEFAULT_DRAFT_COOLDOWN);
+        let last_draft_ledger: Option<u32> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LastDraftLedger(creator.clone()));
+        if let Some(last) = last_draft_ledger {
+            if current_ledger < last.saturating_add(cooldown) {
+                env.panic_with_error(CoSponsorshipError::CooldownActive);
+            }
+        }
+
+        let period_duration: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DraftPeriodDuration)
+            .unwrap_or(DEFAULT_DRAFT_PERIOD_DURATION);
+        let max_drafts: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxDraftsPerPeriod)
+            .unwrap_or(DEFAULT_MAX_DRAFTS_PER_PERIOD);
+        let current_period = current_ledger / period_duration;
+        let drafts_in_period: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DraftsInPeriod(creator.clone(), current_period))
+            .unwrap_or(0);
+        if drafts_in_period >= max_drafts {
+            env.panic_with_error(CoSponsorshipError::TooManyDraftsInPeriod);
+        }
+
         let count: u64 = env
             .storage()
             .instance()
@@ -241,6 +312,31 @@ impl CoSponsorshipContract {
         env.storage()
             .persistent()
             .set(&DataKey::DraftList, &draft_list);
+
+        // Update rate-limit storage (Issue #856), mirroring the governor.
+        env.storage()
+            .persistent()
+            .set(&DataKey::LastDraftLedger(creator.clone()), &current);
+        env.storage().persistent().extend_ttl(
+            &DataKey::LastDraftLedger(creator.clone()),
+            cooldown.saturating_add(1000),
+            cooldown.saturating_add(1000),
+        );
+        // Prune the previous period's count to avoid unbounded storage growth.
+        if current_period > 0 {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::DraftsInPeriod(creator.clone(), current_period - 1));
+        }
+        env.storage().persistent().set(
+            &DataKey::DraftsInPeriod(creator.clone(), current_period),
+            &(drafts_in_period + 1),
+        );
+        env.storage().persistent().extend_ttl(
+            &DataKey::DraftsInPeriod(creator.clone(), current_period),
+            period_duration.saturating_add(1000),
+            period_duration.saturating_add(1000),
+        );
 
         events::emit_draft_created(&env, &draft);
 

@@ -18,4 +18,8 @@ pub enum CoSponsorshipError {
     NoTargets = 12,
     CalldataTooLarge = 13,
     TooManyCalldataEntries = 14,
+    /// Creator attempted a new draft before their cooldown elapsed (#856).
+    CooldownActive = 15,
+    /// Creator exceeded the max drafts allowed within the period (#856).
+    TooManyDraftsInPeriod = 16,
 }

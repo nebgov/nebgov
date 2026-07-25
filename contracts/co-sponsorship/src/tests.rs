@@ -333,8 +333,12 @@ fn test_get_active_drafts_pagination() {
     let (env, client, _votes, _admin) = setup(1_000);
     let creator = Address::generate(&env);
 
+    // Advance the ledger past the draft cooldown (#856) between creations so
+    // the same creator can create several drafts without tripping the limit.
     for _ in 0..5 {
         create_draft(&env, &client, &creator);
+        env.ledger()
+            .set_sequence_number(env.ledger().sequence() + 100);
     }
 
     let page1 = client.get_active_drafts(&0, &2);
@@ -362,8 +366,13 @@ fn test_get_active_drafts_excludes_finalized_and_cancelled() {
     let sponsor = Address::generate(&env);
     votes.set_power(&sponsor, &2_000);
 
+    // Advance past the draft cooldown (#856) between creations.
     let open_id = create_draft(&env, &client, &creator);
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 100);
     let finalized_id = create_draft(&env, &client, &creator);
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 100);
     let cancelled_id = create_draft(&env, &client, &creator);
 
     client.co_sponsor(&sponsor, &finalized_id);
@@ -409,6 +418,59 @@ fn test_finalize_draft_rejects_non_creator() {
     let draft_id = create_draft(&env, &client, &creator);
     client.co_sponsor(&sponsor, &draft_id);
     client.finalize_draft(&attacker, &draft_id);
+}
+
+// ---------------------------------------------------------------------------
+// Draft rate-limiting tests (Issue #856)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #15)")]
+fn test_create_draft_cooldown_rejects_immediate_second() {
+    let (env, client, _votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    create_draft(&env, &client, &creator);
+    // Second draft at the same ledger is within the cooldown window.
+    create_draft(&env, &client, &creator);
+}
+
+#[test]
+fn test_create_draft_after_cooldown_succeeds() {
+    let (env, client, _votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    create_draft(&env, &client, &creator);
+    // Advance past the 50-ledger cooldown; the same creator may create again.
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 50);
+    let id2 = create_draft(&env, &client, &creator);
+    assert_eq!(id2, 2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_create_draft_period_cap_rejects_excess() {
+    let (env, client, _votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    // Create the max (10) allowed within the period, advancing past the
+    // cooldown but staying inside the 10_000-ledger period each time.
+    for _ in 0..10 {
+        create_draft(&env, &client, &creator);
+        env.ledger()
+            .set_sequence_number(env.ledger().sequence() + 60);
+    }
+    // The 11th draft within the same period must be rejected.
+    create_draft(&env, &client, &creator);
+}
+
+#[test]
+fn test_create_draft_rate_limit_is_per_creator() {
+    let (env, client, _votes, _admin) = setup(1_000);
+    let creator_a = Address::generate(&env);
+    let creator_b = Address::generate(&env);
+    create_draft(&env, &client, &creator_a);
+    // A different creator at the same ledger is unaffected by A's cooldown.
+    let id = create_draft(&env, &client, &creator_b);
+    assert_eq!(id, 2);
 }
 
 #[test]
