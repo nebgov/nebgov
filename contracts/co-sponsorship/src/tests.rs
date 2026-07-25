@@ -411,6 +411,78 @@ fn test_finalize_draft_rejects_non_creator() {
     client.finalize_draft(&attacker, &draft_id);
 }
 
+// ---------------------------------------------------------------------------
+// Permissionless finalize fallback tests (Issue #857)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_co_sponsor_cannot_finalize_before_grace() {
+    let (env, client, votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    votes.set_power(&sponsor, &2_000);
+
+    let draft_id = create_draft(&env, &client, &creator);
+    client.co_sponsor(&sponsor, &draft_id);
+    assert!(client.draft_threshold_met(&draft_id));
+
+    // Threshold met, but the grace period has not elapsed (same ledger).
+    client.finalize_draft(&sponsor, &draft_id);
+}
+
+#[test]
+fn test_co_sponsor_can_finalize_after_grace() {
+    let (env, client, votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    votes.set_power(&sponsor, &2_000);
+
+    let draft_id = create_draft(&env, &client, &creator);
+    client.co_sponsor(&sponsor, &draft_id);
+
+    // Advance past the 300-ledger grace period (and stay before expiry).
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 300);
+
+    let proposal_id = client.finalize_draft(&sponsor, &draft_id);
+    assert_eq!(proposal_id, 1);
+    assert!(client.get_draft(&draft_id).finalized);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_non_co_sponsor_cannot_finalize_after_grace() {
+    let (env, client, votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    votes.set_power(&sponsor, &2_000);
+
+    let draft_id = create_draft(&env, &client, &creator);
+    client.co_sponsor(&sponsor, &draft_id);
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 300);
+
+    // A non-creator, non-co-sponsor is never authorized, grace or not.
+    client.finalize_draft(&outsider, &draft_id);
+}
+
+#[test]
+fn test_creator_finalize_immediate_unaffected_by_grace() {
+    let (env, client, votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    votes.set_power(&sponsor, &2_000);
+
+    let draft_id = create_draft(&env, &client, &creator);
+    client.co_sponsor(&sponsor, &draft_id);
+
+    // No ledger advance: the creator may still finalize immediately.
+    let proposal_id = client.finalize_draft(&creator, &draft_id);
+    assert_eq!(proposal_id, 1);
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_initialize_rejects_reinitialization() {

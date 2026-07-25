@@ -71,10 +71,19 @@ pub enum DataKey {
     DraftCoSponsor(u64, Address),
     DraftToProposal(u64),
     DraftExpiredEmitted(u64),
+    /// Ledgers past a draft's created_ledger before a co-sponsor may use the
+    /// permissionless finalize fallback. (#857)
+    DraftFinalizeGracePeriod,
 }
 
 const MAX_CALLDATA_SIZE: u32 = 10_000;
 const MAX_CALLDATA_COUNT: u32 = 10;
+
+/// Grace period (in ledgers) after a draft's created_ledger before a
+/// co-sponsor may invoke the permissionless finalize fallback (Issue #857).
+/// A few hundred ledgers gives the creator a clear first window to finalize
+/// (or amend/cancel) before participants can promote the draft themselves.
+const DEFAULT_DRAFT_FINALIZE_GRACE_PERIOD: u32 = 300;
 
 #[contract]
 pub struct CoSponsorshipContract;
@@ -108,6 +117,11 @@ impl CoSponsorshipContract {
         env.storage()
             .persistent()
             .set(&DataKey::DraftList, &Vec::<u64>::new(&env));
+        // Permissionless finalize grace period (Issue #857), governance-tunable.
+        env.storage().instance().set(
+            &DataKey::DraftFinalizeGracePeriod,
+            &DEFAULT_DRAFT_FINALIZE_GRACE_PERIOD,
+        );
     }
 
     fn must_get_draft(env: &Env, draft_id: u64) -> ProposalDraft {
@@ -343,14 +357,20 @@ impl CoSponsorshipContract {
 
     /// Promote a draft into a real governor proposal once its accumulated
     /// co-sponsor power meets the governor's current `proposal_threshold`.
-    /// Only callable by the draft's creator.
+    ///
+    /// Two authorization paths (Issue #857):
+    /// - The draft's `creator` may finalize at any time (once the threshold is
+    ///   met) — the original behavior, unchanged.
+    /// - As a permissionless fallback for when the creator goes absent, any
+    ///   address listed in `draft.co_sponsors` may finalize once a grace
+    ///   period past `created_ledger` has elapsed AND the threshold is met.
+    ///   The fallback is deliberately restricted to participating co-sponsors
+    ///   (not arbitrary third parties) since it triggers governor-level
+    ///   proposal promotion.
     pub fn finalize_draft(env: Env, caller: Address, draft_id: u64) -> u64 {
         caller.require_auth();
 
         let mut draft = Self::must_get_draft(&env, draft_id);
-        if caller != draft.creator {
-            env.panic_with_error(CoSponsorshipError::UnauthorizedDraftCreator);
-        }
         Self::require_draft_open(&env, &draft);
         if env.ledger().sequence() > draft.expiry_ledger {
             env.panic_with_error(CoSponsorshipError::DraftExpired);
@@ -370,6 +390,29 @@ impl CoSponsorshipContract {
         let current_power = Self::compute_current_co_sponsor_power(&env, &votes_token, &draft.co_sponsors);
 
         let threshold = governor_client.proposal_threshold();
+
+        // Authorization branch. The creator retains their existing immediate
+        // path; everyone else must qualify for the co-sponsor fallback.
+        if caller != draft.creator {
+            let mut is_co_sponsor = false;
+            for i in 0..draft.co_sponsors.len() {
+                if draft.co_sponsors.get(i).unwrap() == caller {
+                    is_co_sponsor = true;
+                    break;
+                }
+            }
+            let grace_period: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::DraftFinalizeGracePeriod)
+                .unwrap_or(DEFAULT_DRAFT_FINALIZE_GRACE_PERIOD);
+            let grace_elapsed = env.ledger().sequence()
+                >= draft.created_ledger.saturating_add(grace_period);
+            if !(is_co_sponsor && grace_elapsed && current_power >= threshold) {
+                env.panic_with_error(CoSponsorshipError::UnauthorizedDraftCreator);
+            }
+        }
+
         if current_power < threshold {
             env.panic_with_error(CoSponsorshipError::DraftThresholdNotMet);
         }
