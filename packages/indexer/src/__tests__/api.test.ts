@@ -309,6 +309,57 @@ describe("GET /proposals with cursor pagination", () => {
     });
   });
 
+  describe("GET /drafts?status=... (expiry filtering, issue #854)", () => {
+    const activeDraft = { draft_id: 2, expiry_ledger: 5000, finalized: false, cancelled: false };
+    const expiredDraft = { draft_id: 1, expiry_ledger: 900, finalized: false, cancelled: false };
+
+    it("status=active includes a non-expired draft and filters by last_ledger", async () => {
+      (mockPool.query as jest.Mock)
+        // indexer_state last_ledger lookup
+        .mockResolvedValueOnce({ rows: [{ last_ledger: 1000 }] })
+        // drafts select
+        .mockResolvedValueOnce({ rows: [activeDraft], rowCount: 1 });
+
+      const response = await request(app).get("/drafts?status=active");
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([activeDraft]);
+      // Second query is the drafts SELECT; assert it carries the ledger bound.
+      const draftsCall = (mockPool.query as jest.Mock).mock.calls[1];
+      expect(draftsCall[0]).toContain("expiry_ledger >= $3");
+      expect(draftsCall[0]).toContain("finalized = false AND cancelled = false");
+      expect(draftsCall[1]).toEqual([20, 0, 1000]);
+    });
+
+    it("status=active excludes an expired-but-not-finalized draft (empty result)", async () => {
+      // The DB applies the WHERE clause; with the expired draft filtered out
+      // the SELECT returns no rows.
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ last_ledger: 1000 }] })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const response = await request(app).get("/drafts?status=active");
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
+    });
+
+    it("status=expired returns the expired-but-not-finalized draft", async () => {
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ last_ledger: 1000 }] })
+        .mockResolvedValueOnce({ rows: [expiredDraft], rowCount: 1 });
+
+      const response = await request(app).get("/drafts?status=expired");
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([expiredDraft]);
+      const draftsCall = (mockPool.query as jest.Mock).mock.calls[1];
+      expect(draftsCall[0]).toContain("expiry_ledger < $3");
+      expect(draftsCall[0]).toContain("finalized = false AND cancelled = false");
+      expect(draftsCall[1]).toEqual([20, 0, 1000]);
+    });
+  });
+
   describe("GET /timelock endpoints", () => {
     it("GET /timelock/operations/:opId returns operation", async () => {
       const mockOp = { op_id: "010203", target: "G123", fn_name: "test", ready_at: "100", expires_at: "200", status: "scheduled", ledger: 50 };

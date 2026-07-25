@@ -1321,20 +1321,45 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     const key = `drafts:list:${status ?? ""}:${page}:${limit}`;
 
     try {
-      const conditions: string[] = [];
-      if (status === "active") {
-        conditions.push("finalized = false AND cancelled = false");
-      } else if (status === "finalized") {
-        conditions.push("finalized = true");
-      } else if (status === "cancelled") {
-        conditions.push("cancelled = true");
-      }
-      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
       const data = await cached(key, TTL.proposals, async () => {
+        // Params start with limit/offset ($1/$2); an optional ledger bound is
+        // appended as $3 for the expiry-aware `active`/`expired` filters.
+        const params: (number | string)[] = [limit, (page - 1) * limit];
+        const conditions: string[] = [];
+
+        if (status === "active" || status === "expired") {
+          // Mirror the on-chain `get_active_drafts` exclusion
+          // (`current > expiry_ledger` => expired). Use the indexer's own
+          // `last_ledger` as the "current ledger" reference so the API and
+          // chain agree on which drafts have lapsed. See the `/stats`
+          // handler for the same `indexer_state` read.
+          const stateRes = await pool.query(
+            "SELECT last_ledger::int AS last_ledger FROM indexer_state WHERE id = 1",
+          );
+          const lastLedger: number = stateRes.rows[0]?.last_ledger ?? 0;
+          params.push(lastLedger);
+          if (status === "active") {
+            // Not finalized, not cancelled, and not past its expiry ledger.
+            conditions.push(
+              `finalized = false AND cancelled = false AND expiry_ledger >= $${params.length}`,
+            );
+          } else {
+            // Expired-but-never-finalized-or-cancelled.
+            conditions.push(
+              `finalized = false AND cancelled = false AND expiry_ledger < $${params.length}`,
+            );
+          }
+        } else if (status === "finalized") {
+          conditions.push("finalized = true");
+        } else if (status === "cancelled") {
+          conditions.push("cancelled = true");
+        }
+        const whereClause =
+          conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
         const result = await pool.query(
           `SELECT * FROM drafts ${whereClause} ORDER BY draft_id DESC LIMIT $1 OFFSET $2`,
-          [limit, (page - 1) * limit],
+          params,
         );
         return {
           data: result.rows,
