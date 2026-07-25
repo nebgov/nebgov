@@ -154,6 +154,19 @@ impl CoSponsorshipContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::DraftExpiredEmitted(draft.id), &true);
+            // Extend the "expired emitted" flag TTL so the one-shot guard is
+            // not lost to archival, which would let the event re-emit on a
+            // later read (Issue #858).
+            let expiry_ledgers: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::DraftExpiryLedgers)
+                .unwrap_or(7_200);
+            env.storage().persistent().extend_ttl(
+                &DataKey::DraftExpiredEmitted(draft.id),
+                expiry_ledgers.saturating_add(1000),
+                expiry_ledgers.saturating_add(1000),
+            );
         }
     }
 
@@ -241,6 +254,15 @@ impl CoSponsorshipContract {
         env.storage()
             .persistent()
             .set(&DataKey::DraftList, &draft_list);
+        // The DraftList is read and rewritten on every create_draft, but its
+        // TTL was never bumped, so it could archive out from under a live set
+        // of drafts (Issue #858). Bump it on every write using the instance
+        // expiry config (this key is not draft-scoped).
+        env.storage().persistent().extend_ttl(
+            &DataKey::DraftList,
+            expiry_ledgers.saturating_add(1000),
+            expiry_ledgers.saturating_add(1000),
+        );
 
         events::emit_draft_created(&env, &draft);
 
@@ -268,6 +290,18 @@ impl CoSponsorshipContract {
             env.panic_with_error(CoSponsorshipError::AlreadyCoSponsored);
         }
 
+        // Defense-in-depth (Issue #858): the DraftCoSponsor map entry above
+        // could, in principle, archive and read back as "never pledged" (0),
+        // which would bypass the map-based guard. Independently verify the
+        // address is not already present in the draft's own `co_sponsors` Vec
+        // (the authoritative membership record) so a double-pledge is rejected
+        // even if the map entry alone would have missed it.
+        for i in 0..draft.co_sponsors.len() {
+            if draft.co_sponsors.get(i).unwrap() == sponsor {
+                env.panic_with_error(CoSponsorshipError::AlreadyCoSponsored);
+            }
+        }
+
         let max_co_sponsors: u32 = env
             .storage()
             .instance()
@@ -293,6 +327,19 @@ impl CoSponsorshipContract {
         env.storage().persistent().set(
             &DataKey::DraftCoSponsor(draft_id, sponsor.clone()),
             &power,
+        );
+        // Extend the per-sponsor pledge key's TTL so it does not archive
+        // before the draft itself expires (Issue #858), using the same
+        // instance expiry config the Draft key is bumped with in create_draft.
+        let expiry_ledgers: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DraftExpiryLedgers)
+            .unwrap_or(7_200);
+        env.storage().persistent().extend_ttl(
+            &DataKey::DraftCoSponsor(draft_id, sponsor.clone()),
+            expiry_ledgers.saturating_add(1000),
+            expiry_ledgers.saturating_add(1000),
         );
         env.storage()
             .persistent()
@@ -393,6 +440,18 @@ impl CoSponsorshipContract {
         env.storage()
             .persistent()
             .set(&DataKey::DraftToProposal(draft_id), &proposal_id);
+        // Extend the draft->proposal mapping TTL so the promoted-proposal link
+        // survives as long as the draft lifecycle window (Issue #858).
+        let expiry_ledgers: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DraftExpiryLedgers)
+            .unwrap_or(7_200);
+        env.storage().persistent().extend_ttl(
+            &DataKey::DraftToProposal(draft_id),
+            expiry_ledgers.saturating_add(1000),
+            expiry_ledgers.saturating_add(1000),
+        );
 
         events::emit_draft_finalized(&env, draft_id, proposal_id);
 

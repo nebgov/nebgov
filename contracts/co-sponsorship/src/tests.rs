@@ -183,6 +183,35 @@ fn test_co_sponsor_same_address_twice_reverts() {
     client.co_sponsor(&sponsor, &draft_id);
 }
 
+/// Issue #858 defense-in-depth: even if the `DraftCoSponsor` map entry
+/// archived away and read back as "never pledged" (0), the same address must
+/// still not be pushable into `co_sponsors` twice, because `co_sponsor` now
+/// independently checks Vec membership. We simulate the archived map entry by
+/// removing it directly from contract storage, then re-pledging — which must
+/// still revert with AlreadyCoSponsored (#5).
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_co_sponsor_vec_membership_blocks_double_pledge_when_map_entry_missing() {
+    let (env, client, votes, _admin) = setup(1_000);
+    let creator = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    votes.set_power(&sponsor, &400);
+
+    let draft_id = create_draft(&env, &client, &creator);
+    client.co_sponsor(&sponsor, &draft_id);
+
+    // Simulate the map-based guard being defeated (entry gone / archived).
+    let contract_id = client.address.clone();
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&crate::DataKey::DraftCoSponsor(draft_id, sponsor.clone()));
+    });
+
+    // Second pledge must still be rejected by the Vec-membership check.
+    client.co_sponsor(&sponsor, &draft_id);
+}
+
 #[test]
 fn test_withdraw_co_sponsorship_reduces_total_power() {
     let (env, client, votes, _admin) = setup(1_000);
