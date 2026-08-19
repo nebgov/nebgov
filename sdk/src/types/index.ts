@@ -127,6 +127,28 @@ export interface ProposalDraft {
   cancelled: boolean;
 }
 
+/** Lifecycle state of a proposer bond — see `ProposalBondsClient`. */
+export type BondState = "Locked" | "Refunded" | "Slashed";
+
+/**
+ * A refundable bond posted by a proposer alongside a governor proposal
+ * (correlated by shared `descriptionHash`), refunded once the proposal
+ * reaches a terminal state or slashed by a follow-up governance vote if
+ * judged spam, duplicated, or malicious.
+ */
+export interface ProposalBond {
+  /** Stellar address that posted the bond. */
+  proposer: string;
+  /** SHA-256 hash of the off-chain description content, shared with the correlated proposal. */
+  descriptionHash: string;
+  /** Bonded amount, in the configured bond token's smallest unit. */
+  amount: bigint;
+  /** Ledger sequence at which the bond was locked. */
+  lockedLedger: number;
+  /** Current lifecycle state. */
+  state: BondState;
+}
+
 /** Aggregated vote tallies for a proposal. */
 export interface ProposalVotes {
   /** Total tokens cast in favour. */
@@ -190,6 +212,8 @@ export interface GovernorConfig {
   votesAddress: string;
   /** Contract address of the co-sponsorship registry, if deployed */
   coSponsorshipAddress?: string;
+  /** Contract address of the proposal-bonds registry, if deployed */
+  proposalBondsAddress?: string;
   /** Stellar network to connect to */
   network: Network;
   /** RPC URL override (optional — defaults to public horizon) */
