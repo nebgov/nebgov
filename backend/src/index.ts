@@ -9,9 +9,11 @@ import authRouter from "./routes/auth";
 import notificationsRouter from "./routes/notifications";
 import securityRouter from "./routes/security";
 import relayerRouter from "./routes/relayer";
+import signalingRouter from "./routes/signaling";
 import { securityMonitor } from "./services/security-monitor";
 import { notificationProcessor } from "./jobs/notification-processor";
 import { deliveryRetry } from "./jobs/delivery-retry";
+import { signalAnchorService } from "./jobs/signal-anchor";
 import { runBackendMigrations } from "./db/migrationRunner";
 import pino from "pino";
 import pinoHttp from "pino-http";
@@ -109,6 +111,7 @@ app.use("/notifications", notificationsRouter);
 app.use("/security", securityRouter);
 app.use("/relayer", relayerLimiter);
 app.use("/relayer", relayerRouter);
+app.use("/signaling", signalingRouter);
 
 // Error handling
 app.use(
@@ -136,6 +139,9 @@ async function bootstrap(): Promise<void> {
     // Start the notification engine's background jobs
     notificationProcessor.start();
     deliveryRetry.start();
+
+    // Start the signaling poll finalizer / on-chain anchor job
+    signalAnchorService.start();
   });
 }
 

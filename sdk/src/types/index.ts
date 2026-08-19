@@ -127,6 +127,45 @@ export interface ProposalDraft {
   cancelled: boolean;
 }
 
+/** A gasless off-chain signaling poll ("temperature check") — see SignalingClient. */
+export interface SignalingPoll {
+  id: number;
+  creatorAddress: string;
+  title: string;
+  description: string;
+  choices: string[];
+  /** Ledger at which voting power is snapshot-checkpointed for weighting votes. */
+  snapshotLedger: number;
+  startTime: string;
+  endTime: string;
+  finalized: boolean;
+  /** SHA-256 hex digest of the finalized tally, set once the poll closes. */
+  resultHash: string | null;
+  /** Transaction hash of the on-chain anchor submission, if anchoring was enabled. */
+  anchoredTxHash: string | null;
+  createdAt: string;
+}
+
+/** Weighted tally for a signaling poll — live before finalization, final after. */
+export interface SignalingPollResults {
+  finalized: boolean;
+  choices: string[];
+  /** Weighted voting power per choice, aligned by index with `choices`. */
+  totals: bigint[];
+  totalVotes: number;
+  totalWeight: bigint;
+  resultHash?: string | null;
+  anchoredTxHash?: string | null;
+}
+
+/** An immutable on-chain record anchoring a finalized signaling poll's result hash. */
+export interface SignalAnchorRecord {
+  pollId: bigint;
+  resultHash: string;
+  anchoredLedger: number;
+  anchorer: string;
+}
+
 /** Aggregated vote tallies for a proposal. */
 export interface ProposalVotes {
   /** Total tokens cast in favour. */
@@ -190,6 +229,8 @@ export interface GovernorConfig {
   votesAddress: string;
   /** Contract address of the co-sponsorship registry, if deployed */
   coSponsorshipAddress?: string;
+  /** Contract address of the gasless-signaling result anchor, if deployed */
+  signalAnchorAddress?: string;
   /** Stellar network to connect to */
   network: Network;
   /** RPC URL override (optional — defaults to public horizon) */
@@ -198,6 +239,8 @@ export interface GovernorConfig {
   simulationAccount?: string;
   /** Indexer base URL for off-chain queries (e.g. getVotingHistory) */
   indexerUrl?: string;
+  /** Backend base URL for off-chain queries/mutations (e.g. SignalingClient's poll CRUD) */
+  backendUrl?: string;
   /** Maximum number of retry attempts for RPC calls (default: 3) */
   maxAttempts?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000) */

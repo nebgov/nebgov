@@ -29,6 +29,7 @@ export { WrapperClient } from "./wrapper";
 export type { WrapperConfig } from "./wrapper";
 export { CoSponsorshipClient } from "./coSponsorship";
 export type { CoSponsorshipConfig } from "./coSponsorship";
+export { SignalingClient } from "./signaling";
 export {
   GovernorError,
   GovernorErrorCode,
@@ -40,11 +41,14 @@ export {
   TreasuryErrorCode,
   CoSponsorshipError,
   CoSponsorshipErrorCode,
+  SignalingError,
+  SignalingErrorCode,
   parseGovernorError,
   parseTimelockError,
   parseVotesError,
   parseTreasuryError,
   parseCoSponsorshipError,
+  parseSignalingError,
   extractContractErrorCode,
 } from "./errors";
 export type { SorobanRpcError } from "./errors";
@@ -95,6 +99,7 @@ export {
   subscribeToFailedOpRetried,
   subscribeToFailedOpSkipped,
   subscribeToBatchFullyComplete,
+  subscribeToResultAnchored,
 } from "./events";
 export type {
   SorobanEvent,
