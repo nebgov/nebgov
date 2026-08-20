@@ -1,7 +1,7 @@
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   GovernorClient,
-  hashDescriptionSync,
+  hashDescription,
   ProposalState,
   type GovernorSettings,
   type Network,
@@ -126,7 +126,7 @@ export async function maybeAutoPropose(
     result.rationale.quorumNumerator.reason,
     result.rationale.proposalThreshold.reason,
   ].join("\n");
-  const descriptionHash = hashDescriptionSync(description);
+  const descriptionHash = await hashDescription(description);
 
   const signer = Keypair.fromSecret(secret);
   // `signer` is a `Keypair` from the backend's @stellar/stellar-sdk (^15);
