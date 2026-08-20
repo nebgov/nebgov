@@ -15,12 +15,27 @@ jest.mock("../signaling/tally", () => ({
 
 import app from "../index";
 import pool from "../db/pool";
-import { canonicalSignalPayload } from "../signaling/signature";
+import { canonicalSignalPayload, sep53Digest } from "../signaling/signature";
 import { getCurrentVotingPower, getProposalThreshold, computeWeightedTally } from "../signaling/tally";
 
 const mockGetCurrentVotingPower = getCurrentVotingPower as jest.Mock;
 const mockGetProposalThreshold = getProposalThreshold as jest.Mock;
 const mockComputeWeightedTally = computeWeightedTally as jest.Mock;
+
+// SEP-53-signs the canonical payload, matching what a real wallet's
+// signMessage does internally — see signaling/signature.ts's sep53Digest.
+function signVote(
+  voter: Keypair,
+  params: { pollId: number; choiceIndex: number; nonce: string },
+): string {
+  const digestHex = canonicalSignalPayload({
+    pollId: params.pollId,
+    choiceIndex: params.choiceIndex,
+    voterAddress: voter.publicKey(),
+    nonce: params.nonce,
+  });
+  return voter.sign(sep53Digest(digestHex)).toString("base64");
+}
 
 describe("Signaling Endpoints", () => {
   const createdPollIds: number[] = [];
@@ -89,9 +104,20 @@ describe("Signaling Endpoints", () => {
     const poll = await createPoll();
     const voter = Keypair.random();
     const nonce = "vote-nonce-1";
-    const signature = voter
-      .sign(Buffer.from(canonicalSignalPayload({ pollId: poll.id, choiceIndex: 0, voterAddress: voter.publicKey(), nonce }), "utf8"))
-      .toString("base64");
+    const signature = signVote(voter, { pollId: poll.id, choiceIndex: 0, nonce });
+
+    await request(app)
+      .post(`/signaling/polls/${poll.id}/vote`)
+      .set("X-Voter-Address", voter.publicKey())
+      .send({ choiceIndex: 0, nonce, signature })
+      .expect(201);
+  });
+
+  it("POST /signaling/polls/:id/vote does not trim the nonce before verifying (regression: trimming it would verify against different bytes than what was signed)", async () => {
+    const poll = await createPoll();
+    const voter = Keypair.random();
+    const nonce = "  padded-nonce  ";
+    const signature = signVote(voter, { pollId: poll.id, choiceIndex: 0, nonce });
 
     await request(app)
       .post(`/signaling/polls/${poll.id}/vote`)
@@ -105,9 +131,7 @@ describe("Signaling Endpoints", () => {
     const voter = Keypair.random();
 
     const castVote = async (nonce: string, choiceIndex: number) => {
-      const signature = voter
-        .sign(Buffer.from(canonicalSignalPayload({ pollId: poll.id, choiceIndex, voterAddress: voter.publicKey(), nonce }), "utf8"))
-        .toString("base64");
+      const signature = signVote(voter, { pollId: poll.id, choiceIndex, nonce });
       return request(app)
         .post(`/signaling/polls/${poll.id}/vote`)
         .set("X-Voter-Address", voter.publicKey())
@@ -125,9 +149,7 @@ describe("Signaling Endpoints", () => {
     });
     const voter = Keypair.random();
     const nonce = "expired-window";
-    const signature = voter
-      .sign(Buffer.from(canonicalSignalPayload({ pollId: poll.id, choiceIndex: 0, voterAddress: voter.publicKey(), nonce }), "utf8"))
-      .toString("base64");
+    const signature = signVote(voter, { pollId: poll.id, choiceIndex: 0, nonce });
 
     await request(app)
       .post(`/signaling/polls/${poll.id}/vote`)
@@ -148,5 +170,31 @@ describe("Signaling Endpoints", () => {
     const res = await request(app).get(`/signaling/polls/${poll.id}/results`).expect(200);
     expect(res.body.finalized).toBe(false);
     expect(res.body.totals).toEqual(["100", "0", "0"]);
+  });
+
+  it("GET /signaling/polls/:id/results caches the tally, and a new vote invalidates the cache", async () => {
+    const poll = await createPoll();
+    mockComputeWeightedTally.mockResolvedValue({
+      choices: poll.choices,
+      totals: ["0", "0", "0"],
+      totalVotes: 0,
+      totalWeight: "0",
+    });
+
+    await request(app).get(`/signaling/polls/${poll.id}/results`).expect(200);
+    await request(app).get(`/signaling/polls/${poll.id}/results`).expect(200);
+    expect(mockComputeWeightedTally).toHaveBeenCalledTimes(1);
+
+    const voter = Keypair.random();
+    const nonce = "cache-invalidation-nonce";
+    const signature = signVote(voter, { pollId: poll.id, choiceIndex: 0, nonce });
+    await request(app)
+      .post(`/signaling/polls/${poll.id}/vote`)
+      .set("X-Voter-Address", voter.publicKey())
+      .send({ choiceIndex: 0, nonce, signature })
+      .expect(201);
+
+    await request(app).get(`/signaling/polls/${poll.id}/results`).expect(200);
+    expect(mockComputeWeightedTally).toHaveBeenCalledTimes(2);
   });
 });

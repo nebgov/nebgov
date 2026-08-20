@@ -1,9 +1,18 @@
 import { Keypair } from "@stellar/stellar-sdk";
-import { canonicalSignalPayload, verifySignalVote, type SignalVotePayload } from "../signaling/signature";
+import {
+  canonicalSignalPayload,
+  sep53Digest,
+  verifySignalVote,
+  type SignalVotePayload,
+} from "../signaling/signature";
 
+// SEP-53-signs the canonical payload — matches what a real wallet's
+// signMessage does internally (prefix + re-hash before ed25519 signing) and
+// what verifySignalVote checks against. A plain `keypair.sign(digestHex)`
+// would fail verification.
 function sign(keypair: Keypair, payload: SignalVotePayload): string {
   const digestHex = canonicalSignalPayload(payload);
-  return keypair.sign(Buffer.from(digestHex, "utf8")).toString("base64");
+  return keypair.sign(sep53Digest(digestHex)).toString("base64");
 }
 
 describe("signaling signature verification", () => {
@@ -85,5 +94,37 @@ describe("signaling signature verification", () => {
 
     expect(() => verifySignalVote(payload, "AAAA")).not.toThrow();
     expect(verifySignalVote(payload, "AAAA")).toBe(false);
+  });
+
+  // Golden vector, cross-checked against sdk/src/__tests__/signaling.test.ts's
+  // identical case — both implementations must agree on the exact digest for
+  // the same inputs, or vote verification silently breaks for whichever
+  // side (wallet-signing vs. raw-Keypair-signing) drifted. If you change the
+  // canonical payload format in either package, update BOTH golden vectors
+  // together and recompute the expected digest.
+  it("matches the golden vector shared with the SDK's implementation", () => {
+    const payload: SignalVotePayload = {
+      pollId: 42,
+      choiceIndex: 1,
+      voterAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      nonce: "abc123",
+    };
+
+    expect(canonicalSignalPayload(payload)).toBe(
+      "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1",
+    );
+  });
+
+  // Golden vector for the SEP-53 wrap itself (prefix + re-hash), cross-checked
+  // against sdk/src/__tests__/signaling.test.ts's identical case. This is
+  // what actually gets ed25519-signed — a regression here is exactly the
+  // "wallet signMessage prefixes the message" footgun this construction
+  // exists to handle.
+  it("matches the golden SEP-53 digest shared with the SDK's implementation", () => {
+    const digestHex = "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1";
+
+    expect(sep53Digest(digestHex).toString("hex")).toBe(
+      "4c0a18fd5bb93f33234de0c1d49121eb4bab8f2e9ea3682fa6a6dc4c76311dde",
+    );
   });
 });

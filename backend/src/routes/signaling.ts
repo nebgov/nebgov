@@ -1,12 +1,35 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import pool from "../db/pool";
 import { validate } from "../middleware/validate";
 import { logger } from "../logger";
+import { cached, invalidate } from "../cache";
 import { verifySignalVote } from "../signaling/signature";
 import { computeWeightedTally, getCurrentVotingPower, getProposalThreshold } from "../signaling/tally";
 
 const router = Router();
+
+// computeWeightedTally does one sequential on-chain simulate call per
+// distinct voter plus one sequential DB write per vote — expensive on a
+// popular poll, and this route is polled every 30s by the frontend
+// (app/src/hooks/useSignalingPolls.ts). Cached for a short TTL so repeated
+// polls within the window are free; invalidated below the moment a new vote
+// is recorded so the tally doesn't look stale to the voter who just cast it.
+const RESULTS_CACHE_TTL_MS = Number(process.env.SIGNAL_RESULTS_CACHE_TTL_MS ?? "15000");
+const resultsCacheKey = (pollId: number) => `signaling:results:${pollId}`;
+
+// Poll creation and voting are free/gasless — unlike /relayer (which costs
+// the relayer real transaction fees and is throttled at 10 req/min), there's
+// no natural cost throttle here, so a scoped limiter guards against a public
+// write path being used to spam polls or brute-force nonce/signature guesses.
+const signalingWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many signaling requests" },
+});
 
 // Matches G... (account) strkey addresses — signaling participants sign
 // with a real Stellar keypair, so only account addresses are valid here
@@ -34,7 +57,13 @@ const listPollsSchema = z.object({
 
 const castVoteSchema = z.object({
   choiceIndex: z.coerce.number().int().min(0),
-  nonce: z.string().trim().min(1).max(64),
+  // Not .trim()'d: nonce is an opaque token folded verbatim into the signed
+  // canonical payload (see signaling/signature.ts's canonicalSignalPayload)
+  // — trimming it here would verify against different bytes than whatever
+  // the client actually signed, silently rejecting any legitimate vote
+  // whose nonce (from a future/different client) contains leading or
+  // trailing whitespace.
+  nonce: z.string().min(1).max(64),
   signature: z.string().trim().min(1),
 });
 
@@ -63,7 +92,7 @@ function rowToPoll(row: any) {
 // POST /signaling/polls — create a temperature-check poll. The creator must
 // currently hold at least the governor's proposal_threshold in voting power
 // (the same bar formal proposals use), read live rather than hardcoded.
-router.post("/polls", validate({ body: createPollSchema }), async (req, res) => {
+router.post("/polls", signalingWriteLimiter, validate({ body: createPollSchema }), async (req, res) => {
   const body = req.body as z.infer<typeof createPollSchema>;
 
   try {
@@ -143,6 +172,7 @@ router.get("/polls/:id", validate({ params: idParamSchema }), async (req, res) =
 // rejects casting outside [start_time, end_time].
 router.post(
   "/polls/:id/vote",
+  signalingWriteLimiter,
   validate({ params: idParamSchema, body: castVoteSchema }),
   async (req, res) => {
     const { id } = req.params as unknown as z.infer<typeof idParamSchema>;
@@ -190,6 +220,7 @@ router.post(
         return res.status(409).json({ error: "This address has already voted in this poll" });
       }
 
+      invalidate(resultsCacheKey(id));
       res.status(201).json({ ok: true });
     } catch (error) {
       logger.error({ err: error }, "Error in POST /signaling/polls/:id/vote");
@@ -204,41 +235,48 @@ router.get("/polls/:id/results", validate({ params: idParamSchema }), async (req
   const { id } = req.params as unknown as z.infer<typeof idParamSchema>;
 
   try {
-    const { rows: pollRows } = await pool.query(
-      `SELECT * FROM signaling_polls WHERE id = $1`,
-      [id],
-    );
-    if (pollRows.length === 0) {
-      return res.status(404).json({ error: "Poll not found" });
-    }
-    const poll = pollRows[0];
-    const choices = poll.choices as string[];
-
-    if (poll.finalized) {
-      const { rows: voteRows } = await pool.query(
-        `SELECT choice_index, voting_power FROM signaling_votes WHERE poll_id = $1`,
+    const body = await cached(resultsCacheKey(id), RESULTS_CACHE_TTL_MS, async () => {
+      const { rows: pollRows } = await pool.query(
+        `SELECT * FROM signaling_polls WHERE id = $1`,
         [id],
       );
-      const totals = new Array(choices.length).fill(0n) as bigint[];
-      for (const row of voteRows) {
-        if (row.choice_index >= 0 && row.choice_index < totals.length) {
-          totals[row.choice_index] += BigInt(row.voting_power ?? 0);
-        }
+      if (pollRows.length === 0) {
+        return null;
       }
-      const totalWeight = totals.reduce((sum, t) => sum + t, 0n);
-      return res.json({
-        finalized: true,
-        resultHash: poll.result_hash,
-        anchoredTxHash: poll.anchored_tx_hash,
-        choices,
-        totals: totals.map((t) => t.toString()),
-        totalVotes: voteRows.length,
-        totalWeight: totalWeight.toString(),
-      });
-    }
+      const poll = pollRows[0];
+      const choices = poll.choices as string[];
 
-    const results = await computeWeightedTally(id, poll.snapshot_ledger, choices);
-    res.json({ finalized: false, ...results });
+      if (poll.finalized) {
+        const { rows: voteRows } = await pool.query(
+          `SELECT choice_index, voting_power FROM signaling_votes WHERE poll_id = $1`,
+          [id],
+        );
+        const totals = new Array(choices.length).fill(0n) as bigint[];
+        for (const row of voteRows) {
+          if (row.choice_index >= 0 && row.choice_index < totals.length) {
+            totals[row.choice_index] += BigInt(row.voting_power ?? 0);
+          }
+        }
+        const totalWeight = totals.reduce((sum, t) => sum + t, 0n);
+        return {
+          finalized: true,
+          resultHash: poll.result_hash,
+          anchoredTxHash: poll.anchored_tx_hash,
+          choices,
+          totals: totals.map((t) => t.toString()),
+          totalVotes: voteRows.length,
+          totalWeight: totalWeight.toString(),
+        };
+      }
+
+      const results = await computeWeightedTally(id, poll.snapshot_ledger, choices);
+      return { finalized: false, ...results };
+    });
+
+    if (body === null) {
+      return res.status(404).json({ error: "Poll not found" });
+    }
+    res.json(body);
   } catch (error) {
     logger.error({ err: error }, "Error in GET /signaling/polls/:id/results");
     res.status(500).json({ error: "Failed to compute signaling poll results" });

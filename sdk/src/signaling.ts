@@ -37,24 +37,31 @@ const DOMAIN_TAG = "nebgov-signal";
  * hex(SHA256("nebgov-signal" || poll_id || choice || voter_address ||
  * nonce)).
  *
- * Returned (and signed) as a **hex string**, not raw digest bytes — a
- * wallet extension's SEP-43 `signMessage(message: string)` only accepts a
- * string, so both {@link SignalingClient.castVote} (raw {@link Keypair}) and
- * {@link SignalingClient.castVoteWithSign} (wallet extension) sign the
- * identical UTF-8 bytes of this hex string. Kept in lockstep with
- * `backend/src/signaling/signature.ts`'s `canonicalSignalPayload` — the two
- * are separate implementations (the backend never imports this
- * browser-facing SDK) so a change to one without the other silently breaks
- * vote verification.
+ * Returned as a **hex string**, not raw digest bytes — a wallet extension's
+ * SEP-43 `signMessage(message: string)` only accepts a string. This hex
+ * string is the *message* both signing paths hand to the signing step, not
+ * the final signed bytes — see {@link sep53Digest} for why a raw sign of
+ * this string directly would silently reject every real wallet-signed vote.
+ * Kept in lockstep with `backend/src/signaling/signature.ts`'s
+ * `canonicalSignalPayload` — the two are separate implementations (the
+ * backend never imports this browser-facing SDK) so a change to one without
+ * the other silently breaks vote verification. Exported (rather than kept
+ * module-private) so both packages can be pinned against the same golden
+ * vector — see `sdk/src/__tests__/signaling.test.ts` and
+ * `backend/src/__tests__/signaling-signature.test.ts`'s
+ * "golden vector" tests, which must be updated together.
  */
-async function canonicalSignalPayload(
+export async function canonicalSignalPayload(
   pollId: number,
   choiceIndex: number,
   voterAddress: string,
   nonce: string,
 ): Promise<string> {
   const message = [DOMAIN_TAG, String(pollId), String(choiceIndex), voterAddress, nonce].join("|");
-  const bytes = new TextEncoder().encode(message);
+  return sha256Hex(new TextEncoder().encode(message));
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
     throw new SignalingError(
@@ -62,8 +69,47 @@ async function canonicalSignalPayload(
       "Web Crypto (crypto.subtle) is not available in this environment",
     );
   }
-  const digest = await subtle.digest("SHA-256", bytes);
+  const digest = await subtle.digest("SHA-256", bytes as BufferSource);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const SEP53_PREFIX = "Stellar Signed Message:\n";
+
+/**
+ * SEP-53 ("Sign and Verify Messages") message-signing digest:
+ * SHA256(utf8("Stellar Signed Message:\n") || utf8(message)).
+ *
+ * A wallet extension's SEP-43 `signMessage` doesn't sign a message's raw
+ * bytes directly — per SEP-53 (which Freighter and other wallets implement
+ * for `signMessage`), it prefixes the message with this fixed domain string
+ * and hashes the result *before* the ed25519 signature is applied, to
+ * prevent a signed message from being confused with a real transaction
+ * signature. `@stellar/stellar-sdk`'s `Keypair` has no built-in
+ * `signMessage`/`verifyMessage` helper (checked against the installed
+ * ^12/^15 versions — neither ships one), so {@link SignalingClient.castVote}
+ * (the raw-{@link Keypair} path) replicates this construction by hand
+ * before calling `Keypair.sign`, matching what a real wallet's
+ * `signMessage` does internally and what
+ * `backend/src/signaling/signature.ts`'s `verifySignalVote` checks against.
+ * {@link SignalingClient.castVoteWithSign} (the wallet-extension path) does
+ * *not* apply this itself — it hands the plain `digestHex` string straight
+ * to the wallet's `signMessage`, which is expected to wrap it internally.
+ */
+export async function sep53Digest(message: string): Promise<Uint8Array> {
+  const prefixBytes = new TextEncoder().encode(SEP53_PREFIX);
+  const messageBytes = new TextEncoder().encode(message);
+  const payload = new Uint8Array(prefixBytes.length + messageBytes.length);
+  payload.set(prefixBytes, 0);
+  payload.set(messageBytes, prefixBytes.length);
+
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new SignalingError(
+      SignalingErrorCode.SimulationFailed,
+      "Web Crypto (crypto.subtle) is not available in this environment",
+    );
+  }
+  return new Uint8Array(await subtle.digest("SHA-256", payload as BufferSource));
 }
 
 function generateNonce(): string {
@@ -204,14 +250,16 @@ export class SignalingClient {
   }
 
   /**
-   * Cast a gasless signal: builds the canonical payload, signs it with
-   * `voter`, and POSTs it to the backend. No on-chain transaction is
-   * submitted.
+   * Cast a gasless signal: builds the canonical payload, SEP-53-signs it
+   * with `voter` (see {@link sep53Digest} for why this isn't a raw sign of
+   * the payload bytes), and POSTs it to the backend. No on-chain transaction
+   * is submitted.
    */
   async castVote(voter: Keypair, pollId: number, choiceIndex: number): Promise<void> {
     const nonce = generateNonce();
     const digestHex = await canonicalSignalPayload(pollId, choiceIndex, voter.publicKey(), nonce);
-    const signature = Buffer.from(voter.sign(Buffer.from(digestHex, "utf8"))).toString("base64");
+    const signedDigest = await sep53Digest(digestHex);
+    const signature = Buffer.from(voter.sign(Buffer.from(signedDigest))).toString("base64");
 
     await this.backendRequest(`/signaling/polls/${pollId}/vote`, {
       method: "POST",

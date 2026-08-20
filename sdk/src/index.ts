@@ -29,7 +29,7 @@ export { WrapperClient } from "./wrapper";
 export type { WrapperConfig } from "./wrapper";
 export { CoSponsorshipClient } from "./coSponsorship";
 export type { CoSponsorshipConfig } from "./coSponsorship";
-export { SignalingClient } from "./signaling";
+export { SignalingClient, canonicalSignalPayload, sep53Digest } from "./signaling";
 export {
   GovernorError,
   GovernorErrorCode,
