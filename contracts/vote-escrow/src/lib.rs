@@ -4,6 +4,8 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, token, Address, Env, Symbol, Vec,
 };
 
+// Symbol is used in events.rs
+
 mod error;
 mod events;
 
@@ -469,8 +471,8 @@ impl VoteEscrowContract {
 
         if let Some(history) = history_opt {
             let start = offset;
-            let end = offset.checked_add(limit).unwrap_or(u32::MAX);
-            let history_len = history.len() as u32;
+            let end = offset.saturating_add(limit);
+            let history_len = history.len();
 
             if start >= history_len {
                 return Vec::new(&env);
@@ -521,21 +523,34 @@ impl VoteEscrowContract {
 
         let duration_range = max_duration.saturating_sub(min_duration) as i128;
         if duration_range == 0 {
-            return amount.checked_add(amount.checked_mul(max_multiplier_bps as i128).unwrap_or(0).checked_div(10000).unwrap_or(0)).unwrap_or(0);
+            return amount
+                .checked_add(
+                    amount
+                        .checked_mul(max_multiplier_bps as i128)
+                        .unwrap_or(0)
+                        .checked_div(10000)
+                        .unwrap_or(0),
+                )
+                .unwrap_or(0);
         }
 
         let applicable_duration = (duration_ledgers.saturating_sub(min_duration)) as i128;
-        let applicable_bps = (applicable_duration.checked_mul(max_multiplier_bps as i128).unwrap_or(0))
-            .checked_div(duration_range)
-            .unwrap_or(0);
+        let applicable_bps =
+            (applicable_duration.checked_mul(max_multiplier_bps as i128).unwrap_or(0))
+                .checked_div(duration_range)
+                .unwrap_or(0);
 
-        let boost = amount.checked_mul(applicable_bps)
+        let boost = amount
+            .checked_mul(applicable_bps)
             .ok_or(VoteEscrowError::ArithmeticOverflow)
             .unwrap()
             .checked_div(10000)
             .unwrap_or(0);
 
-        amount.checked_add(boost).ok_or(VoteEscrowError::ArithmeticOverflow).unwrap()
+        amount
+            .checked_add(boost)
+            .ok_or(VoteEscrowError::ArithmeticOverflow)
+            .unwrap()
     }
 
     fn compute_decayed_power(lock: &Lock, current_ledger: u32) -> i128 {
@@ -562,7 +577,9 @@ impl VoteEscrowContract {
             .checked_div(duration)
             .unwrap_or(0);
 
-        lock.amount.checked_add(decayed_boost).unwrap_or(lock.amount)
+        lock.amount
+            .checked_add(decayed_boost)
+            .unwrap_or(lock.amount)
     }
 
     fn update_global_checkpoint(env: &Env, ledger: u32) {
@@ -590,7 +607,7 @@ impl VoteEscrowContract {
 mod tests {
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
+        testutils::Address as _,
         Env,
     };
 
