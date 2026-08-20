@@ -70,6 +70,48 @@ describe("Governance Tuning Endpoints", () => {
       expect(response.body.auto_propose).toBe(true);
       expect(response.body.max_quorum_numerator).toBe(before.body.max_quorum_numerator);
     });
+
+    it("rejects a patch that sets min_quorum_numerator above max_quorum_numerator", async () => {
+      const response = await request(app)
+        .put("/governance-tuning/config")
+        .set("X-ADMIN-SECRET", process.env.ADMIN_SECRET!)
+        .send({ min_quorum_numerator: 9000, max_quorum_numerator: 100 })
+        .expect(400);
+
+      expect(response.body.error).toMatch(/min_quorum_numerator/);
+    });
+
+    it("rejects a one-sided patch that violates the other side's existing value", async () => {
+      // Default config has min_quorum_numerator=100 — lowering max below that
+      // must be rejected even though the patch never touches the min field.
+      const response = await request(app)
+        .put("/governance-tuning/config")
+        .set("X-ADMIN-SECRET", process.env.ADMIN_SECRET!)
+        .send({ max_quorum_numerator: 50 })
+        .expect(400);
+
+      expect(response.body.error).toMatch(/min_quorum_numerator/);
+    });
+
+    it("rejects a patch that sets min_proposal_threshold above max_proposal_threshold", async () => {
+      const response = await request(app)
+        .put("/governance-tuning/config")
+        .set("X-ADMIN-SECRET", process.env.ADMIN_SECRET!)
+        .send({ min_proposal_threshold: "1000", max_proposal_threshold: "500" })
+        .expect(400);
+
+      expect(response.body.error).toMatch(/min_proposal_threshold/);
+    });
+
+    it("allows min_proposal_threshold above a null (unbounded) max_proposal_threshold", async () => {
+      const response = await request(app)
+        .put("/governance-tuning/config")
+        .set("X-ADMIN-SECRET", process.env.ADMIN_SECRET!)
+        .send({ min_proposal_threshold: "1000000000" })
+        .expect(200);
+
+      expect(response.body.min_proposal_threshold).toBe("1000000000");
+    });
   });
 
   describe("GET /governance-tuning/recommendations", () => {

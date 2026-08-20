@@ -2,7 +2,7 @@ import { logger } from "../logger";
 import { computeRecommendation, gatherAnalyzerInputs } from "../governance-tuning/analyzer";
 import { getGovernanceTuningConfig } from "../governance-tuning/config-store";
 import { insertRecommendation } from "../governance-tuning/recommendation-store";
-import { maybeAutoPropose } from "../governance-tuning/auto-propose";
+import { findUnresolvedAutoProposal, maybeAutoPropose } from "../governance-tuning/auto-propose";
 
 /**
  * Governance tuning recommender (issue #998). Same footing as
@@ -71,11 +71,19 @@ export class GovernanceTuningAnalyzerService {
     let proposalId: bigint | null = null;
     let autoProposed = false;
     if (!unchanged && config.autoPropose) {
-      proposalId = await maybeAutoPropose(inputs, result).catch((err) => {
-        logger.error({ err }, "Governance tuning auto-propose failed");
-        return null;
-      });
-      autoProposed = proposalId !== null;
+      const pendingProposalId = await findUnresolvedAutoProposal();
+      if (pendingProposalId !== null) {
+        logger.info(
+          { pendingProposalId: pendingProposalId.toString() },
+          "Governance tuning: skipping auto-propose — a prior auto-proposed update_config hasn't resolved yet",
+        );
+      } else {
+        proposalId = await maybeAutoPropose(inputs, result).catch((err) => {
+          logger.error({ err }, "Governance tuning auto-propose failed");
+          return null;
+        });
+        autoProposed = proposalId !== null;
+      }
     }
 
     const stored = await insertRecommendation({

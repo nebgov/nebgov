@@ -64,6 +64,9 @@ const PATCH_COLUMNS: Record<keyof GovernanceTuningConfigPatch, string> = {
   autoPropose: "auto_propose",
 };
 
+/** Thrown when a patch would leave the config in an internally inconsistent state (e.g. min > max). */
+export class GovernanceTuningConfigValidationError extends Error {}
+
 /** Admin-only: updates whichever fields are present in `patch`, leaving the rest unchanged. */
 export async function updateGovernanceTuningConfig(
   patch: GovernanceTuningConfigPatch,
@@ -77,6 +80,27 @@ export async function updateGovernanceTuningConfig(
   );
   if (keys.length === 0) {
     return getGovernanceTuningConfig();
+  }
+
+  // Cross-field validation needs the *effective* post-patch values, not just
+  // the fields present in this patch — a PUT that only touches one side of a
+  // min/max pair must still be checked against the other side's current value.
+  const current = await getGovernanceTuningConfig();
+  const effectiveMinQuorum = patch.minQuorumNumerator ?? current.minQuorumNumerator;
+  const effectiveMaxQuorum = patch.maxQuorumNumerator ?? current.maxQuorumNumerator;
+  if (effectiveMinQuorum > effectiveMaxQuorum) {
+    throw new GovernanceTuningConfigValidationError(
+      `min_quorum_numerator (${effectiveMinQuorum}) must be <= max_quorum_numerator (${effectiveMaxQuorum})`,
+    );
+  }
+
+  const effectiveMinThreshold = patch.minProposalThreshold ?? current.minProposalThreshold;
+  const effectiveMaxThreshold =
+    patch.maxProposalThreshold !== undefined ? patch.maxProposalThreshold : current.maxProposalThreshold;
+  if (effectiveMaxThreshold !== null && effectiveMinThreshold > effectiveMaxThreshold) {
+    throw new GovernanceTuningConfigValidationError(
+      `min_proposal_threshold (${effectiveMinThreshold}) must be <= max_proposal_threshold (${effectiveMaxThreshold})`,
+    );
   }
 
   const setClauses: string[] = [];

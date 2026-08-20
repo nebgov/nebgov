@@ -4,6 +4,7 @@ import { isAdmin } from "../middleware/admin";
 import { validate } from "../middleware/validate";
 import {
   getGovernanceTuningConfig,
+  GovernanceTuningConfigValidationError,
   updateGovernanceTuningConfig,
 } from "../governance-tuning/config-store";
 import {
@@ -125,7 +126,11 @@ router.put(
         autoPropose: body.auto_propose,
       });
       res.json(serializeConfig(config));
-    } catch {
+    } catch (err) {
+      if (err instanceof GovernanceTuningConfigValidationError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
       res.status(500).json({ error: "Internal server error" });
     }
   },
