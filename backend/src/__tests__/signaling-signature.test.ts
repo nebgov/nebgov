@@ -111,7 +111,7 @@ describe("signaling signature verification", () => {
     };
 
     expect(canonicalSignalPayload(payload)).toBe(
-      "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1",
+      "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1f",
     );
   });
 
@@ -121,10 +121,10 @@ describe("signaling signature verification", () => {
   // "wallet signMessage prefixes the message" footgun this construction
   // exists to handle.
   it("matches the golden SEP-53 digest shared with the SDK's implementation", () => {
-    const digestHex = "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1";
+    const digestHex = "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1f";
 
     expect(sep53Digest(digestHex).toString("hex")).toBe(
-      "4c0a18fd5bb93f33234de0c1d49121eb4bab8f2e9ea3682fa6a6dc4c76311dde",
+      "e5e57e05abfaf71f04f847b94ea5e2ae791527fe39c9236ba42076647a23df01",
     );
   });
 });

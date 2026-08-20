@@ -21,7 +21,7 @@ describe("canonicalSignalPayload", () => {
       "abc123",
     );
 
-    expect(digest).toBe("a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1");
+    expect(digest).toBe("a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1f");
   });
 
   it("produces a different digest when any single field changes", async () => {
@@ -43,10 +43,10 @@ describe("sep53Digest", () => {
   // the "wallet signMessage prefixes the message" footgun this construction
   // exists to handle.
   it("matches the golden digest shared with the backend's implementation", async () => {
-    const digestHex = "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1";
+    const digestHex = "a1ca0be6da95546b57dc5ba5f6ca543e7df4cf7c0e077939e26c04d61b591d1f";
 
     const signed = await sep53Digest(digestHex);
 
-    expect(toHex(signed)).toBe("4c0a18fd5bb93f33234de0c1d49121eb4bab8f2e9ea3682fa6a6dc4c76311dde");
+    expect(toHex(signed)).toBe("e5e57e05abfaf71f04f847b94ea5e2ae791527fe39c9236ba42076647a23df01");
   });
 });

@@ -69,7 +69,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
       "Web Crypto (crypto.subtle) is not available in this environment",
     );
   }
-  const digest = await subtle.digest("SHA-256", bytes as BufferSource);
+  const digest = await subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -109,7 +109,7 @@ export async function sep53Digest(message: string): Promise<Uint8Array> {
       "Web Crypto (crypto.subtle) is not available in this environment",
     );
   }
-  return new Uint8Array(await subtle.digest("SHA-256", payload as BufferSource));
+  return new Uint8Array(await subtle.digest("SHA-256", payload));
 }
 
 function generateNonce(): string {
@@ -204,7 +204,7 @@ export class SignalingClient {
         headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       });
       if (!resp.ok) {
-        const body = await resp.json().catch(() => null);
+        const body = (await resp.json().catch(() => null)) as { error?: string } | null;
         throw new SignalingError(
           SignalingErrorCode.TransactionFailed,
           body?.error ?? `Backend request failed: ${resp.status}`,
