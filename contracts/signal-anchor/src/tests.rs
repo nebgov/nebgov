@@ -78,11 +78,15 @@ fn anchor_result_extends_ttl_on_write_and_read() {
         env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
     assert_eq!(ttl_after_write, ANCHOR_TTL_LEDGERS);
 
-    // Advance the ledger partway through the TTL window, so the entry's
-    // remaining TTL has visibly decreased, then read it — the read path
-    // should re-extend it back to the full ANCHOR_TTL_LEDGERS.
-    env.ledger()
-        .with_mut(|li| li.sequence_number += ANCHOR_TTL_LEDGERS / 2);
+    // Advance the ledger a small amount so the entry's remaining TTL has
+    // visibly decreased, then read it — the read path should re-extend it
+    // back to the full ANCHOR_TTL_LEDGERS. Deliberately not advancing
+    // anywhere near ANCHOR_TTL_LEDGERS itself: the contract's own instance
+    // storage (holding DataKey::Admin) has a separate, much shorter default
+    // TTL that was never extended, and archiving it here would fail every
+    // subsequent call with an unrelated "archived instance" error before
+    // this test's actual assertion is reached.
+    env.ledger().with_mut(|li| li.sequence_number += 1000);
 
     let record = client.get_anchor(&1);
     assert!(record.is_some());
