@@ -22,7 +22,7 @@ const ANCHOR_TTL_LEDGERS: u32 = 6_307_200;
 /// purely so a finalized off-chain result can't be silently edited after
 /// publication.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnchorRecord {
     pub poll_id: u64,
     pub result_hash: BytesN<32>,
