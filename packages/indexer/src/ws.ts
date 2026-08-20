@@ -54,7 +54,12 @@ export type WsEventType =
   | "stream_extended"
   | "stream_topped_up"
   | "stream_exhausted"
-  | "stream_expired";
+  | "stream_expired"
+  | "conviction_proposal_created"
+  | "conviction_stake_updated"
+  | "conviction_conviction_updated"
+  | "conviction_proposal_executed"
+  | "conviction_proposal_cancelled";
 
 export interface WsEvent {
   type: WsEventType;

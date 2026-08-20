@@ -19,6 +19,7 @@ import {
   Moon,
   Bell,
   Settings,
+  Activity,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { useTranslations } from "next-intl";
@@ -38,6 +39,7 @@ function formatGovernanceAmount(v: bigint): string {
 
 const NAV_LINKS = [
   { name: "Proposals", href: "/", icon: LayoutDashboard },
+  { name: "Conviction", href: "/conviction", icon: Activity },
   { name: "Governors", href: "/governors", icon: LayoutDashboard },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Delegates", href: "/delegates", icon: Users },

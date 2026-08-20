@@ -190,6 +190,8 @@ export interface GovernorConfig {
   votesAddress: string;
   /** Contract address of the co-sponsorship registry, if deployed */
   coSponsorshipAddress?: string;
+  /** Contract address of the independent conviction-voting module, if deployed. */
+  convictionVotingAddress?: string;
   /** Stellar network to connect to */
   network: Network;
   /** RPC URL override (optional — defaults to public horizon) */
@@ -204,6 +206,26 @@ export interface GovernorConfig {
   baseDelayMs?: number;
   /** Token decimals for vote display (optional — fetched from contract if not provided) */
   decimals?: number;
+}
+
+export interface ConvictionProposal {
+  id: bigint;
+  proposer: string;
+  target: string;
+  fnName: string;
+  calldata: Buffer | Uint8Array;
+  requestedAmount: bigint;
+  createdLedger: number;
+  conviction: bigint;
+  lastUpdatedLedger: number;
+  executed: boolean;
+  cancelled: boolean;
+}
+
+export interface ConvictionSnapshot {
+  proposalId: bigint;
+  ledger: number;
+  conviction: bigint;
 }
 
 export interface TimelockOperation {
