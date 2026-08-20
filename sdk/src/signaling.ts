@@ -87,7 +87,7 @@ const SEP53_PREFIX = "Stellar Signed Message:\n";
  * signature. `@stellar/stellar-sdk`'s `Keypair` has no built-in
  * `signMessage`/`verifyMessage` helper (checked against the installed
  * ^12/^15 versions — neither ships one), so {@link SignalingClient.castVote}
- * (the raw-{@link Keypair} path) replicates this construction by hand
+ * (the raw-`Keypair` path) replicates this construction by hand
  * before calling `Keypair.sign`, matching what a real wallet's
  * `signMessage` does internally and what
  * `backend/src/signaling/signature.ts`'s `verifySignalVote` checks against.
@@ -217,7 +217,7 @@ export class SignalingClient {
   // ── Poll CRUD (backend-backed) ─────────────────────────────────────────────
 
   /**
-   * Create a signaling poll. `creator` (a {@link Keypair} or a bare Stellar
+   * Create a signaling poll. `creator` (a `Keypair` or a bare Stellar
    * address string, for wallet-extension flows where the SDK never sees a
    * private key) must currently hold at least the governor's
    * `proposal_threshold` in voting power — this is checked by the backend,
@@ -270,7 +270,7 @@ export class SignalingClient {
 
   /**
    * Same as {@link castVote}, but accepts a wallet-extension SEP-43
-   * `signMessage` callback instead of a raw {@link Keypair} — for browser
+   * `signMessage` callback instead of a raw `Keypair` — for browser
    * dApps where the private key is never exposed to the SDK. `signMessage`
    * is expected to return a base64-encoded signature (see
    * `app/src/lib/wallet-context.tsx`'s `signMessage`).
