@@ -5,6 +5,7 @@ import { DelegationSigClient, VotesClient, type Network } from "@nebgov/sdk";
 import { isValidStellarAddress } from "../lib/utils/stellarAddress";
 import { useWallet } from "../lib/wallet-context";
 import { backendFetch } from "../lib/backend";
+import { readGovernorConfig } from "../lib/nebgov-env";
 
 /**
  * Approximate ledger close time used to convert a human-friendly expiry
@@ -79,6 +80,16 @@ function getVotesClientFromEnv(): VotesClient {
   });
 }
 
+function getVotesClientFromEnv(): VotesClient {
+  const config = readGovernorConfig();
+  if (!config) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_GOVERNOR_ADDRESS/NEXT_PUBLIC_TIMELOCK_ADDRESS/NEXT_PUBLIC_VOTES_ADDRESS in .env.local",
+    );
+  }
+  return new VotesClient(config);
+}
+
 /**
  * Sign a delegation permit with the connected wallet and submit it through
  * the backend relayer — the connected wallet never pays a fee or submits a
@@ -106,9 +117,9 @@ export function useGaslessDelegation() {
       try {
         const client = getVotesClientFromEnv();
         const [wouldCreateCycle, depthLimit, currentDepth] = await Promise.all([
-          client.wouldCreateCycle(publicKey, delegatee.trim()),
-          client.getDelegationDepthLimit(),
-          client.getChainDepth(publicKey),
+          votes.wouldCreateCycle(publicKey, delegatee.trim()),
+          votes.getDelegationDepthLimit(),
+          votes.getChainDepth(publicKey),
         ]);
 
         if (wouldCreateCycle) {
