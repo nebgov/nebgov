@@ -9,13 +9,13 @@ import {
   scValToNative,
   xdr,
 } from "@stellar/stellar-sdk";
-import { GovernorConfig, Network, ProposalBond, BondState } from "./types";
+import { GovernorConfig, Network, ProposalBond, BondState, ProposalBondSettings } from "./types";
 import {
   ProposalBondsError,
   ProposalBondsErrorCode,
   parseProposalBondsError,
 } from "./errors";
-import { withRetry, isNetworkError, hexToBytes32, encodeCalldata } from "./utils";
+import { withRetry, isNetworkError, hexToBytes32 } from "./utils";
 
 export type ProposalBondsConfig = GovernorConfig;
 
@@ -264,7 +264,18 @@ export class ProposalBondsClient {
     descriptionHash: string,
     recipient: string,
   ): Buffer {
-    return encodeCalldata([governorAddress, hexToBytes32(descriptionHash), recipient]);
+    // Built directly with explicit per-arg type hints rather than
+    // encodeCalldata(): that helper only special-cases "0x"-prefixed
+    // strings as bytes and otherwise infers the ScVal type from the JS
+    // value, so a plain address string encodes as ScVal.scvString instead
+    // of ScVal.scvAddress — slash()'s `Address` params would trap on
+    // execution. Mirrors calldataArgRowToScVal in treasury-calldata.ts.
+    const args = xdr.ScVal.scvVec([
+      nativeToScVal(governorAddress, { type: "address" }),
+      nativeToScVal(hexToBytes32(descriptionHash), { type: "bytes" }),
+      nativeToScVal(recipient, { type: "address" }),
+    ]);
+    return Buffer.from(args.toXDR());
   }
 
   /** Get a bond by description hash, or `null` if none has been locked. */
@@ -296,6 +307,48 @@ export class ProposalBondsClient {
       const native = scValToNative(raw);
       if (native === null || native === undefined) return null;
       return this.parseBond(native as Record<string, unknown>);
+    });
+  }
+
+  /**
+   * Read the contract's configuration — bond token/amount, governor
+   * address, `RefundGraceLedgers`, and `MaxLockLedgers`. Use this to work
+   * out whether a `Locked` bond is currently refund-eligible without
+   * hardcoding those values client-side.
+   */
+  async getSettings(): Promise<ProposalBondSettings> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount()),
+          { fee: BASE_FEE, networkPassphrase: this.networkPassphrase },
+        )
+          .addOperation(this.contract.call("get_settings"))
+          .setTimeout(30)
+          .build(),
+      );
+
+      if (SorobanRpc.Api.isSimulationError(result)) {
+        throw parseProposalBondsError({ status: "ERROR", error: result.error });
+      }
+
+      const raw = (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result?.retval;
+      if (!raw) {
+        throw new ProposalBondsError(
+          ProposalBondsErrorCode.MissingReturnValue,
+          "No return value from get_settings",
+        );
+      }
+
+      const native = scValToNative(raw) as Record<string, unknown>;
+      return {
+        bondToken: String(native.bond_token),
+        bondAmount: BigInt(native.bond_amount as bigint | number | string),
+        governor: String(native.governor),
+        refundGraceLedgers: Number(native.refund_grace_ledgers),
+        maxLockLedgers: Number(native.max_lock_ledgers),
+      };
     });
   }
 
@@ -360,7 +413,7 @@ export class ProposalBondsClient {
     const query = params.toString() ? `?${params.toString()}` : "";
     const raw = await this.indexerRequest<{
       data: any[];
-      pagination: { page: number; limit: number; has_more: boolean };
+      pagination: { page: number; limit: number; hasMore: boolean };
     }>(`/proposal-bonds${query}`);
 
     return {
@@ -368,7 +421,7 @@ export class ProposalBondsClient {
       pagination: {
         page: raw.pagination.page,
         limit: raw.pagination.limit,
-        hasMore: raw.pagination.has_more,
+        hasMore: raw.pagination.hasMore,
       },
     };
   }

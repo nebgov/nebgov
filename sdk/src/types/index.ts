@@ -149,6 +149,29 @@ export interface ProposalBond {
   state: BondState;
 }
 
+/** Read-only configuration snapshot of a deployed ProposalBonds contract. */
+export interface ProposalBondSettings {
+  /** Token address bonds are denominated and paid in. */
+  bondToken: string;
+  /** Amount, in the bond token's smallest unit, `lock_bond` currently requires. */
+  bondAmount: bigint;
+  /** Governor contract address this bonds registry is attached to. */
+  governor: string;
+  /**
+   * Ledgers after a correlated proposal's `end_ledger` during which
+   * `refund_bond` is blocked, giving the community time to submit a
+   * `slash` governance proposal first.
+   */
+  refundGraceLedgers: number;
+  /**
+   * Ledgers after `lock_bond` after which `refund_bond` succeeds
+   * unconditionally — the escape hatch for a proposal stuck in `Queued`
+   * with no governor-reported terminal state (see the contract's
+   * `refund_bond` doc comment).
+   */
+  maxLockLedgers: number;
+}
+
 /** Aggregated vote tallies for a proposal. */
 export interface ProposalVotes {
   /** Total tokens cast in favour. */

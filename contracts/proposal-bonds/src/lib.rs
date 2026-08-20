@@ -73,6 +73,16 @@ pub struct Bond {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct BondSettings {
+    pub bond_token: Address,
+    pub bond_amount: i128,
+    pub governor: Address,
+    pub refund_grace_ledgers: u32,
+    pub max_lock_ledgers: u32,
+}
+
+#[contracttype]
 pub enum DataKey {
     Admin,
     BondToken,
@@ -80,6 +90,7 @@ pub enum DataKey {
     Governor,
     Bond(BytesN<32>),
     RefundGraceLedgers,
+    MaxLockLedgers,
 }
 
 /// ~1,000,000 ledgers (~58 days at the network's ~5s ledger close time),
@@ -99,10 +110,14 @@ impl ProposalBondsContract {
         bond_amount: i128,
         governor: Address,
         refund_grace_ledgers: u32,
+        max_lock_ledgers: u32,
     ) {
         admin.require_auth();
         if env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(ProposalBondsError::AlreadyInitialized);
+        }
+        if bond_amount <= 0 {
+            env.panic_with_error(ProposalBondsError::InvalidBondAmount);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::BondToken, &bond_token);
@@ -111,6 +126,9 @@ impl ProposalBondsContract {
         env.storage()
             .instance()
             .set(&DataKey::RefundGraceLedgers, &refund_grace_ledgers);
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxLockLedgers, &max_lock_ledgers);
     }
 
     fn must_get_bond(env: &Env, description_hash: &BytesN<32>) -> Bond {
@@ -193,6 +211,18 @@ impl ProposalBondsContract {
     /// submit a `slash` governance proposal — has elapsed. Permissionless:
     /// anyone may trigger it, but funds always return to the original
     /// proposer.
+    ///
+    /// Escape hatch: `ProposalState::Queued` is deliberately *not* treated
+    /// as terminal here — a queued proposal can still be executed, so
+    /// refunding early would let a proposer walk away from their bond while
+    /// their proposal might still land. But governor's `state()` has no
+    /// path out of `Queued` if the timelock operation's execution window
+    /// closes without `execute()` ever being called (querying that
+    /// correctly would mean cross-calling into `contracts/timelock` too,
+    /// mirroring its ready/expiry math — out of scope here), so a bond
+    /// behind such a proposal would otherwise be locked forever. Once
+    /// `MaxLockLedgers` has elapsed since `lock_bond`, refund is allowed
+    /// unconditionally, regardless of the correlated proposal's state.
     pub fn refund_bond(env: Env, caller: Address, description_hash: BytesN<32>, proposal_id: u64) {
         caller.require_auth();
 
@@ -201,40 +231,51 @@ impl ProposalBondsContract {
             env.panic_with_error(ProposalBondsError::BondNotLocked);
         }
 
-        let governor = Self::get_governor(&env);
-        let governor_client = GovernorClient::new(&env, &governor);
-
-        let proposal = governor_client.get_proposal(&proposal_id);
-        if proposal.description_hash != description_hash {
-            env.panic_with_error(ProposalBondsError::DescriptionHashMismatch);
-        }
-
-        let state = governor_client.state(&proposal_id);
-        let is_terminal = matches!(
-            state,
-            ProposalState::Executed
-                | ProposalState::Defeated
-                | ProposalState::Expired
-                | ProposalState::Cancelled
-        );
-        if !is_terminal {
-            env.panic_with_error(ProposalBondsError::ProposalNotTerminal);
-        }
-
-        // Gate refunds on `proposal.end_ledger` (the ledger voting closed and
-        // the proposal became terminal-bound) rather than tracking a
-        // separate "first observed terminal" ledger locally: it's already
-        // returned by `get_proposal`, deterministic across repeated calls,
-        // and gives the community a fixed `RefundGraceLedgers` window after
-        // voting ends to submit a `slash` proposal before funds move.
-        let grace_ledgers: u32 = env
+        let max_lock_ledgers: u32 = env
             .storage()
             .instance()
-            .get(&DataKey::RefundGraceLedgers)
-            .unwrap_or(0);
-        let refund_eligible_ledger = proposal.end_ledger.saturating_add(grace_ledgers);
-        if env.ledger().sequence() < refund_eligible_ledger {
-            env.panic_with_error(ProposalBondsError::RefundGraceNotElapsed);
+            .get(&DataKey::MaxLockLedgers)
+            .unwrap_or(BOND_TTL_LEDGERS);
+        let escape_hatch_ledger = bond.locked_ledger.saturating_add(max_lock_ledgers);
+        let past_max_lock = env.ledger().sequence() >= escape_hatch_ledger;
+
+        if !past_max_lock {
+            let governor = Self::get_governor(&env);
+            let governor_client = GovernorClient::new(&env, &governor);
+
+            let proposal = governor_client.get_proposal(&proposal_id);
+            if proposal.description_hash != description_hash {
+                env.panic_with_error(ProposalBondsError::DescriptionHashMismatch);
+            }
+
+            let state = governor_client.state(&proposal_id);
+            let is_terminal = matches!(
+                state,
+                ProposalState::Executed
+                    | ProposalState::Defeated
+                    | ProposalState::Expired
+                    | ProposalState::Cancelled
+            );
+            if !is_terminal {
+                env.panic_with_error(ProposalBondsError::ProposalNotTerminal);
+            }
+
+            // Gate refunds on `proposal.end_ledger` (the ledger voting closed
+            // and the proposal became terminal-bound) rather than tracking a
+            // separate "first observed terminal" ledger locally: it's
+            // already returned by `get_proposal`, deterministic across
+            // repeated calls, and gives the community a fixed
+            // `RefundGraceLedgers` window after voting ends to submit a
+            // `slash` proposal before funds move.
+            let grace_ledgers: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::RefundGraceLedgers)
+                .unwrap_or(0);
+            let refund_eligible_ledger = proposal.end_ledger.saturating_add(grace_ledgers);
+            if env.ledger().sequence() < refund_eligible_ledger {
+                env.panic_with_error(ProposalBondsError::RefundGraceNotElapsed);
+            }
         }
 
         let bond_token = Self::get_bond_token(&env);
@@ -301,7 +342,35 @@ impl ProposalBondsContract {
         if admin != stored_admin {
             env.panic_with_error(ProposalBondsError::NotAuthorized);
         }
+        if new_amount <= 0 {
+            env.panic_with_error(ProposalBondsError::InvalidBondAmount);
+        }
         env.storage().instance().set(&DataKey::BondAmount, &new_amount);
+    }
+
+    /// Read-only settings snapshot — lets callers (e.g. the frontend) work
+    /// out refund eligibility for a `Locked` bond without guessing at
+    /// `RefundGraceLedgers`/`MaxLockLedgers`.
+    pub fn get_settings(env: Env) -> BondSettings {
+        BondSettings {
+            bond_token: Self::get_bond_token(&env),
+            bond_amount: env
+                .storage()
+                .instance()
+                .get(&DataKey::BondAmount)
+                .unwrap_or_else(|| env.panic_with_error(ProposalBondsError::NotInitialized)),
+            governor: Self::get_governor(&env),
+            refund_grace_ledgers: env
+                .storage()
+                .instance()
+                .get(&DataKey::RefundGraceLedgers)
+                .unwrap_or(0),
+            max_lock_ledgers: env
+                .storage()
+                .instance()
+                .get(&DataKey::MaxLockLedgers)
+                .unwrap_or(BOND_TTL_LEDGERS),
+        }
     }
 }
 

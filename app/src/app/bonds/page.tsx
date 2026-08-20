@@ -15,9 +15,10 @@ import toast from "react-hot-toast";
 import { ProposalBondsClient } from "@nebgov/sdk";
 import { useWallet } from "../../lib/wallet-context";
 import { readGovernorConfig, readIndexerUrl } from "../../lib/nebgov-env";
-import { useBondsByProposer } from "../../hooks/useProposalBonds";
+import { useBondsByProposer, useBondEligibility } from "../../hooks/useProposalBonds";
 import { BondStatusBadge } from "../../components/BondStatusBadge";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { useLedgerClock } from "../../lib/hooks/useLedgerClock";
 
 function formatAddress(address: string): string {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
@@ -36,6 +37,8 @@ function BondCardSkeleton() {
 export default function BondsPage() {
   const { isConnected, publicKey, signTransaction } = useWallet();
   const { bonds, loading, error, refetch } = useBondsByProposer(publicKey ?? null);
+  const { currentLedger } = useLedgerClock();
+  const { eligibility } = useBondEligibility(bonds, currentLedger);
   const [refundingHash, setRefundingHash] = useState<string | null>(null);
 
   async function handleRefund(descriptionHash: string) {
@@ -124,7 +127,7 @@ export default function BondsPage() {
                 <span>Amount: {bond.amount.toString()}</span>
                 <span>Locked at ledger {bond.lockedLedger}</span>
               </div>
-              {bond.state === "Locked" && (
+              {bond.state === "Locked" && eligibility[bond.descriptionHash] && (
                 <button
                   onClick={() => handleRefund(bond.descriptionHash)}
                   disabled={refundingHash === bond.descriptionHash}
@@ -132,6 +135,12 @@ export default function BondsPage() {
                 >
                   {refundingHash === bond.descriptionHash ? "Refunding..." : "Refund"}
                 </button>
+              )}
+              {bond.state === "Locked" && eligibility[bond.descriptionHash] === false && (
+                <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                  Not yet refund-eligible — waiting on your proposal to reach a terminal state
+                  and the post-terminal grace window to elapse.
+                </p>
               )}
             </div>
           ))}

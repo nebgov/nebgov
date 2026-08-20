@@ -63,6 +63,7 @@ impl MockGovernorContract {
 
 const BOND_AMOUNT: i128 = 1_000;
 const GRACE_LEDGERS: u32 = 100;
+const MAX_LOCK_LEDGERS: u32 = 1_000;
 
 /// Deploy a fresh SAC token, a mock governor, and an initialized
 /// proposal-bonds contract. Returns (client, token, proposer, governor_id).
@@ -78,7 +79,14 @@ fn setup(env: &Env) -> (ProposalBondsContractClient<'static>, Address, Address, 
 
     let contract_id = env.register(ProposalBondsContract, ());
     let client = ProposalBondsContractClient::new(env, &contract_id);
-    client.initialize(&admin, &token_addr, &BOND_AMOUNT, &governor_id, &GRACE_LEDGERS);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &BOND_AMOUNT,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
 
     (client, token_addr, proposer, governor_id)
 }
@@ -273,7 +281,14 @@ fn test_update_bond_amount_by_admin() {
     let governor_id = env.register(MockGovernorContract, ());
     let contract_id = env.register(ProposalBondsContract, ());
     let client = ProposalBondsContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_addr, &BOND_AMOUNT, &governor_id, &GRACE_LEDGERS);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &BOND_AMOUNT,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
 
     client.update_bond_amount(&admin, &2_000i128);
 
@@ -306,6 +321,116 @@ fn test_initialize_rejects_reinitialization() {
     let governor_id = env.register(MockGovernorContract, ());
     let contract_id = env.register(ProposalBondsContract, ());
     let client = ProposalBondsContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_addr, &BOND_AMOUNT, &governor_id, &GRACE_LEDGERS);
-    client.initialize(&admin, &token_addr, &BOND_AMOUNT, &governor_id, &GRACE_LEDGERS);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &BOND_AMOUNT,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
+    client.initialize(
+        &admin,
+        &token_addr,
+        &BOND_AMOUNT,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_initialize_rejects_zero_bond_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_addr = sac.address();
+    let governor_id = env.register(MockGovernorContract, ());
+    let contract_id = env.register(ProposalBondsContract, ());
+    let client = ProposalBondsContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_addr, &0i128, &governor_id, &GRACE_LEDGERS, &MAX_LOCK_LEDGERS);
+}
+
+#[test]
+#[should_panic]
+fn test_update_bond_amount_rejects_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_addr = sac.address();
+    let governor_id = env.register(MockGovernorContract, ());
+    let contract_id = env.register(ProposalBondsContract, ());
+    let client = ProposalBondsContractClient::new(&env, &contract_id);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &BOND_AMOUNT,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
+    client.update_bond_amount(&admin, &0i128);
+}
+
+/// A proposal stuck in `Queued` forever (its timelock execution window
+/// closed without `execute()` ever being called) has no path to a
+/// governor-reported terminal state — see the doc comment on
+/// `refund_bond`. Once `MaxLockLedgers` has elapsed since `lock_bond`,
+/// refund must succeed regardless, so the bond isn't locked up forever.
+#[test]
+fn test_refund_escape_hatch_after_max_lock_ledgers_even_if_stuck_queued() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, token_addr, proposer, gov) = setup(&env);
+    let tok = token::TokenClient::new(&env, &token_addr);
+    let h = hash(&env, 1);
+    client.lock_bond(&proposer, &h);
+
+    let gov_client = MockGovernorContractClient::new(&env, &gov);
+    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_state(&1u64, &ProposalState::Queued);
+
+    let balance_before_refund = tok.balance(&proposer);
+
+    env.ledger().with_mut(|l| l.sequence_number += MAX_LOCK_LEDGERS + 1);
+    client.refund_bond(&proposer, &h, &1u64);
+
+    assert_eq!(tok.balance(&proposer), balance_before_refund + BOND_AMOUNT);
+    let bond = client.get_bond(&h).unwrap();
+    assert_eq!(bond.state, BondState::Refunded);
+}
+
+#[test]
+#[should_panic]
+fn test_refund_stuck_queued_before_max_lock_ledgers_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _token, proposer, gov) = setup(&env);
+    let h = hash(&env, 1);
+    client.lock_bond(&proposer, &h);
+
+    let gov_client = MockGovernorContractClient::new(&env, &gov);
+    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_state(&1u64, &ProposalState::Queued);
+
+    // Still well before MAX_LOCK_LEDGERS — Queued must not be refundable
+    // early, since the proposal could still be executed.
+    client.refund_bond(&proposer, &h, &1u64);
+}
+
+#[test]
+fn test_get_settings_reflects_initialize_args() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, token_addr, _proposer, gov) = setup(&env);
+
+    let settings = client.get_settings();
+    assert_eq!(settings.bond_token, token_addr);
+    assert_eq!(settings.bond_amount, BOND_AMOUNT);
+    assert_eq!(settings.governor, gov);
+    assert_eq!(settings.refund_grace_ledgers, GRACE_LEDGERS);
+    assert_eq!(settings.max_lock_ledgers, MAX_LOCK_LEDGERS);
 }

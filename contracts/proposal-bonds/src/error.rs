@@ -13,4 +13,5 @@ pub enum ProposalBondsError {
     ProposalNotTerminal = 7,
     RefundGraceNotElapsed = 8,
     NotAuthorized = 9,
+    InvalidBondAmount = 10,
 }
