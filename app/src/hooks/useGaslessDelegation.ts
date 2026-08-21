@@ -60,26 +60,7 @@ function getDelegationSigClientFromEnv(): DelegationSigClient {
 // Cycle/depth-limit checks read token-votes state directly and live on
 // VotesClient (see sdk/src/votes.ts's wouldCreateCycle/getChainDepth/
 // getDelegationDepthLimit) — DelegationSigClient only handles signing and
-// submitting delegate_by_sig permits, it never had these methods. Same
-// pattern as components/DelegateModal.tsx's getVotesClientFromEnv.
-function getVotesClientFromEnv(): VotesClient {
-  const governorAddress = process.env.NEXT_PUBLIC_GOVERNOR_ADDRESS;
-  const timelockAddress = process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS;
-  const { votesAddress, network, rpcUrl } = delegationEnvConfig();
-
-  if (!governorAddress || !timelockAddress) {
-    throw new Error("Missing NEXT_PUBLIC_* contract addresses in .env.local");
-  }
-
-  return new VotesClient({
-    governorAddress,
-    timelockAddress,
-    votesAddress,
-    network,
-    ...(rpcUrl && { rpcUrl }),
-  });
-}
-
+// submitting delegate_by_sig permits, it never had these methods.
 function getVotesClientFromEnv(): VotesClient {
   const config = readGovernorConfig();
   if (!config) {
@@ -115,7 +96,11 @@ export function useGaslessDelegation() {
       }
 
       try {
-        const client = getVotesClientFromEnv();
+        // Cycle/depth-limit checks are read directly off the token-votes
+        // contract's delegation registry — that's VotesClient, not
+        // DelegationSigClient (which only handles the signed-permit
+        // relayer flow used by delegateGasless below).
+        const votes = getVotesClientFromEnv();
         const [wouldCreateCycle, depthLimit, currentDepth] = await Promise.all([
           votes.wouldCreateCycle(publicKey, delegatee.trim()),
           votes.getDelegationDepthLimit(),

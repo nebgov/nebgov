@@ -20,6 +20,7 @@ import {
   Bell,
   Settings,
   Radio,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { useTranslations } from "next-intl";
