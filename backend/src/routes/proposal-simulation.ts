@@ -250,10 +250,14 @@ router.get(
     const { limit } = req.query as unknown as z.infer<typeof historyQuerySchema>;
     try {
       const { rows } = await pool.query(
+        // Ties on simulated_at are real: two simulations persisted within
+        // the same clock tick (or, in tests, the same INSERT statement's
+        // single NOW() evaluation) would otherwise sort arbitrarily —
+        // `id DESC` as a tiebreaker keeps "newest first" well-defined.
         `SELECT simulated_at, simulated_at_ledger, results, any_action_would_revert
          FROM proposal_simulations
          WHERE proposal_id = $1
-         ORDER BY simulated_at DESC
+         ORDER BY simulated_at DESC, id DESC
          LIMIT $2`,
         [proposalId.toString(), limit],
       );

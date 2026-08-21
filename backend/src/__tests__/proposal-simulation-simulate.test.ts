@@ -6,7 +6,8 @@
 // This gives genuine XDR encode/decode coverage for decodeCalldataArgs
 // (the function this new feature's correctness most depends on) instead of
 // a hand-rolled stand-in for it.
-import { Account, Keypair, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { Account, Keypair, StrKey, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { randomBytes } from "crypto";
 import {
   decodeCalldataArgs,
   simulateAction,
@@ -15,7 +16,9 @@ import {
 } from "../proposal-simulation/simulate";
 
 const SOURCE = Keypair.random().publicKey();
-const TARGET = Keypair.random().publicKey();
+// A contract call's target must be a C... contract strkey, not a G...
+// account address — Contract's constructor validates this.
+const TARGET = StrKey.encodeContract(randomBytes(32));
 
 function fakeServer(simulateImpl: (tx: unknown) => unknown) {
   return {

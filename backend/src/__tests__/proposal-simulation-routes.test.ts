@@ -1,4 +1,6 @@
 import request from "supertest";
+import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { randomBytes } from "crypto";
 
 // On-chain reads/simulation are mocked here — this suite exercises the
 // route layer (validation, response shape, description_hash correlation,
@@ -35,12 +37,21 @@ const mockGetProposalActions = getProposalActions as jest.Mock;
 const mockSimulateActions = simulateActions as jest.Mock;
 const mockDecodeAction = decodeAction as jest.Mock;
 
-const TARGET = "CTARGETCONTRACTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+const TARGET = StrKey.encodeContract(randomBytes(32));
 
 describe("Proposal Simulation Endpoints", () => {
   const insertedIds: number[] = [];
 
+  beforeEach(() => {
+    // buildSimulationResults() (routes/proposal-simulation.ts, not mocked
+    // here) reads this directly and throws if it's unset — RPC-level calls
+    // it makes are all covered by the mocks above, so no real account is
+    // needed, just a syntactically valid one.
+    process.env.PROPOSAL_SIMULATION_ACCOUNT = Keypair.random().publicKey();
+  });
+
   afterEach(async () => {
+    delete process.env.PROPOSAL_SIMULATION_ACCOUNT;
     if (insertedIds.length > 0) {
       await pool.query("DELETE FROM proposal_simulations WHERE id = ANY($1::int[])", [insertedIds]);
       insertedIds.length = 0;
