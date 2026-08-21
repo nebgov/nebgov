@@ -127,6 +127,51 @@ export interface ProposalDraft {
   cancelled: boolean;
 }
 
+/** Lifecycle state of a proposer bond — see `ProposalBondsClient`. */
+export type BondState = "Locked" | "Refunded" | "Slashed";
+
+/**
+ * A refundable bond posted by a proposer alongside a governor proposal
+ * (correlated by shared `descriptionHash`), refunded once the proposal
+ * reaches a terminal state or slashed by a follow-up governance vote if
+ * judged spam, duplicated, or malicious.
+ */
+export interface ProposalBond {
+  /** Stellar address that posted the bond. */
+  proposer: string;
+  /** SHA-256 hash of the off-chain description content, shared with the correlated proposal. */
+  descriptionHash: string;
+  /** Bonded amount, in the configured bond token's smallest unit. */
+  amount: bigint;
+  /** Ledger sequence at which the bond was locked. */
+  lockedLedger: number;
+  /** Current lifecycle state. */
+  state: BondState;
+}
+
+/** Read-only configuration snapshot of a deployed ProposalBonds contract. */
+export interface ProposalBondSettings {
+  /** Token address bonds are denominated and paid in. */
+  bondToken: string;
+  /** Amount, in the bond token's smallest unit, `lock_bond` currently requires. */
+  bondAmount: bigint;
+  /** Governor contract address this bonds registry is attached to. */
+  governor: string;
+  /**
+   * Ledgers after a correlated proposal's `end_ledger` during which
+   * `refund_bond` is blocked, giving the community time to submit a
+   * `slash` governance proposal first.
+   */
+  refundGraceLedgers: number;
+  /**
+   * Ledgers after `lock_bond` after which `refund_bond` succeeds
+   * unconditionally — the escape hatch for a proposal stuck in `Queued`
+   * with no governor-reported terminal state (see the contract's
+   * `refund_bond` doc comment).
+   */
+  maxLockLedgers: number;
+}
+
 /** Aggregated vote tallies for a proposal. */
 export interface ProposalVotes {
   /** Total tokens cast in favour. */
@@ -192,6 +237,8 @@ export interface GovernorConfig {
   coSponsorshipAddress?: string;
   /** Contract address of the independent conviction-voting module, if deployed. */
   convictionVotingAddress?: string;
+  /** Contract address of the proposal-bonds registry, if deployed */
+  proposalBondsAddress?: string;
   /** Stellar network to connect to */
   network: Network;
   /** RPC URL override (optional — defaults to public horizon) */
@@ -200,6 +247,8 @@ export interface GovernorConfig {
   simulationAccount?: string;
   /** Indexer base URL for off-chain queries (e.g. getVotingHistory) */
   indexerUrl?: string;
+  /** Backend REST API base URL, for clients that talk to backend/src rather than the indexer or Soroban RPC (e.g. GovernanceTuningClient) */
+  backendUrl?: string;
   /** Maximum number of retry attempts for RPC calls (default: 3) */
   maxAttempts?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000) */
@@ -882,4 +931,65 @@ export interface ThresholdHistoryPage {
     offset: number;
     hasMore: boolean;
   };
+}
+
+/**
+ * Explanation for one dimension of a governance tuning recommendation, as
+ * returned by the backend's `GET /governance-tuning/recommendations/*`
+ * (issue #998).
+ */
+export interface TuningRationaleEntry {
+  direction: "up" | "down" | "unchanged";
+  reason: string;
+}
+
+/** Full rationale attached to a {@link TuningRecommendation}. */
+export interface TuningRationale {
+  quorumNumerator: TuningRationaleEntry;
+  proposalThreshold: TuningRationaleEntry;
+  votingPeriod: TuningRationaleEntry;
+  /** Raw analytics inputs the recommendation was derived from, for auditability. */
+  inputs: Record<string, unknown>;
+}
+
+/**
+ * One computed governance-tuning recommendation, backend-sourced (never
+ * on-chain) — see the `governance_tuning_recommendations` table.
+ */
+export interface TuningRecommendation {
+  id: number;
+  computedAt: string;
+  currentQuorumNumerator: number;
+  recommendedQuorumNumerator: number;
+  currentProposalThreshold: bigint;
+  recommendedProposalThreshold: bigint;
+  rationale: TuningRationale;
+  /** Whether this recommendation was automatically submitted as an on-chain proposal. */
+  autoProposed: boolean;
+  /** The on-chain proposal id, once/if the indexer observes a matching `ProposalCreated` event. */
+  proposalId: bigint | null;
+}
+
+/** Paginated page of recommendations, as returned by `GET /governance-tuning/recommendations`. */
+export interface TuningRecommendationPage {
+  recommendations: TuningRecommendation[];
+  pagination: {
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+/** The tunable bands/caps for the recommender, as returned by `GET /governance-tuning/config`. */
+export interface TuningConfig {
+  minQuorumNumerator: number;
+  maxQuorumNumerator: number;
+  maxQuorumDeltaBps: number;
+  minProposalThreshold: bigint;
+  maxProposalThreshold: bigint | null;
+  maxThresholdDeltaBps: number;
+  trailingWindow: number;
+  intervalMs: number;
+  autoPropose: boolean;
+  updatedAt: string;
 }

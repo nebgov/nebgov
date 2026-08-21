@@ -49,8 +49,7 @@ export function GaslessDelegateModal({
   const [submitting, setSubmitting] = useState(false);
   const [expiryPreset, setExpiryPreset] = useState<ExpiryPreset>("1month");
   const { isConnected, publicKey, connect } = useWallet();
-  const { delegateGasless, invalidateAllPermits, preflightDelegatee } =
-    useGaslessDelegation();
+  const { delegateGasless, preflightDelegatee, invalidateAllPermits } = useGaslessDelegation();
   const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
   useEffect(() => {

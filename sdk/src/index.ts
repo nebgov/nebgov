@@ -25,10 +25,13 @@ export { TreasuryClient } from "./treasury";
 export { LiquidityClient } from "./liquidity";
 export { AnalyticsClient } from "./analytics";
 export { ReputationClient } from "./reputation";
+export { GovernanceTuningClient } from "./governanceTuning";
 export { WrapperClient } from "./wrapper";
 export type { WrapperConfig } from "./wrapper";
 export { CoSponsorshipClient } from "./coSponsorship";
 export type { CoSponsorshipConfig } from "./coSponsorship";
+export { ProposalBondsClient } from "./proposalBonds";
+export type { ProposalBondsConfig } from "./proposalBonds";
 export {
   GovernorError,
   GovernorErrorCode,
@@ -40,11 +43,14 @@ export {
   TreasuryErrorCode,
   CoSponsorshipError,
   CoSponsorshipErrorCode,
+  ProposalBondsError,
+  ProposalBondsErrorCode,
   parseGovernorError,
   parseTimelockError,
   parseVotesError,
   parseTreasuryError,
   parseCoSponsorshipError,
+  parseProposalBondsError,
   extractContractErrorCode,
 } from "./errors";
 export type { SorobanRpcError } from "./errors";

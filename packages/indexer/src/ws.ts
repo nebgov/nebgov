@@ -59,7 +59,10 @@ export type WsEventType =
   | "conviction_stake_updated"
   | "conviction_conviction_updated"
   | "conviction_proposal_executed"
-  | "conviction_proposal_cancelled";
+  | "conviction_proposal_cancelled"
+  | "bond_locked"
+  | "bond_refunded"
+  | "bond_slashed";
 
 export interface WsEvent {
   type: WsEventType;
