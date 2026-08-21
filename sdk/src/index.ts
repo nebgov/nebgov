@@ -31,6 +31,8 @@ export type { WrapperConfig } from "./wrapper";
 export { CoSponsorshipClient } from "./coSponsorship";
 export type { CoSponsorshipConfig } from "./coSponsorship";
 export { SignalingClient, canonicalSignalPayload, sep53Digest } from "./signaling";
+export { ProposalBondsClient } from "./proposalBonds";
+export type { ProposalBondsConfig } from "./proposalBonds";
 export {
   GovernorError,
   GovernorErrorCode,
@@ -44,12 +46,15 @@ export {
   CoSponsorshipErrorCode,
   SignalingError,
   SignalingErrorCode,
+  ProposalBondsError,
+  ProposalBondsErrorCode,
   parseGovernorError,
   parseTimelockError,
   parseVotesError,
   parseTreasuryError,
   parseCoSponsorshipError,
   parseSignalingError,
+  parseProposalBondsError,
   extractContractErrorCode,
 } from "./errors";
 export type { SorobanRpcError } from "./errors";

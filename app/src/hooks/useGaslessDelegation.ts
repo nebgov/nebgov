@@ -96,15 +96,11 @@ export function useGaslessDelegation() {
       }
 
       try {
-        // Cycle/depth-limit checks are read directly off the token-votes
-        // contract's delegation registry — that's VotesClient, not
-        // DelegationSigClient (which only handles the signed-permit
-        // relayer flow used by delegateGasless below).
-        const votes = getVotesClientFromEnv();
+        const client = getVotesClientFromEnv();
         const [wouldCreateCycle, depthLimit, currentDepth] = await Promise.all([
-          votes.wouldCreateCycle(publicKey, delegatee.trim()),
-          votes.getDelegationDepthLimit(),
-          votes.getChainDepth(publicKey),
+          client.wouldCreateCycle(publicKey, delegatee.trim()),
+          client.getDelegationDepthLimit(),
+          client.getChainDepth(publicKey),
         ]);
 
         if (wouldCreateCycle) {
@@ -216,5 +212,11 @@ export function useGaslessDelegation() {
     [isConnected, publicKey, signTransaction],
   );
 
-  return { delegateGasless, preflightDelegatee, invalidateAllPermits, submitting, error };
+  return {
+    delegateGasless,
+    preflightDelegatee,
+    invalidateAllPermits,
+    submitting,
+    error,
+  };
 }
