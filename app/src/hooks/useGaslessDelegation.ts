@@ -61,16 +61,6 @@ function getDelegationSigClientFromEnv(): DelegationSigClient {
   });
 }
 
-function getVotesClientFromEnv(): VotesClient {
-  const config = readGovernorConfig();
-  if (!config) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_GOVERNOR_ADDRESS/NEXT_PUBLIC_TIMELOCK_ADDRESS/NEXT_PUBLIC_VOTES_ADDRESS in .env.local",
-    );
-  }
-  return new VotesClient(config);
-}
-
 /**
  * Cycle/depth-limit checks (`wouldCreateCycle`, `getDelegationDepthLimit`,
  * `getChainDepth`) live on the token-votes contract, not the delegation-sig
@@ -115,9 +105,9 @@ export function useGaslessDelegation() {
       try {
         const client = getVotesClientFromEnv();
         const [wouldCreateCycle, depthLimit, currentDepth] = await Promise.all([
-          votes.wouldCreateCycle(publicKey, delegatee.trim()),
-          votes.getDelegationDepthLimit(),
-          votes.getChainDepth(publicKey),
+          client.wouldCreateCycle(publicKey, delegatee.trim()),
+          client.getDelegationDepthLimit(),
+          client.getChainDepth(publicKey),
         ]);
 
         if (wouldCreateCycle) {
