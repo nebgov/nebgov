@@ -22,6 +22,7 @@ import {
   Activity,
   Radio,
   SlidersHorizontal,
+  Trophy,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { useTranslations } from "next-intl";
@@ -46,6 +47,7 @@ const NAV_LINKS = [
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Signals", href: "/signals", icon: Radio },
   { name: "Delegates", href: "/delegates", icon: Users },
+  { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Treasury", href: "/treasury", icon: Wallet2 },
   { name: "Governance Tuning", href: "/governance-tuning", icon: SlidersHorizontal },

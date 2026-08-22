@@ -108,20 +108,28 @@ export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLead
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-200 dark:border-gray-700 text-left">
-            <th className="pb-2 pr-4 font-medium text-gray-500 dark:text-gray-400">
+            <th scope="col" className="pb-2 pr-4 font-medium text-gray-500 dark:text-gray-400">
               Proposer
             </th>
             {columns.map((col) => (
               <th
                 key={col.key}
-                onClick={() => toggleSort(col.key)}
-                className="pb-2 px-4 font-medium text-gray-500 dark:text-gray-400 cursor-pointer select-none hover:text-gray-900 dark:hover:text-white"
+                scope="col"
+                aria-sort={sortKey === col.key ? (sortAsc ? "ascending" : "descending") : "none"}
+                className="pb-2 px-4"
               >
-                {col.label}
-                {sortKey === col.key && (sortAsc ? " ▲" : " ▼")}
+                <button
+                  type="button"
+                  onClick={() => toggleSort(col.key)}
+                  aria-label={`Sort by ${col.label}`}
+                  className="inline-flex items-center gap-1 font-medium text-gray-500 dark:text-gray-400 cursor-pointer select-none hover:text-gray-900 dark:hover:text-white"
+                >
+                  {col.label}
+                  {sortKey === col.key && (sortAsc ? " ▲" : " ▼")}
+                </button>
               </th>
             ))}
-            <th className="pb-2 px-4 font-medium text-gray-500 dark:text-gray-400">
+            <th scope="col" className="pb-2 px-4 font-medium text-gray-500 dark:text-gray-400">
               Last Updated
             </th>
           </tr>
