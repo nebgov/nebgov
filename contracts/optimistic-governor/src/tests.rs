@@ -165,13 +165,13 @@ fn objections_summed_correctly_across_multiple_distinct_objectors() {
     let o1 = Address::generate(&f.env);
     let o2 = Address::generate(&f.env);
     let votes = MockVotesClient::new(&f.env, &f.votes_id);
-    votes.set_votes(&o1, &(TOTAL_SUPPLY * 1 / 100));
-    votes.set_votes(&o2, &(TOTAL_SUPPLY * 1 / 100));
+    votes.set_votes(&o1, &(TOTAL_SUPPLY / 100));
+    votes.set_votes(&o2, &(TOTAL_SUPPLY / 100));
 
     c.object(&o1, &id);
     let proposal = c.get_proposal(&id);
     assert_eq!(proposal.state, OptimisticProposalState::ChallengeWindow);
-    assert_eq!(proposal.objection_votes, TOTAL_SUPPLY * 1 / 100);
+    assert_eq!(proposal.objection_votes, TOTAL_SUPPLY / 100);
 
     c.object(&o2, &id);
     let proposal = c.get_proposal(&id);
