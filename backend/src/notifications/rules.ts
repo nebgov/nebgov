@@ -26,6 +26,7 @@ export const TRIGGER_TYPES = [
   "delegation_received",
   "delegation_lost",
   "quorum_reached",
+  "concentration_threshold_crossed",
 ] as const;
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number];

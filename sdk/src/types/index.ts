@@ -1034,3 +1034,48 @@ export interface TuningConfig {
   autoPropose: boolean;
   updatedAt: string;
 }
+
+// ─── Concentration Monitor Types (Issue #1012) ──────────────────────────────
+
+/**
+ * One concentration snapshot row, as returned by the indexer's
+ * `/analytics/concentration/*` endpoints. Computed periodically by the
+ * indexer from its own indexed votes/delegates tables — see
+ * `packages/indexer/src/concentration.ts` and
+ * `maybeTakeConcentrationSnapshot` in `packages/indexer/src/events.ts`.
+ *
+ * Share/Gini fields are stored as basis points (0-10000); a snapshot can
+ * legitimately have 0s while voting-power data is being backfilled.
+ */
+export interface ConcentrationSnapshot {
+  id: number;
+  ledger: number;
+  computedAt: string;
+  /** Total voting power across all addresses with a nonzero balance/delegation. */
+  totalVotingPower: string;
+  /** Share (bps) of total voting power held by the top 1 / 5 / 10 / 20 addresses. */
+  top1ShareBps: number;
+  top5ShareBps: number;
+  top10ShareBps: number;
+  top20ShareBps: number;
+  /** Gini coefficient (0-10000) of the raw holder voting-power distribution. */
+  giniCoefficientBps: number;
+  /** Minimum number of addresses whose combined voting power exceeds 50%. */
+  nakamotoCoefficient: number;
+  /** Share (bps) of total voting power held by the top 5 delegates by received power. */
+  delegateTop5ShareBps: number;
+  /** Gini coefficient (0-10000) over delegatees' received voting power. */
+  delegateGiniCoefficientBps: number;
+}
+
+/**
+ * One row of the top-holders / top-delegates leaderboard, as returned by
+ * the indexer's `/analytics/concentration/top-holders` and
+ * `/analytics/concentration/top-delegates` endpoints.
+ */
+export interface HolderShare {
+  address: string;
+  votingPower: string;
+  /** Share of total voting power held by this address, in basis points. */
+  shareBps: number;
+}

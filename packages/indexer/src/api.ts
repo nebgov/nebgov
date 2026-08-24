@@ -1199,6 +1199,89 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     },
   );
 
+  // --- Concentration monitor endpoints (issue #1012) ---
+  //
+  // Backed by `concentration_snapshots`, computed periodically by the
+  // indexer from its own votes/delegates tables (see
+  // `maybeTakeConcentrationSnapshot` in events.ts).
+
+  // GET /analytics/concentration/latest
+  app.get(
+    "/analytics/concentration/latest",
+    async (_req: Request, res: Response): Promise<void> => {
+      try {
+        const data = await cached("analytics:concentration:latest", TTL.analytics, async () => {
+          const result = await pool.query(
+            `SELECT * FROM concentration_snapshots ORDER BY ledger DESC LIMIT 1`,
+          );
+          return result.rows[0] ?? null;
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/history?limit=90
+  app.get(
+    "/analytics/concentration/history",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 90), 1), 200);
+      const key = `analytics:concentration:history:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const result = await pool.query(
+            `SELECT * FROM concentration_snapshots ORDER BY ledger DESC LIMIT $1`,
+            [limit],
+          );
+          return { data: result.rows };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/top-holders?limit=20
+  app.get(
+    "/analytics/concentration/top-holders",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      const key = `analytics:concentration:top-holders:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const { getTopHolders } = await import("./concentration");
+          const holders = await getTopHolders(limit);
+          return { data: holders };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/top-delegates?limit=20
+  app.get(
+    "/analytics/concentration/top-delegates",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      const key = `analytics:concentration:top-delegates:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const { getTopDelegates } = await import("./concentration");
+          const delegates = await getTopDelegates(limit);
+          return { data: delegates };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   // --- Proposer reputation endpoints (issue #771) ---
   //
   // Backed by `proposer_reputation` / `reputation_score_history`, populated

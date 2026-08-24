@@ -49,6 +49,7 @@ const NAV_LINKS = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Treasury", href: "/treasury", icon: Wallet2 },
   { name: "Governance Tuning", href: "/governance-tuning", icon: SlidersHorizontal },
+  { name: "Concentration", href: "/governance-health/concentration", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

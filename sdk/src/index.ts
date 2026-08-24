@@ -24,6 +24,7 @@ export { TimelockClient } from "./timelock";
 export { TreasuryClient } from "./treasury";
 export { LiquidityClient } from "./liquidity";
 export { AnalyticsClient } from "./analytics";
+export { ConcentrationClient } from "./concentration";
 export { ReputationClient } from "./reputation";
 export { GovernanceTuningClient } from "./governanceTuning";
 export { WrapperClient } from "./wrapper";

@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { pool } from "./db";
 import { invalidate, invalidatePattern } from "./cache";
 import { broadcast, type WsEventType } from "./ws";
+import { computeAndPersistConcentration } from "./concentration";
 import {
   getAllStreamSpends,
   type TreasuryStateReader,
@@ -1902,6 +1903,37 @@ export async function maybeTakeGovernanceSnapshot(
   broadcast({
     type: "analytics_snapshot_taken",
     data: { ledger: currentLedger, total_votes_cast: totalVotesCast },
+  });
+}
+
+const CONCENTRATION_INTERVAL_LEDGERS = 100;
+
+/**
+ * Periodically compute and persist a voting-power concentration snapshot
+ * (issue #1012). Mirror of `maybeTakeGovernanceSnapshot` — same interval
+ * cadence, same insert-invalidation-broadcast shape. The heavy lifting is
+ * in `computeAndPersistConcentration` (packages/indexer/src/concentration.ts),
+ * which reads entirely from the indexer's own votes/delegates tables.
+ */
+export async function maybeTakeConcentrationSnapshot(
+  currentLedger: number,
+): Promise<void> {
+  const lastResult = await pool.query(
+    "SELECT ledger FROM concentration_snapshots ORDER BY ledger DESC LIMIT 1",
+  );
+  const lastLedger = lastResult.rows[0]?.ledger ?? 0;
+  if (currentLedger - lastLedger < CONCENTRATION_INTERVAL_LEDGERS) return;
+
+  const result = await computeAndPersistConcentration(currentLedger);
+  invalidatePattern("analytics:concentration");
+  broadcast({
+    type: "concentration_snapshot_taken",
+    data: {
+      ledger: currentLedger,
+      nakamoto_coefficient: result?.nakamotoCoefficient ?? 0,
+      gini_coefficient_bps: result?.giniCoefficientBps ?? 0,
+      top5_share_bps: result?.top5ShareBps ?? 0,
+    },
   });
 }
 

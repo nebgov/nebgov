@@ -24,6 +24,7 @@ const TRIGGER_OPTIONS: { value: TriggerType; label: string; description: string 
   { value: "contract_paused", label: "Contract paused", description: "A governance contract is paused. (Not yet emitted on-chain.)" },
   { value: "proposal_vote_threshold", label: "Vote threshold reached", description: "A proposal reaches a % of quorum. (Not yet computable — see docs.)" },
   { value: "quorum_reached", label: "Quorum reached", description: "A proposal reaches quorum. (Not yet computable — see docs.)" },
+  { value: "concentration_threshold_crossed", label: "Concentration threshold crossed", description: "Voting-power concentration crosses a danger threshold (Nakamoto coefficient, top-5 share, or Gini coefficient)." },
 ];
 
 const STEPS = ["Trigger", "Configure", "Channels", "Review"] as const;

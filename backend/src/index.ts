@@ -16,6 +16,7 @@ import { notificationProcessor } from "./jobs/notification-processor";
 import { deliveryRetry } from "./jobs/delivery-retry";
 import { signalAnchorService } from "./jobs/signal-anchor";
 import { governanceTuningAnalyzer } from "./jobs/governance-tuning-analyzer";
+import { concentrationAlertService } from "./jobs/concentration-alert";
 import { runBackendMigrations } from "./db/migrationRunner";
 import pino from "pino";
 import pinoHttp from "pino-http";
@@ -148,6 +149,9 @@ async function bootstrap(): Promise<void> {
 
     // Start the governance tuning recommender (issue #998)
     governanceTuningAnalyzer.start();
+
+    // Start the concentration alert service (issue #1012)
+    concentrationAlertService.start();
   });
 }
 
