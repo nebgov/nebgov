@@ -54,7 +54,21 @@ export type WsEventType =
   | "stream_extended"
   | "stream_topped_up"
   | "stream_exhausted"
-  | "stream_expired";
+  | "stream_expired"
+  | "conviction_proposal_created"
+  | "conviction_stake_updated"
+  | "conviction_conviction_updated"
+  | "conviction_proposal_executed"
+  | "conviction_proposal_cancelled"
+  | "bond_locked"
+  | "bond_refunded"
+  | "bond_slashed"
+  | "optimistic_proposal_created"
+  | "optimistic_objection_cast"
+  | "optimistic_proposal_objected"
+  | "optimistic_proposal_passed"
+  | "optimistic_proposal_executed"
+  | "optimistic_proposal_cancelled";
 
 export interface WsEvent {
   type: WsEventType;

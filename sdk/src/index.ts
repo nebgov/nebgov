@@ -27,10 +27,19 @@ export { TreasuryClient } from "./treasury";
 export { LiquidityClient } from "./liquidity";
 export { AnalyticsClient } from "./analytics";
 export { ReputationClient } from "./reputation";
+export { GovernanceTuningClient } from "./governanceTuning";
+export { ProposalSimulationClient } from "./proposalSimulation";
 export { WrapperClient } from "./wrapper";
 export type { WrapperConfig } from "./wrapper";
 export { CoSponsorshipClient } from "./coSponsorship";
 export type { CoSponsorshipConfig } from "./coSponsorship";
+export { SignalingClient, canonicalSignalPayload, sep53Digest } from "./signaling";
+export { ProposalBondsClient } from "./proposalBonds";
+export type { ProposalBondsConfig } from "./proposalBonds";
+export { VotingRewardsClient } from "./votingRewards";
+export type { VotingRewardsConfig } from "./votingRewards";
+export { TreasuryStrategiesClient } from "./treasuryStrategies";
+export type { TreasuryStrategiesConfig } from "./treasuryStrategies";
 export {
   GovernorError,
   GovernorErrorCode,
@@ -42,11 +51,23 @@ export {
   TreasuryErrorCode,
   CoSponsorshipError,
   CoSponsorshipErrorCode,
+  SignalingError,
+  SignalingErrorCode,
+  ProposalBondsError,
+  ProposalBondsErrorCode,
+  TreasuryStrategiesError,
+  TreasuryStrategiesErrorCode,
+  VotingRewardsError,
+  VotingRewardsErrorCode,
   parseGovernorError,
   parseTimelockError,
   parseVotesError,
   parseTreasuryError,
   parseCoSponsorshipError,
+  parseSignalingError,
+  parseProposalBondsError,
+  parseTreasuryStrategiesError,
+  parseVotingRewardsError,
   extractContractErrorCode,
 } from "./errors";
 export type { SorobanRpcError } from "./errors";
@@ -97,6 +118,7 @@ export {
   subscribeToFailedOpRetried,
   subscribeToFailedOpSkipped,
   subscribeToBatchFullyComplete,
+  subscribeToResultAnchored,
 } from "./events";
 export type {
   SorobanEvent,
@@ -197,6 +219,8 @@ export {
   parseBatchFullyCompleteEvent,
 } from "./events";
 export * from "./types";
+export { ConvictionVotingClient } from "./convictionVoting";
+export { OptimisticGovernorClient } from "./optimisticGovernor";
 export { computeQuadraticWeight, hexToBytes32, encodeCalldata, decodeCalldata } from "./utils";
 export { streamEvents } from "./streamEvents";
 export type { IndexerEvent, WsEventType, StreamEventsOptions, UnsubscribeFn } from "./streamEvents";

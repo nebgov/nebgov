@@ -46,7 +46,13 @@ jobs:
             -p sorogov-treasury \
             -p sorogov-liquidity \
             -p sorogov-co-sponsorship \
-            -p sorogov-vote-escrow
+            -p sorogov-vote-escrow \
+            -p sorogov-conviction-voting \
+            -p sorogov-signal-anchor \
+            -p sorogov-proposal-bonds \
+            -p sorogov-treasury-strategies \
+            -p sorogov-optimistic-governor \
+            -p sorogov-voting-rewards
 
       - name: Run tests
         run: |
@@ -58,7 +64,13 @@ jobs:
             -p sorogov-liquidity \
             -p sorogov-co-sponsorship \
             -p sorogov-token-votes-wrapper \
-            -p sorogov-vote-escrow
+            -p sorogov-vote-escrow \
+            -p sorogov-conviction-voting \
+            -p sorogov-signal-anchor \
+            -p sorogov-proposal-bonds \
+            -p sorogov-treasury-strategies \
+            -p sorogov-optimistic-governor \
+            -p sorogov-voting-rewards
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -111,7 +123,13 @@ jobs:
             -p sorogov-treasury \
             -p sorogov-liquidity \
             -p sorogov-co-sponsorship \
-            -p sorogov-vote-escrow
+            -p sorogov-vote-escrow \
+            -p sorogov-conviction-voting \
+            -p sorogov-signal-anchor \
+            -p sorogov-proposal-bonds \
+            -p sorogov-treasury-strategies \
+            -p sorogov-optimistic-governor \
+            -p sorogov-voting-rewards
 
       - name: Run clippy
         run: |
@@ -122,8 +140,14 @@ jobs:
             -p sorogov-governor-factory \
             -p sorogov-liquidity \
             -p sorogov-co-sponsorship \
+            -p sorogov-conviction-voting \
             -p sorogov-token-votes-wrapper \
             -p sorogov-vote-escrow \
+            -p sorogov-signal-anchor \
+            -p sorogov-proposal-bonds \
+            -p sorogov-treasury-strategies \
+            -p sorogov-optimistic-governor \
+            -p sorogov-voting-rewards \
             --all-targets \
             -- -D warnings
 
@@ -163,7 +187,13 @@ jobs:
             -p sorogov-treasury \
             -p sorogov-liquidity \
             -p sorogov-co-sponsorship \
-            -p sorogov-vote-escrow
+            -p sorogov-vote-escrow \
+            -p sorogov-conviction-voting \
+            -p sorogov-signal-anchor \
+            -p sorogov-proposal-bonds \
+            -p sorogov-treasury-strategies \
+            -p sorogov-optimistic-governor \
+            -p sorogov-voting-rewards
 
       - name: Check contract WASM sizes
         run: |

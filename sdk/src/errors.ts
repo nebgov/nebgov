@@ -256,6 +256,11 @@ export enum VotesErrorCode {
   RelayerNotWhitelisted = 14,
   InvalidChainId = 15,
   InvalidContractId = 16,
+  ChainDepthExceeded = 17,
+  SplitTooManyTargets = 18,
+  SplitDuplicateDelegatee = 19,
+  SplitZeroWeight = 20,
+  SplitWeightsMustSum10000 = 21,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -280,6 +285,16 @@ const VOTES_MESSAGES: Record<VotesErrorCode, string> = {
     "Permit was signed for a different network",
   [VotesErrorCode.InvalidContractId]:
     "Permit was signed for a different contract",
+  [VotesErrorCode.ChainDepthExceeded]:
+    "Delegation would exceed the maximum chain depth",
+  [VotesErrorCode.SplitTooManyTargets]:
+    "Split delegation has more entries than the maximum allowed targets",
+  [VotesErrorCode.SplitDuplicateDelegatee]:
+    "Split delegation contains a duplicate delegatee",
+  [VotesErrorCode.SplitZeroWeight]:
+    "Split delegation entry must have a non-zero weight",
+  [VotesErrorCode.SplitWeightsMustSum10000]:
+    "Split delegation weights must sum to exactly 10000 (100%)",
 
   [VotesErrorCode.SimulationFailed]: "Simulation failed",
   [VotesErrorCode.TransactionFailed]: "Transaction failed",
@@ -710,6 +725,170 @@ export function parseCoSponsorshipError(
   );
 }
 
+// ─── Signaling (signal-anchor) Errors ────────────────────────────────────────
+
+/**
+ * Error codes for the signal-anchor contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain SignalAnchorError enum values
+ * (contracts/signal-anchor/src/error.rs).
+ */
+export enum SignalingErrorCode {
+  AlreadyInitialized = 1,
+  AlreadyAnchored = 2,
+  Unauthorized = 3,
+  /** Contract method was called before initialize() ran (on-chain error #4). */
+  NotInitialized = 4,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+  MissingReturnValue = 103,
+}
+
+const SIGNALING_MESSAGES: Record<SignalingErrorCode, string> = {
+  [SignalingErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [SignalingErrorCode.AlreadyAnchored]: "This poll's result has already been anchored",
+  [SignalingErrorCode.Unauthorized]: "Only the configured admin may anchor a result",
+  [SignalingErrorCode.NotInitialized]: "Contract has not been initialized yet",
+  [SignalingErrorCode.SimulationFailed]: "Simulation failed",
+  [SignalingErrorCode.TransactionFailed]: "Transaction failed",
+  [SignalingErrorCode.TransactionTimeout]: "Transaction timed out",
+  [SignalingErrorCode.MissingReturnValue]: "No return value from contract",
+};
+
+export class SignalingError extends Error {
+  readonly name = "SignalingError";
+
+  constructor(
+    public readonly code: SignalingErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, SignalingError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link SignalingError}.
+ */
+export function parseSignalingError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): SignalingError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as SignalingErrorCode;
+    const message = SIGNALING_MESSAGES[code] ?? `Signal-anchor contract error #${contractCode}`;
+    return new SignalingError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new SignalingError(
+      SignalingErrorCode.TransactionFailed,
+      `${SIGNALING_MESSAGES[SignalingErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new SignalingError(
+    SignalingErrorCode.SimulationFailed,
+    `${SIGNALING_MESSAGES[SignalingErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
+// ─── Proposal Bonds Errors ────────────────────────────────────────────────────
+
+/**
+ * Error codes for the ProposalBonds contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain ProposalBondsError enum values
+ * (contracts/proposal-bonds/src/error.rs).
+ */
+export enum ProposalBondsErrorCode {
+  AlreadyInitialized = 1,
+  NotInitialized = 2,
+  BondAlreadyLocked = 3,
+  BondNotFound = 4,
+  BondNotLocked = 5,
+  DescriptionHashMismatch = 6,
+  ProposalNotTerminal = 7,
+  RefundGraceNotElapsed = 8,
+  NotAuthorized = 9,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+  MissingReturnValue = 103,
+}
+
+const PROPOSAL_BONDS_MESSAGES: Record<ProposalBondsErrorCode, string> = {
+  [ProposalBondsErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [ProposalBondsErrorCode.NotInitialized]: "Contract has not been initialized yet",
+  [ProposalBondsErrorCode.BondAlreadyLocked]:
+    "A bond has already been locked for this description hash",
+  [ProposalBondsErrorCode.BondNotFound]: "Bond not found",
+  [ProposalBondsErrorCode.BondNotLocked]: "Bond is not in the Locked state",
+  [ProposalBondsErrorCode.DescriptionHashMismatch]:
+    "The proposal's description hash does not match this bond",
+  [ProposalBondsErrorCode.ProposalNotTerminal]:
+    "The correlated proposal has not reached a terminal state",
+  [ProposalBondsErrorCode.RefundGraceNotElapsed]:
+    "The post-terminal refund grace window has not elapsed yet",
+  [ProposalBondsErrorCode.NotAuthorized]: "Caller is not authorized to perform this action",
+  [ProposalBondsErrorCode.SimulationFailed]: "Simulation failed",
+  [ProposalBondsErrorCode.TransactionFailed]: "Transaction failed",
+  [ProposalBondsErrorCode.TransactionTimeout]: "Transaction timed out",
+  [ProposalBondsErrorCode.MissingReturnValue]: "No return value from contract",
+};
+
+export class ProposalBondsError extends Error {
+  readonly name = "ProposalBondsError";
+
+  constructor(
+    public readonly code: ProposalBondsErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, ProposalBondsError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link ProposalBondsError}.
+ */
+export function parseProposalBondsError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): ProposalBondsError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as ProposalBondsErrorCode;
+    const message =
+      PROPOSAL_BONDS_MESSAGES[code] ?? `Proposal-bonds contract error #${contractCode}`;
+    return new ProposalBondsError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new ProposalBondsError(
+      ProposalBondsErrorCode.TransactionFailed,
+      `${PROPOSAL_BONDS_MESSAGES[ProposalBondsErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new ProposalBondsError(
+    ProposalBondsErrorCode.SimulationFailed,
+    `${PROPOSAL_BONDS_MESSAGES[ProposalBondsErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
 /**
  * Parse a raw Soroban RPC error into a typed {@link VotesError}.
  */
@@ -735,6 +914,198 @@ export function parseVotesError(
   return new VotesError(
     VotesErrorCode.SimulationFailed,
     `${VOTES_MESSAGES[VotesErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
+// ─── Treasury Strategies Errors ───────────────────────────────────────────────
+
+/**
+ * Error codes for the treasury-strategies contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain TreasuryStrategiesError enum values
+ * (contracts/treasury-strategies/src/lib.rs).
+ */
+export enum TreasuryStrategiesErrorCode {
+  AlreadyInitialized = 1,
+  NotAdmin = 2,
+  NotTreasury = 3,
+  StrategyNotFound = 4,
+  NoActiveStrategy = 5,
+  AllocationCapExceeded = 6,
+  InsufficientAllocation = 7,
+  WithdrawalNotFound = 8,
+  WithdrawalAlreadyClaimed = 9,
+  WithdrawalNotYetClaimable = 10,
+  InvalidAmount = 11,
+  InvalidBps = 12,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+  MissingReturnValue = 103,
+}
+
+const TREASURY_STRATEGIES_MESSAGES: Record<TreasuryStrategiesErrorCode, string> = {
+  [TreasuryStrategiesErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [TreasuryStrategiesErrorCode.NotAdmin]: "Only the configured admin may perform this action",
+  [TreasuryStrategiesErrorCode.NotTreasury]: "Only the configured treasury may perform this action",
+  [TreasuryStrategiesErrorCode.StrategyNotFound]: "Strategy not found",
+  [TreasuryStrategiesErrorCode.NoActiveStrategy]: "No active strategy is registered for this token",
+  [TreasuryStrategiesErrorCode.AllocationCapExceeded]:
+    "Deposit would exceed the strategy's max_allocation_bps cap",
+  [TreasuryStrategiesErrorCode.InsufficientAllocation]:
+    "Withdrawal amount exceeds the strategy's current allocation",
+  [TreasuryStrategiesErrorCode.WithdrawalNotFound]: "Withdrawal request not found",
+  [TreasuryStrategiesErrorCode.WithdrawalAlreadyClaimed]: "Withdrawal has already been claimed",
+  [TreasuryStrategiesErrorCode.WithdrawalNotYetClaimable]:
+    "Withdrawal cooldown has not elapsed yet",
+  [TreasuryStrategiesErrorCode.InvalidAmount]: "Amount must be greater than zero",
+  [TreasuryStrategiesErrorCode.InvalidBps]: "max_allocation_bps must not exceed 10000",
+  [TreasuryStrategiesErrorCode.SimulationFailed]: "Simulation failed",
+  [TreasuryStrategiesErrorCode.TransactionFailed]: "Transaction failed",
+  [TreasuryStrategiesErrorCode.TransactionTimeout]: "Transaction timed out",
+  [TreasuryStrategiesErrorCode.MissingReturnValue]: "No return value from contract",
+};
+
+export class TreasuryStrategiesError extends Error {
+  readonly name = "TreasuryStrategiesError";
+
+  constructor(
+    public readonly code: TreasuryStrategiesErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, TreasuryStrategiesError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link TreasuryStrategiesError}.
+ */
+export function parseTreasuryStrategiesError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): TreasuryStrategiesError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as TreasuryStrategiesErrorCode;
+    const message =
+      TREASURY_STRATEGIES_MESSAGES[code] ?? `Treasury-strategies contract error #${contractCode}`;
+    return new TreasuryStrategiesError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new TreasuryStrategiesError(
+      TreasuryStrategiesErrorCode.TransactionFailed,
+      `${TREASURY_STRATEGIES_MESSAGES[TreasuryStrategiesErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new TreasuryStrategiesError(
+    TreasuryStrategiesErrorCode.SimulationFailed,
+    `${TREASURY_STRATEGIES_MESSAGES[TreasuryStrategiesErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
+// ─── Voting Rewards Errors ───────────────────────────────────────────────────
+
+/**
+ * Error codes for the VotingRewards contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain VotingRewardsError enum values
+ * (contracts/voting-rewards/src/error.rs).
+ */
+export enum VotingRewardsErrorCode {
+  AlreadyInitialized = 1,
+  NotInitialized = 2,
+  NotAuthorized = 3,
+  InvalidEpochDuration = 4,
+  EpochNotFound = 5,
+  EpochNotEnded = 6,
+  EpochAlreadyFinalized = 7,
+  EpochNotFinalized = 8,
+  InsufficientPool = 9,
+  InvalidAmount = 10,
+  AlreadyClaimed = 11,
+  InvalidProof = 12,
+  EpochOverclaimed = 13,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+  MissingReturnValue = 103,
+}
+
+const VOTING_REWARDS_MESSAGES: Record<VotingRewardsErrorCode, string> = {
+  [VotingRewardsErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [VotingRewardsErrorCode.NotInitialized]: "Contract has not been initialized yet",
+  [VotingRewardsErrorCode.NotAuthorized]: "Caller is not authorized to perform this action",
+  [VotingRewardsErrorCode.InvalidEpochDuration]: "Epoch duration must be greater than zero",
+  [VotingRewardsErrorCode.EpochNotFound]: "Epoch not found",
+  [VotingRewardsErrorCode.EpochNotEnded]: "The epoch's end ledger has not been reached yet",
+  [VotingRewardsErrorCode.EpochAlreadyFinalized]:
+    "This epoch's Merkle root has already been published",
+  [VotingRewardsErrorCode.EpochNotFinalized]:
+    "This epoch's Merkle root has not been published yet",
+  [VotingRewardsErrorCode.InsufficientPool]:
+    "The rewards pool does not hold enough unallocated balance for this amount",
+  [VotingRewardsErrorCode.InvalidAmount]: "Amount must be greater than zero",
+  [VotingRewardsErrorCode.AlreadyClaimed]: "This address has already claimed for this epoch",
+  [VotingRewardsErrorCode.InvalidProof]:
+    "The Merkle proof does not verify against this epoch's published root",
+  [VotingRewardsErrorCode.EpochOverclaimed]:
+    "This claim would exceed the epoch's total allocated rewards",
+  [VotingRewardsErrorCode.SimulationFailed]: "Simulation failed",
+  [VotingRewardsErrorCode.TransactionFailed]: "Transaction failed",
+  [VotingRewardsErrorCode.TransactionTimeout]: "Transaction timed out",
+  [VotingRewardsErrorCode.MissingReturnValue]: "No return value from contract",
+};
+
+export class VotingRewardsError extends Error {
+  readonly name = "VotingRewardsError";
+
+  constructor(
+    public readonly code: VotingRewardsErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, VotingRewardsError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link VotingRewardsError}.
+ */
+export function parseVotingRewardsError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): VotingRewardsError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as VotingRewardsErrorCode;
+    const message =
+      VOTING_REWARDS_MESSAGES[code] ?? `Voting-rewards contract error #${contractCode}`;
+    return new VotingRewardsError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new VotingRewardsError(
+      VotingRewardsErrorCode.TransactionFailed,
+      `${VOTING_REWARDS_MESSAGES[VotingRewardsErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new VotingRewardsError(
+    VotingRewardsErrorCode.SimulationFailed,
+    `${VOTING_REWARDS_MESSAGES[VotingRewardsErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
     cause,
   );
 }

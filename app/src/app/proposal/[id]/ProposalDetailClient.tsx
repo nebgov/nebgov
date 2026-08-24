@@ -48,6 +48,10 @@ import {
 } from "../../../lib/frontend-error";
 import { ProposalDetailSkeleton } from "../../../components/ui/ProposalDetailSkeleton";
 import { CountdownTimer } from "../../../components/CountdownTimer";
+import { ProposalBondCard } from "../../../components/ProposalBondCard";
+import { ProposalImpactPreview } from "../../../components/ProposalImpactPreview";
+import { VotingRewardsPrompt } from "../../../components/VotingRewardsPrompt";
+import { useProposalSimulation } from "../../../hooks/useProposalSimulation";
 
 interface Props {
   params: { id: string };
@@ -85,6 +89,34 @@ const INITIAL_PROPOSAL = {
   proposer: "",
   quorum: 0n,
 };
+
+/**
+ * Re-checks a submitted proposal's on-chain actions against *current* chain
+ * state (not just what they looked like at submission time) — the same
+ * `ProposalImpactPreview` component the propose wizard's review step uses.
+ * Self-contained so the already-large `ProposalDetailClient` doesn't need
+ * extra top-level state for this.
+ */
+function ProposalImpactSection({ proposalId }: { proposalId: bigint }) {
+  const { results, loading, error, simulateProposal } = useProposalSimulation();
+
+  useEffect(() => {
+    if (proposalId <= 0n) return;
+    void simulateProposal(Number(proposalId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalId]);
+
+  if (proposalId <= 0n) return null;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6">
+      <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-4">
+        Impact Preview
+      </h2>
+      <ProposalImpactPreview results={results} loading={loading} error={error} />
+    </div>
+  );
+}
 
 export default function ProposalDetailClient({ params }: Props) {
   const proposalId = useMemo(() => {
@@ -640,6 +672,15 @@ export default function ProposalDetailClient({ params }: Props) {
       </div>
       </ErrorBoundary>
 
+      {proposal.descriptionHash && (
+        <ProposalBondCard
+          descriptionHash={proposal.descriptionHash}
+          proposer={proposal.proposer}
+        />
+      )}
+
+      {!loading && <ProposalImpactSection proposalId={proposal.id} />}
+
       {/* Delegation */}
       <ErrorBoundary
         title="Failed to render voting power"
@@ -864,6 +905,9 @@ export default function ProposalDetailClient({ params }: Props) {
               endLedger={proposal.endLedger}
             />
           </div>
+
+          {/* Issue #1011 — only renders when this wallet has unclaimed rewards. */}
+          <VotingRewardsPrompt address={publicKey ?? null} />
 
           {!isConnected ? (
             <div className="bg-indigo-50 dark:bg-slate-900/80 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-5 mb-4">

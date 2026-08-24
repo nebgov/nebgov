@@ -9,6 +9,12 @@ members = [
     "contracts/token-votes-wrapper",
     "contracts/co-sponsorship",
     "contracts/vote-escrow",
+    "contracts/conviction-voting",
+    "contracts/signal-anchor",
+    "contracts/proposal-bonds",
+    "contracts/treasury-strategies",
+    "contracts/optimistic-governor",
+    "contracts/voting-rewards",
 ]
 exclude = ["fuzz", "tools/sim"]
 resolver = "2"

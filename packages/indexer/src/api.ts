@@ -118,6 +118,7 @@ const TTL = {
   analytics: 30_000, // 30 seconds
   reputation: 30_000, // 30 seconds
   treasury: 30_000, // 30 seconds
+  proposalBonds: 30_000, // 30 seconds
 };
 
 function parsePagination(
@@ -546,6 +547,30 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     }
   });
 
+  // GET /proposals/by-description-hash/:hash — used by proposal-bonds
+  // refund flow to resolve the proposal_id a bond correlates with, since
+  // the bonds contract's refund_bond requires it (governor has no
+  // description_hash → id lookup on-chain, see contracts/proposal-bonds).
+  app.get(
+    "/proposals/by-description-hash/:hash",
+    async (req: Request, res: Response): Promise<void> => {
+      const { hash } = req.params;
+      try {
+        const result = await pool.query(
+          `SELECT * FROM proposals WHERE description_hash = $1`,
+          [hash],
+        );
+        if (!result.rows[0]) {
+          res.status(404).json({ error: "Proposal not found" });
+          return;
+        }
+        res.json(result.rows[0]);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   // GET /proposals/:id/votes
   app.get(
     "/proposals/:id/votes",
@@ -801,6 +826,65 @@ export function createApp(server: SorobanRpc.Server): express.Application {
           history: result.rows,
           pagination: { limit, offset, hasMore: result.rows.length === limit },
         });
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // --- Split delegation endpoints (issue #994) ---
+
+  // GET /delegates/:address/split-delegations — the delegatee's inbound
+  // split delegations, with per-delegator weight_bps.
+  app.get(
+    "/delegates/:address/split-delegations",
+    strictLimiter,
+    async (req: Request, res: Response): Promise<void> => {
+      const { address } = req.params;
+      const offset = Math.max(Number(req.query.offset ?? 0), 0);
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 200);
+      const key = `split-delegations:delegatee:${address}:${offset}:${limit}`;
+      try {
+        const data = await cached(key, TTL.delegationRegistry, async () => {
+          const result = await pool.query(
+            `SELECT delegator_address, weight_bps, delegated_power, created_at
+             FROM split_delegations
+             WHERE delegatee_address = $1 AND active = TRUE
+             ORDER BY created_at ASC
+             OFFSET $2 LIMIT $3`,
+            [address, offset, limit],
+          );
+          return {
+            splitDelegations: result.rows,
+            pagination: { limit, offset, hasMore: result.rows.length === limit },
+          };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /delegators/:address/split-delegations — the delegator's outbound splits.
+  app.get(
+    "/delegators/:address/split-delegations",
+    strictLimiter,
+    async (req: Request, res: Response): Promise<void> => {
+      const { address } = req.params;
+      const key = `split-delegations:delegator:${address}`;
+      try {
+        const data = await cached(key, TTL.delegationRegistry, async () => {
+          const result = await pool.query(
+            `SELECT delegatee_address, weight_bps, delegated_power, created_at
+             FROM split_delegations
+             WHERE delegator_address = $1 AND active = TRUE
+             ORDER BY weight_bps DESC`,
+            [address],
+          );
+          return { splitDelegations: result.rows };
+        });
+        res.json(data);
       } catch {
         res.status(500).json({ error: "Internal server error" });
       }
@@ -1814,6 +1898,103 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     },
   );
 
+  // --- Signaling endpoints (#999) ---
+
+  // GET /signal-anchors/:pollId — independently verify a finalized signaling
+  // poll's published result_hash against the indexed on-chain anchor.
+  app.get(
+    "/signal-anchors/:pollId",
+    async (req: Request, res: Response): Promise<void> => {
+      const pollId = req.params.pollId;
+      try {
+        const result = await pool.query(
+          `SELECT * FROM signal_anchors WHERE poll_id = $1`,
+          [pollId],
+        );
+        if (!result.rows[0]) {
+          res.status(404).json({ error: "Anchor not found" });
+          return;
+        }
+        res.json(result.rows[0]);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // --- Proposal bonds endpoints (#996) ---
+
+  // GET /proposal-bonds?state=locked|refunded|slashed
+  app.get("/proposal-bonds", async (req: Request, res: Response): Promise<void> => {
+    const limit = Math.min(Number(req.query.limit ?? 20), 100);
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const state = req.query.state ? String(req.query.state).trim() : undefined;
+    const validStates = ["locked", "refunded", "slashed"];
+    if (state && !validStates.includes(state)) {
+      res.status(400).json({ error: "Invalid state filter" });
+      return;
+    }
+    const key = `proposal-bonds:list:${state ?? ""}:${page}:${limit}`;
+
+    try {
+      const whereClause = state ? "WHERE state = $3" : "";
+      const params = state
+        ? [limit, (page - 1) * limit, state]
+        : [limit, (page - 1) * limit];
+      const data = await cached(key, TTL.proposalBonds, async () => {
+        const result = await pool.query(
+          `SELECT * FROM proposal_bonds ${whereClause} ORDER BY id DESC LIMIT $1 OFFSET $2`,
+          params,
+        );
+        return {
+          data: result.rows,
+          pagination: { page, limit, hasMore: result.rows.length === limit },
+        };
+      });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /proposal-bonds/by-proposer/:address
+  app.get(
+    "/proposal-bonds/by-proposer/:address",
+    async (req: Request, res: Response): Promise<void> => {
+      const { address } = req.params;
+      try {
+        const result = await pool.query(
+          `SELECT * FROM proposal_bonds WHERE proposer_address = $1 ORDER BY id DESC`,
+          [address],
+        );
+        res.json({ data: result.rows });
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /proposal-bonds/:descriptionHash
+  app.get(
+    "/proposal-bonds/:descriptionHash",
+    async (req: Request, res: Response): Promise<void> => {
+      const { descriptionHash } = req.params;
+      try {
+        const result = await pool.query(
+          `SELECT * FROM proposal_bonds WHERE description_hash = $1`,
+          [descriptionHash],
+        );
+        if (!result.rows[0]) {
+          res.status(404).json({ error: "Bond not found" });
+          return;
+        }
+        res.json(result.rows[0]);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   // --- Timelock endpoints (#906) ---
 
   // GET /timelock/operations/:opId
@@ -1910,6 +2091,367 @@ export function createApp(server: SorobanRpc.Server): express.Application {
         });
         if (!data) {
           res.status(404).json({ error: "Partial batch state not found" });
+          return;
+        }
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  app.get("/conviction/proposals", async (req: Request, res: Response): Promise<void> => {
+    const status = String(req.query.status ?? "active");
+    const predicates: Record<string, string> = {
+      active: "executed = FALSE AND cancelled = FALSE",
+      executed: "executed = TRUE",
+      cancelled: "cancelled = TRUE",
+    };
+    if (!predicates[status]) {
+      res.status(400).json({ error: "status must be active, executed, or cancelled" });
+      return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT * FROM conviction_proposals WHERE ${predicates[status]} ORDER BY proposal_id DESC`,
+      );
+      res.json({ data: result.rows });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/conviction/proposals/:id", async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await pool.query(
+        "SELECT * FROM conviction_proposals WHERE proposal_id = $1",
+        [req.params.id],
+      );
+      if (!result.rows[0]) {
+        res.status(404).json({ error: "Conviction proposal not found" });
+        return;
+      }
+      res.json(result.rows[0]);
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/conviction/proposals/:id/conviction-history", async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await pool.query(
+        "SELECT proposal_id, ledger, conviction FROM conviction_snapshots WHERE proposal_id = $1 ORDER BY ledger ASC",
+        [req.params.id],
+      );
+      res.json({ data: result.rows });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/conviction/proposals/:id/stakes", async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await pool.query(
+        "SELECT * FROM conviction_stakes WHERE proposal_id = $1 ORDER BY amount DESC",
+        [req.params.id],
+      );
+      res.json({ data: result.rows });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/conviction/stakers/:address", async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await pool.query(
+        "SELECT * FROM conviction_stakes WHERE staker = $1",
+        [req.params.address],
+      );
+      res.json(result.rows[0] ?? null);
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // --- Optimistic governance endpoints (#993) ---
+
+  app.get("/optimistic/proposals", async (req: Request, res: Response): Promise<void> => {
+    const status = req.query.status
+      ? String(req.query.status)
+      : undefined;
+    const validStates = ["challenge_window", "objected", "passed", "executed", "cancelled"];
+    if (status && !validStates.includes(status)) {
+      res.status(400).json({
+        error: `status must be one of: ${validStates.join(", ")}`,
+      });
+      return;
+    }
+    try {
+      const result = status
+        ? await pool.query(
+            "SELECT * FROM optimistic_proposals WHERE state = $1 ORDER BY proposal_id DESC",
+            [status],
+          )
+        : await pool.query(
+            "SELECT * FROM optimistic_proposals ORDER BY proposal_id DESC",
+          );
+      res.json({ data: result.rows });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/optimistic/proposals/:id", async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await pool.query(
+        "SELECT * FROM optimistic_proposals WHERE proposal_id = $1",
+        [req.params.id],
+      );
+      if (!result.rows[0]) {
+        res.status(404).json({ error: "Optimistic proposal not found" });
+        return;
+      }
+      res.json(result.rows[0]);
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get(
+    "/optimistic/proposals/:id/objections",
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const result = await pool.query(
+          "SELECT * FROM optimistic_objections WHERE proposal_id = $1 ORDER BY ledger ASC",
+          [req.params.id],
+        );
+        res.json({ data: result.rows });
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // --- Treasury strategies endpoints (#997) ---
+
+  // GET /treasury-strategies?token=&active=&limit=&offset=
+  app.get(
+    "/treasury-strategies",
+    async (req: Request, res: Response): Promise<void> => {
+      const pagination = parsePagination(
+        req.query.limit,
+        req.query.offset,
+        20,
+        100,
+      );
+      if (!pagination) {
+        res.status(400).json({ error: "Invalid pagination parameters" });
+        return;
+      }
+      const { limit, offset } = pagination;
+      const token =
+        typeof req.query.token === "string" && req.query.token.length > 0
+          ? req.query.token
+          : undefined;
+      const active =
+        typeof req.query.active === "string"
+          ? req.query.active === "true"
+          : undefined;
+      const key = `treasury-strategies:${token ?? "all"}:${active ?? "all"}:${limit}:${offset}`;
+      try {
+        const data = await cached(key, TTL.treasury, async () => {
+          const params: unknown[] = [];
+          const conditions: string[] = [];
+          if (token) {
+            params.push(token);
+            conditions.push(`token = $${params.length}`);
+          }
+          if (active !== undefined) {
+            params.push(active);
+            conditions.push(`active = $${params.length}`);
+          }
+          const where = conditions.length
+            ? `WHERE ${conditions.join(" AND ")}`
+            : "";
+          params.push(limit, offset);
+          const result = await pool.query(
+            `SELECT * FROM treasury_strategies
+             ${where}
+             ORDER BY strategy_id ASC
+             LIMIT $${params.length - 1} OFFSET $${params.length}`,
+            params,
+          );
+          return {
+            strategies: result.rows,
+            pagination: { limit, offset, hasMore: result.rows.length === limit },
+          };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /treasury-strategies/withdrawals?status=pending|claimable|claimed&strategy_id=&limit=&offset=
+  // "claimable" is derived (pending + claimable_ledger reached) against the
+  // indexer's own last-indexed ledger, the same defense-in-depth pattern
+  // used for draft expiry.
+  app.get(
+    "/treasury-strategies/withdrawals",
+    async (req: Request, res: Response): Promise<void> => {
+      const pagination = parsePagination(
+        req.query.limit,
+        req.query.offset,
+        20,
+        100,
+      );
+      if (!pagination) {
+        res.status(400).json({ error: "Invalid pagination parameters" });
+        return;
+      }
+      const { limit, offset } = pagination;
+      const status =
+        typeof req.query.status === "string" ? req.query.status : undefined;
+      if (status && !["pending", "claimable", "claimed"].includes(status)) {
+        res.status(400).json({ error: "Invalid status filter" });
+        return;
+      }
+      const strategyId =
+        typeof req.query.strategy_id === "string"
+          ? req.query.strategy_id
+          : undefined;
+      const key = `treasury-strategies:withdrawals:${status ?? "all"}:${strategyId ?? "all"}:${limit}:${offset}`;
+      try {
+        const data = await cached(key, TTL.treasury, async () => {
+          const lastLedgerResult = await pool.query(
+            "SELECT last_ledger FROM indexer_state WHERE id = 1",
+          );
+          const lastLedger = lastLedgerResult.rows[0]?.last_ledger ?? 0;
+
+          const params: unknown[] = [];
+          const conditions: string[] = [];
+          if (strategyId) {
+            params.push(strategyId);
+            conditions.push(`strategy_id = $${params.length}`);
+          }
+          if (status === "claimed") {
+            conditions.push("claimed_ledger IS NOT NULL");
+          } else if (status === "pending") {
+            params.push(lastLedger);
+            conditions.push(
+              `claimed_ledger IS NULL AND claimable_ledger > $${params.length}`,
+            );
+          } else if (status === "claimable") {
+            params.push(lastLedger);
+            conditions.push(
+              `claimed_ledger IS NULL AND claimable_ledger <= $${params.length}`,
+            );
+          }
+          const where = conditions.length
+            ? `WHERE ${conditions.join(" AND ")}`
+            : "";
+          const statusLedgerParamIndex = params.length + 1;
+          params.push(lastLedger, limit, offset);
+          const result = await pool.query(
+            `SELECT *,
+               CASE
+                 WHEN claimed_ledger IS NOT NULL THEN 'claimed'
+                 WHEN claimable_ledger <= $${statusLedgerParamIndex} THEN 'claimable'
+                 ELSE 'pending'
+               END AS status
+             FROM strategy_withdrawals
+             ${where}
+             ORDER BY withdrawal_id ASC
+             LIMIT $${params.length - 1} OFFSET $${params.length}`,
+            params,
+          );
+          return {
+            withdrawals: result.rows,
+            pagination: { limit, offset, hasMore: result.rows.length === limit },
+          };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /treasury-strategies/:id
+  app.get(
+    "/treasury-strategies/:id",
+    async (req: Request, res: Response): Promise<void> => {
+      const { id } = req.params;
+      const key = `treasury-strategies:detail:${id}`;
+      try {
+        const data = await cached(key, TTL.treasury, async () => {
+          const result = await pool.query(
+            `SELECT * FROM treasury_strategies WHERE strategy_id = $1`,
+            [id],
+          );
+          return result.rows[0] ?? null;
+        });
+        if (!data) {
+          res.status(404).json({ error: "Strategy not found" });
+          return;
+        }
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /treasury-strategies/:id/performance?limit=&offset=
+  // Returns the indexed principal-deposited time series for this strategy.
+  // Current *value* (principal plus/minus accrued yield or loss) is a live
+  // on-chain read (StrategyAdapterTrait::adapter_balance via
+  // get_total_value) rather than an indexed event, so it isn't reflected
+  // here — callers wanting a live value should pair this history with the
+  // SDK's TreasuryStrategiesClient.getTotalValue(token) call, the same
+  // documented indexer/live-read split used by the analytics and reputation
+  // modules elsewhere in this API.
+  app.get(
+    "/treasury-strategies/:id/performance",
+    async (req: Request, res: Response): Promise<void> => {
+      const { id } = req.params;
+      const pagination = parsePagination(
+        req.query.limit,
+        req.query.offset,
+        50,
+        200,
+      );
+      if (!pagination) {
+        res.status(400).json({ error: "Invalid pagination parameters" });
+        return;
+      }
+      const { limit, offset } = pagination;
+      const key = `treasury-strategies:performance:${id}:${limit}:${offset}`;
+      try {
+        const data = await cached(key, TTL.treasury, async () => {
+          const strategyResult = await pool.query(
+            `SELECT strategy_id FROM treasury_strategies WHERE strategy_id = $1`,
+            [id],
+          );
+          if (!strategyResult.rows[0]) {
+            return null;
+          }
+          const result = await pool.query(
+            `SELECT amount, ledger, created_at
+             FROM strategy_allocations
+             WHERE strategy_id = $1
+             ORDER BY ledger ASC
+             OFFSET $2 LIMIT $3`,
+            [id, offset, limit],
+          );
+          return {
+            principal_history: result.rows,
+            pagination: { limit, offset, hasMore: result.rows.length === limit },
+          };
+        });
+        if (!data) {
+          res.status(404).json({ error: "Strategy not found" });
           return;
         }
         res.json(data);

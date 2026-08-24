@@ -127,6 +127,90 @@ export interface ProposalDraft {
   cancelled: boolean;
 }
 
+/** A gasless off-chain signaling poll ("temperature check") — see SignalingClient. */
+export interface SignalingPoll {
+  id: number;
+  creatorAddress: string;
+  title: string;
+  description: string;
+  choices: string[];
+  /** Ledger at which voting power is snapshot-checkpointed for weighting votes. */
+  snapshotLedger: number;
+  startTime: string;
+  endTime: string;
+  finalized: boolean;
+  /** SHA-256 hex digest of the finalized tally, set once the poll closes. */
+  resultHash: string | null;
+  /** Transaction hash of the on-chain anchor submission, if anchoring was enabled. */
+  anchoredTxHash: string | null;
+  createdAt: string;
+}
+
+/** Weighted tally for a signaling poll — live before finalization, final after. */
+export interface SignalingPollResults {
+  finalized: boolean;
+  choices: string[];
+  /** Weighted voting power per choice, aligned by index with `choices`. */
+  totals: bigint[];
+  totalVotes: number;
+  totalWeight: bigint;
+  resultHash?: string | null;
+  anchoredTxHash?: string | null;
+}
+
+/** An immutable on-chain record anchoring a finalized signaling poll's result hash. */
+export interface SignalAnchorRecord {
+  pollId: bigint;
+  resultHash: string;
+  anchoredLedger: number;
+  anchorer: string;
+}
+
+/** Lifecycle state of a proposer bond — see `ProposalBondsClient`. */
+export type BondState = "Locked" | "Refunded" | "Slashed";
+
+/**
+ * A refundable bond posted by a proposer alongside a governor proposal
+ * (correlated by shared `descriptionHash`), refunded once the proposal
+ * reaches a terminal state or slashed by a follow-up governance vote if
+ * judged spam, duplicated, or malicious.
+ */
+export interface ProposalBond {
+  /** Stellar address that posted the bond. */
+  proposer: string;
+  /** SHA-256 hash of the off-chain description content, shared with the correlated proposal. */
+  descriptionHash: string;
+  /** Bonded amount, in the configured bond token's smallest unit. */
+  amount: bigint;
+  /** Ledger sequence at which the bond was locked. */
+  lockedLedger: number;
+  /** Current lifecycle state. */
+  state: BondState;
+}
+
+/** Read-only configuration snapshot of a deployed ProposalBonds contract. */
+export interface ProposalBondSettings {
+  /** Token address bonds are denominated and paid in. */
+  bondToken: string;
+  /** Amount, in the bond token's smallest unit, `lock_bond` currently requires. */
+  bondAmount: bigint;
+  /** Governor contract address this bonds registry is attached to. */
+  governor: string;
+  /**
+   * Ledgers after a correlated proposal's `end_ledger` during which
+   * `refund_bond` is blocked, giving the community time to submit a
+   * `slash` governance proposal first.
+   */
+  refundGraceLedgers: number;
+  /**
+   * Ledgers after `lock_bond` after which `refund_bond` succeeds
+   * unconditionally — the escape hatch for a proposal stuck in `Queued`
+   * with no governor-reported terminal state (see the contract's
+   * `refund_bond` doc comment).
+   */
+  maxLockLedgers: number;
+}
+
 /** Aggregated vote tallies for a proposal. */
 export interface ProposalVotes {
   /** Total tokens cast in favour. */
@@ -192,6 +276,18 @@ export interface GovernorConfig {
   coSponsorshipAddress?: string;
   /** Contract address of the vote-escrow contract, if deployed */
   voteEscrowAddress?: string;
+  /** Contract address of the independent conviction-voting module, if deployed. */
+  convictionVotingAddress?: string;
+  /** Contract address of the gasless-signaling result anchor, if deployed */
+  signalAnchorAddress?: string;
+  /** Contract address of the proposal-bonds registry, if deployed */
+  proposalBondsAddress?: string;
+  /** Contract address of the treasury yield-strategy allocator, if deployed */
+  treasuryStrategiesAddress?: string;
+  /** Contract address of the optimistic-governance track, if deployed */
+  optimisticGovernorAddress?: string;
+  /** Contract address of the voting-participation rewards program, if deployed */
+  votingRewardsAddress?: string;
   /** Stellar network to connect to */
   network: Network;
   /** RPC URL override (optional — defaults to public horizon) */
@@ -200,12 +296,109 @@ export interface GovernorConfig {
   simulationAccount?: string;
   /** Indexer base URL for off-chain queries (e.g. getVotingHistory) */
   indexerUrl?: string;
+  /** Backend base URL for off-chain queries/mutations (e.g. SignalingClient's poll CRUD) */
+  backendUrl?: string;
   /** Maximum number of retry attempts for RPC calls (default: 3) */
   maxAttempts?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000) */
   baseDelayMs?: number;
   /** Token decimals for vote display (optional — fetched from contract if not provided) */
   decimals?: number;
+}
+
+export interface ConvictionProposal {
+  id: bigint;
+  proposer: string;
+  target: string;
+  fnName: string;
+  calldata: Buffer | Uint8Array;
+  requestedAmount: bigint;
+  createdLedger: number;
+  conviction: bigint;
+  lastUpdatedLedger: number;
+  executed: boolean;
+  cancelled: boolean;
+}
+
+export interface ConvictionSnapshot {
+  proposalId: bigint;
+  ledger: number;
+  conviction: bigint;
+}
+
+/** Lifecycle state of an optimistic-governance proposal (Issue #993). */
+export type OptimisticProposalState =
+  | "ChallengeWindow"
+  | "Objected"
+  | "Passed"
+  | "Executed"
+  | "Cancelled";
+
+export interface OptimisticProposal {
+  id: bigint;
+  proposer: string;
+  target: string;
+  fnName: string;
+  calldata: Buffer | Uint8Array;
+  descriptionHash: Buffer | Uint8Array;
+  createdLedger: number;
+  challengeEndLedger: number;
+  objectionVotes: bigint;
+  state: OptimisticProposalState;
+}
+
+export interface OptimisticObjection {
+  proposalId: bigint;
+  objector: string;
+  weight: bigint;
+  runningTotal: bigint;
+  ledger: number;
+}
+
+export interface OptimisticGovernorSettings {
+  votesToken: string;
+  challengeWindowLedgers: number;
+  objectionThresholdBps: number;
+  proposerBondAmount: bigint;
+  proposerBondToken: string;
+}
+
+/** On-chain configuration of a single registered yield strategy (Issue #997). */
+export interface Strategy {
+  adapter: string;
+  token: string;
+  maxAllocationBps: number;
+  withdrawalCooldownLedgers: number;
+  active: boolean;
+}
+
+/** A strategy's current on-chain allocation. */
+export interface Allocation {
+  strategyId: number;
+  amount: bigint;
+  depositedLedger: number;
+}
+
+/** A single point in a strategy's indexer-backed principal-deposited history. */
+export interface StrategyPerformancePoint {
+  amount: bigint;
+  ledger: number;
+  createdAt: string;
+}
+
+/**
+ * A strategy row as tracked by the indexer — includes the `strategyId` and
+ * running `currentAllocation` that the on-chain {@link Strategy} read alone
+ * doesn't carry (querying every id individually isn't practical for a list
+ * view).
+ */
+export interface IndexedStrategy {
+  strategyId: number;
+  adapter: string;
+  token: string;
+  active: boolean;
+  currentAllocation: bigint;
+  registeredLedger: number;
 }
 
 export interface TimelockOperation {
@@ -470,6 +663,17 @@ export interface DelegateProfile {
   totalDelegatedPower: bigint;
   delegationDepthLimit: number;
   firstDelegatedAtLedger: number | null;
+}
+
+/**
+ * One entry of a split delegation (issue #994): a fraction of the
+ * delegator's voting power, in basis points (10000 = 100%), directed to
+ * `delegatee`. Mirrors `SplitDelegation` in
+ * contracts/token-votes/src/split_delegation.rs.
+ */
+export interface SplitDelegation {
+  delegatee: string;
+  weightBps: number;
 }
 
 // ─── Treasury Types ───────────────────────────────────────────────────────────
@@ -862,4 +1066,122 @@ export interface ThresholdHistoryPage {
     offset: number;
     hasMore: boolean;
   };
+}
+
+/**
+ * Explanation for one dimension of a governance tuning recommendation, as
+ * returned by the backend's `GET /governance-tuning/recommendations/*`
+ * (issue #998).
+ */
+export interface TuningRationaleEntry {
+  direction: "up" | "down" | "unchanged";
+  reason: string;
+}
+
+/** Full rationale attached to a {@link TuningRecommendation}. */
+export interface TuningRationale {
+  quorumNumerator: TuningRationaleEntry;
+  proposalThreshold: TuningRationaleEntry;
+  votingPeriod: TuningRationaleEntry;
+  /** Raw analytics inputs the recommendation was derived from, for auditability. */
+  inputs: Record<string, unknown>;
+}
+
+/**
+ * One computed governance-tuning recommendation, backend-sourced (never
+ * on-chain) — see the `governance_tuning_recommendations` table.
+ */
+export interface TuningRecommendation {
+  id: number;
+  computedAt: string;
+  currentQuorumNumerator: number;
+  recommendedQuorumNumerator: number;
+  currentProposalThreshold: bigint;
+  recommendedProposalThreshold: bigint;
+  rationale: TuningRationale;
+  /** Whether this recommendation was automatically submitted as an on-chain proposal. */
+  autoProposed: boolean;
+  /** The on-chain proposal id, once/if the indexer observes a matching `ProposalCreated` event. */
+  proposalId: bigint | null;
+}
+
+/** Paginated page of recommendations, as returned by `GET /governance-tuning/recommendations`. */
+export interface TuningRecommendationPage {
+  recommendations: TuningRecommendation[];
+  pagination: {
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+/** The tunable bands/caps for the recommender, as returned by `GET /governance-tuning/config`. */
+export interface TuningConfig {
+  minQuorumNumerator: number;
+  maxQuorumNumerator: number;
+  maxQuorumDeltaBps: number;
+  minProposalThreshold: bigint;
+  maxProposalThreshold: bigint | null;
+  maxThresholdDeltaBps: number;
+  trailingWindow: number;
+  intervalMs: number;
+  autoPropose: boolean;
+  updatedAt: string;
+}
+
+// ─── Proposal Calldata Simulation (issue #1000) ────────────────────────────
+
+/** Result of dry-running one proposal action's calldata against current chain state. */
+export interface SimulationResult {
+  target: string;
+  fnName: string;
+  success: boolean;
+  /** Best-effort human-readable description of what this action would do. */
+  decodedSummary: string;
+  returnValue?: unknown;
+  revertReason?: string;
+  treasuryImpact?: {
+    token: string;
+    capRemainingBefore: bigint | null;
+    capRemainingAfter: bigint | null;
+  };
+}
+
+/** One historical simulation run for a proposal, as returned by `GET /proposal-simulation/:id/history`. */
+export interface SimulationHistoryEntry {
+  simulatedAt: string;
+  simulatedAtLedger: number;
+  results: SimulationResult[];
+  anyActionWouldRevert: boolean;
+}
+
+// ─── Voting Participation Rewards (issue #1011) ────────────────────────────
+
+/** One reward epoch of the voting-participation rewards program. */
+export interface VotingRewardsEpoch {
+  id: bigint;
+  /** First ledger of the epoch (inclusive). */
+  startLedger: number;
+  /** Ledger the epoch closes at (exclusive — the next epoch starts here). */
+  endLedger: number;
+  /**
+   * Hex-encoded Merkle root of the epoch's `(address, amount)` set, or
+   * `null` until governance publishes it.
+   */
+  merkleRoot: string | null;
+  /** Total allocated to this epoch, in the reward token's smallest unit. */
+  totalRewardAmount: bigint;
+  /** How much of {@link totalRewardAmount} has been claimed so far. */
+  claimedAmount: bigint;
+  /** Whether the root has been published — claims only open once it is. */
+  finalized: boolean;
+}
+
+/** A reward an address has earned in one epoch, with the proof needed to claim it. */
+export interface ClaimableReward {
+  epochId: bigint;
+  amount: bigint;
+  /** Hex-encoded sibling path, ready to hand straight to `claim`. */
+  merkleProof: string[];
+  claimed: boolean;
 }

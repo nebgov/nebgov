@@ -2,7 +2,7 @@ import { SorobanRpc, scValToNative } from "@stellar/stellar-sdk";
 import { createHash } from "crypto";
 import { pool } from "./db";
 import { invalidate, invalidatePattern } from "./cache";
-import { broadcast } from "./ws";
+import { broadcast, type WsEventType } from "./ws";
 import {
   getAllStreamSpends,
   type TreasuryStateReader,
@@ -62,8 +62,13 @@ export interface IndexerConfig {
   treasuryAddress?: string;
   liquidityAddress?: string;
   coSponsorshipAddress?: string;
+  proposalBondsAddress?: string;
   tokenVotesAddress?: string;
   timelockAddress?: string;
+  convictionVotingAddress?: string;
+  signalAnchorAddress?: string;
+  treasuryStrategiesAddress?: string;
+  optimisticGovernorAddress?: string;
   treasuryStateReader?: TreasuryStateReader;
   pollIntervalMs: number;
 }
@@ -94,8 +99,15 @@ export async function processEvents(
     if (config.treasuryAddress) contractIds.push(config.treasuryAddress);
     if (config.liquidityAddress) contractIds.push(config.liquidityAddress);
     if (config.coSponsorshipAddress) contractIds.push(config.coSponsorshipAddress);
+    if (config.proposalBondsAddress) contractIds.push(config.proposalBondsAddress);
     if (config.tokenVotesAddress) contractIds.push(config.tokenVotesAddress);
     if (config.timelockAddress) contractIds.push(config.timelockAddress);
+    if (config.convictionVotingAddress) contractIds.push(config.convictionVotingAddress);
+    if (config.signalAnchorAddress) contractIds.push(config.signalAnchorAddress);
+    if (config.treasuryStrategiesAddress)
+      contractIds.push(config.treasuryStrategiesAddress);
+    if (config.optimisticGovernorAddress)
+      contractIds.push(config.optimisticGovernorAddress);
 
     const response = await server.getEvents({
       startLedger,
@@ -136,6 +148,11 @@ export async function processEvents(
         config.coSponsorshipAddress &&
         contractId === config.coSponsorshipAddress
       );
+      const isProposalBonds = !!(
+        contractId &&
+        config.proposalBondsAddress &&
+        contractId === config.proposalBondsAddress
+      );
       const isTokenVotes = !!(
         contractId &&
         config.tokenVotesAddress &&
@@ -146,6 +163,26 @@ export async function processEvents(
         config.timelockAddress &&
         contractId === config.timelockAddress
       );
+      const isConvictionVoting = !!(
+        contractId &&
+        config.convictionVotingAddress &&
+        contractId === config.convictionVotingAddress
+      );
+      const isSignalAnchor = !!(
+        contractId &&
+        config.signalAnchorAddress &&
+        contractId === config.signalAnchorAddress
+      );
+      const isTreasuryStrategies = !!(
+        contractId &&
+        config.treasuryStrategiesAddress &&
+        contractId === config.treasuryStrategiesAddress
+      );
+      const isOptimisticGovernor = !!(
+        contractId &&
+        config.optimisticGovernorAddress &&
+        contractId === config.optimisticGovernorAddress
+      );
 
       try {
         await logToEventLog(eventType, ledger, contractId, event, topics);
@@ -155,7 +192,9 @@ export async function processEvents(
       }
 
       try {
-        if (isTreasury) {
+        if (isConvictionVoting) {
+          await handleConvictionEvent(event, eventType, topics);
+        } else if (isTreasury) {
           switch (eventType) {
             case "bat_xfer":
               await handleTreasuryBatchTransfer(event, topics);
@@ -233,6 +272,20 @@ export async function processEvents(
             default:
               break;
           }
+        } else if (isProposalBonds) {
+          switch (eventType) {
+            case "BondLocked":
+              await handleBondLocked(event, topics);
+              break;
+            case "BondRefunded":
+              await handleBondRefunded(event, topics);
+              break;
+            case "BondSlashed":
+              await handleBondSlashed(event, topics);
+              break;
+            default:
+              break;
+          }
         } else if (isTokenVotes) {
           switch (eventType) {
             case "DelegateChanged":
@@ -255,6 +308,12 @@ export async function processEvents(
               break;
             case "RelayerWhitelistUpdated":
               await handleRelayerWhitelistUpdated(event, topics);
+              break;
+            case "SplitDelegated":
+              await handleSplitDelegated(event, topics);
+              break;
+            case "SplitUndelegated":
+              await handleSplitUndelegated(event, topics);
               break;
             default:
               break;
@@ -312,6 +371,36 @@ export async function processEvents(
             default:
               break;
           }
+        } else if (isSignalAnchor) {
+          switch (eventType) {
+            case "ResultAnchored":
+              await handleResultAnchored(event, topics);
+              break;
+            default:
+              break;
+          }
+        } else if (isTreasuryStrategies) {
+          switch (eventType) {
+            case "StratReg":
+              await handleStrategyRegistered(event, topics);
+              break;
+            case "StratDeact":
+              await handleStrategyDeactivated(event, topics);
+              break;
+            case "Deposited":
+              await handleStrategyDeposited(event, topics);
+              break;
+            case "WdrawReq":
+              await handleStrategyWithdrawalRequested(event, topics);
+              break;
+            case "WdrawClaim":
+              await handleStrategyWithdrawalClaimed(event, topics);
+              break;
+            default:
+              break;
+          }
+        } else if (isOptimisticGovernor) {
+          await handleOptimisticGovernorEvent(event, eventType, topics);
         } else {
           switch (eventType) {
             case "ProposalCreated":
@@ -363,6 +452,168 @@ export async function processEvents(
   }
 
   return latestLedger;
+}
+
+async function handleConvictionEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): Promise<void> {
+  const proposalId = String(topics[1]);
+  const raw = scValToNative(event.value) as unknown;
+  const values = Array.isArray(raw) ? raw : [raw];
+
+  switch (eventType) {
+    case "ProposalCreated":
+      await pool.query(
+        `INSERT INTO conviction_proposals
+           (proposal_id, proposer, target, requested_amount, created_ledger, last_updated_ledger)
+         VALUES ($1, $2, $3, $4, $5, $5)
+         ON CONFLICT (proposal_id) DO NOTHING`,
+        [proposalId, String(values[0]), String(values[1]), String(values[2]), event.ledger],
+      );
+      break;
+    case "StakeUpdated": {
+      const staker = String(values[0]);
+      const amount = BigInt(String(values[1]));
+      if (amount === 0n) {
+        await pool.query(
+          "DELETE FROM conviction_stakes WHERE staker = $1 AND proposal_id = $2",
+          [staker, proposalId],
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO conviction_stakes (staker, proposal_id, amount, updated_at_ledger)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (staker) DO UPDATE SET proposal_id = EXCLUDED.proposal_id,
+             amount = EXCLUDED.amount, updated_at_ledger = EXCLUDED.updated_at_ledger,
+             updated_at = NOW()`,
+          [staker, proposalId, amount.toString(), event.ledger],
+        );
+      }
+      break;
+    }
+    case "ConvictionUpdated":
+      await pool.query(
+        `UPDATE conviction_proposals SET conviction = $2, last_updated_ledger = $3,
+           updated_at = NOW() WHERE proposal_id = $1`,
+        [proposalId, String(values[0]), event.ledger],
+      );
+      await pool.query(
+        `INSERT INTO conviction_snapshots (proposal_id, ledger, conviction)
+         VALUES ($1, $2, $3) ON CONFLICT (proposal_id, ledger)
+         DO UPDATE SET conviction = EXCLUDED.conviction`,
+        [proposalId, event.ledger, String(values[0])],
+      );
+      break;
+    case "ProposalExecuted":
+      await pool.query(
+        "UPDATE conviction_proposals SET executed = TRUE, updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    case "ProposalCancelled":
+      await pool.query(
+        "UPDATE conviction_proposals SET cancelled = TRUE, updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    default:
+      return;
+  }
+  invalidatePattern("conviction:");
+  const wsTypes: Record<string, WsEventType> = {
+    ProposalCreated: "conviction_proposal_created",
+    StakeUpdated: "conviction_stake_updated",
+    ConvictionUpdated: "conviction_conviction_updated",
+    ProposalExecuted: "conviction_proposal_executed",
+    ProposalCancelled: "conviction_proposal_cancelled",
+  };
+  broadcast({
+    type: wsTypes[eventType],
+    data: { proposal_id: proposalId, ledger: event.ledger },
+  });
+}
+
+async function handleOptimisticGovernorEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): Promise<void> {
+  const proposalId = String(topics[1]);
+  const raw = scValToNative(event.value) as unknown;
+  const values = Array.isArray(raw) ? raw : [raw];
+
+  switch (eventType) {
+    case "ProposalCreated": {
+      const proposer = String(values[0]);
+      const challengeEndLedger = String(values[1]);
+      await pool.query(
+        `INSERT INTO optimistic_proposals
+           (proposal_id, proposer, created_ledger, challenge_end_ledger)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (proposal_id) DO NOTHING`,
+        [proposalId, proposer, event.ledger, challengeEndLedger],
+      );
+      break;
+    }
+    case "ObjectionCast": {
+      const objector = String(values[0]);
+      const weight = String(values[1]);
+      const runningTotal = String(values[2]);
+      await pool.query(
+        `INSERT INTO optimistic_objections (proposal_id, objector, weight, running_total, ledger)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (proposal_id, objector) DO NOTHING`,
+        [proposalId, objector, weight, runningTotal, event.ledger],
+      );
+      await pool.query(
+        `UPDATE optimistic_proposals SET objection_votes = $2, updated_at = NOW()
+         WHERE proposal_id = $1`,
+        [proposalId, runningTotal],
+      );
+      break;
+    }
+    case "ProposalObjected":
+      await pool.query(
+        "UPDATE optimistic_proposals SET state = 'objected', updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    case "ProposalPassed":
+      await pool.query(
+        "UPDATE optimistic_proposals SET state = 'passed', updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    case "ProposalExecuted":
+      await pool.query(
+        "UPDATE optimistic_proposals SET state = 'executed', updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    case "ProposalCancelled":
+      await pool.query(
+        "UPDATE optimistic_proposals SET state = 'cancelled', updated_at = NOW() WHERE proposal_id = $1",
+        [proposalId],
+      );
+      break;
+    default:
+      return;
+  }
+  invalidatePattern("optimistic:");
+  const wsTypes: Record<string, WsEventType> = {
+    ProposalCreated: "optimistic_proposal_created",
+    ObjectionCast: "optimistic_objection_cast",
+    ProposalObjected: "optimistic_proposal_objected",
+    ProposalPassed: "optimistic_proposal_passed",
+    ProposalExecuted: "optimistic_proposal_executed",
+    ProposalCancelled: "optimistic_proposal_cancelled",
+  };
+  broadcast({
+    type: wsTypes[eventType],
+    data: { proposal_id: proposalId, ledger: event.ledger },
+  });
 }
 
 function indexerEventId(
@@ -438,6 +689,7 @@ async function handleProposalCreated(
   let id: bigint;
   let proposer: string;
   let description: string;
+  let descriptionHash: string | null;
   let startLedger: number;
   let endLedger: number;
 
@@ -446,6 +698,7 @@ async function handleProposalCreated(
     id = raw[0] as bigint;
     proposer = topics[1] as string;
     description = String(raw[1] ?? "");
+    descriptionHash = null;
     startLedger = raw[5] as number;
     endLedger = raw[6] as number;
   } else {
@@ -454,16 +707,20 @@ async function handleProposalCreated(
     id = data.proposal_id as bigint;
     proposer = String(data.proposer ?? "");
     description = String(data.description ?? "");
+    const descriptionHashRaw = data.description_hash as Uint8Array | undefined;
+    descriptionHash = descriptionHashRaw
+      ? Buffer.from(descriptionHashRaw).toString("hex")
+      : null;
     startLedger = Number(data.start_ledger);
     endLedger = Number(data.end_ledger);
   }
 
   invalidatePattern("proposals:");
   await pool.query(
-    `INSERT INTO proposals (id, proposer, description, start_ledger, end_ledger)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO proposals (id, proposer, description, description_hash, start_ledger, end_ledger)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (id) DO NOTHING`,
-    [String(id), proposer, description, startLedger, endLedger],
+    [String(id), proposer, description, descriptionHash, startLedger, endLedger],
   );
   invalidate(`profile:${proposer}`);
   broadcast({
@@ -633,6 +890,81 @@ async function handleDelegationDepthLimitUpdated(
   broadcast({
     type: "delegation_depth_limit_updated",
     data: { old_limit: oldLimit, new_limit: newLimit, ledger: event.ledger },
+  });
+}
+
+// --- Split delegation events (#994) ---
+//
+// `SplitDelegated` reports the delegator's full new set of (delegatee,
+// weight_bps) targets, replacing (not merging with) whatever this delegator
+// had on file. The contract emits per-entry `DelegationRegistered`/
+// `DelegationRevoked` events immediately before/after (same tx) via the same
+// delegation-registry bookkeeping the legacy single-delegate path uses, so
+// `delegation_entries` (and therefore `/delegates/:address/delegators`)
+// already reflects fractional split power with no extra handling here — we
+// just look those rows up to get each entry's absolute `delegated_power`
+// for the split-specific `split_delegations` table.
+
+async function handleSplitDelegated(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const delegator = topics[1] as string;
+  const splits = scValToNative(event.value) as Array<{
+    delegatee: string;
+    weight_bps: number;
+  }>;
+
+  await pool.query(
+    `UPDATE split_delegations SET active = FALSE, revoked_at = NOW()
+     WHERE delegator_address = $1 AND active = TRUE`,
+    [delegator],
+  );
+
+  for (const entry of splits) {
+    const powerResult = await pool.query(
+      `SELECT power_at_delegation FROM delegation_entries
+       WHERE delegator_address = $1 AND delegatee_address = $2 AND active = TRUE
+       ORDER BY id DESC LIMIT 1`,
+      [delegator, entry.delegatee],
+    );
+    const delegatedPower = powerResult.rows[0]?.power_at_delegation ?? "0";
+
+    await pool.query(
+      `INSERT INTO split_delegations
+         (delegator_address, delegatee_address, weight_bps, delegated_power, active)
+       VALUES ($1, $2, $3, $4, TRUE)`,
+      [delegator, entry.delegatee, entry.weight_bps, delegatedPower],
+    );
+  }
+
+  invalidatePattern("delegates:");
+  invalidatePattern("split-delegations:");
+  invalidate(`profile:${delegator}`);
+  broadcast({
+    type: "split_delegated",
+    data: { delegator, splits, ledger: event.ledger },
+  });
+}
+
+async function handleSplitUndelegated(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const delegator = topics[1] as string;
+
+  await pool.query(
+    `UPDATE split_delegations SET active = FALSE, revoked_at = NOW()
+     WHERE delegator_address = $1 AND active = TRUE`,
+    [delegator],
+  );
+
+  invalidatePattern("delegates:");
+  invalidatePattern("split-delegations:");
+  invalidate(`profile:${delegator}`);
+  broadcast({
+    type: "split_undelegated",
+    data: { delegator, ledger: event.ledger },
   });
 }
 
@@ -1056,6 +1388,151 @@ async function handleCoSponsored(
   });
 }
 
+/**
+ * Indexes a signal-anchor contract's ResultAnchored event so the anchor is
+ * independently queryable from the indexer even if the backend's own copy
+ * (backend/src/routes/signaling.ts's `anchored_tx_hash` column) is ever
+ * disputed.
+ */
+async function handleResultAnchored(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const anchorer = topics[1] as string;
+  const data = scValToNative(event.value) as unknown[];
+  const pollId = String(data[0] as bigint);
+  const resultHash = Buffer.from(data[1] as Uint8Array).toString("hex");
+  const anchoredLedger = Number(data[2] as number);
+
+  await pool.query(
+    `INSERT INTO signal_anchors (poll_id, result_hash, anchored_ledger, anchorer, tx_hash)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (poll_id) DO NOTHING`,
+    [pollId, resultHash, anchoredLedger, anchorer, event.txHash ?? null],
+  );
+  invalidatePattern("signal-anchors:");
+  broadcast({
+    type: "result_anchored",
+    data: { poll_id: pollId, result_hash: resultHash, anchored_ledger: anchoredLedger, anchorer },
+  });
+}
+
+async function handleStrategyRegistered(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const strategyId = String(topics[1] as bigint);
+  const data = scValToNative(event.value) as Record<string, unknown>;
+  const adapter = data.adapter as string;
+  const token = data.token as string;
+  await pool.query(
+    `INSERT INTO treasury_strategies (strategy_id, adapter, token, active, registered_ledger)
+     VALUES ($1, $2, $3, TRUE, $4)
+     ON CONFLICT (strategy_id) DO NOTHING`,
+    [strategyId, adapter, token, event.ledger],
+  );
+  invalidatePattern("treasury-strategies:");
+  broadcast({
+    type: "strategy_registered",
+    data: { strategy_id: strategyId, adapter, token, ledger: event.ledger },
+  });
+}
+
+async function handleStrategyDeactivated(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const strategyId = String(topics[1] as bigint);
+  await pool.query(
+    `UPDATE treasury_strategies SET active = FALSE WHERE strategy_id = $1`,
+    [strategyId],
+  );
+  invalidatePattern("treasury-strategies:");
+  broadcast({
+    type: "strategy_deactivated",
+    data: { strategy_id: strategyId, ledger: event.ledger },
+  });
+}
+
+async function handleStrategyDeposited(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const strategyId = String(topics[1] as bigint);
+  const data = scValToNative(event.value) as Record<string, unknown>;
+  const amount = String(data.amount as bigint);
+  await pool.query(
+    `INSERT INTO strategy_allocations (strategy_id, amount, ledger) VALUES ($1, $2, $3)`,
+    [strategyId, amount, event.ledger],
+  );
+  await pool.query(
+    `UPDATE treasury_strategies SET current_allocation = current_allocation + $2 WHERE strategy_id = $1`,
+    [strategyId, amount],
+  );
+  invalidatePattern("treasury-strategies:");
+  broadcast({
+    type: "strategy_deposited",
+    data: { strategy_id: strategyId, amount, ledger: event.ledger },
+  });
+}
+
+/**
+ * `current_allocation` is decremented here (at request time) rather than at
+ * claim time, mirroring the on-chain contract's own accounting: the
+ * requested amount is reserved out of `Allocation.amount` as soon as
+ * `request_withdrawal` succeeds, so a second concurrent request against the
+ * same strategy sees the already-reduced balance.
+ */
+async function handleStrategyWithdrawalRequested(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const withdrawalId = String(topics[1] as bigint);
+  const data = scValToNative(event.value) as Record<string, unknown>;
+  const strategyId = String(data.strategy_id as bigint);
+  const amount = String(data.amount as bigint);
+  const claimableLedger = Number(data.claimable_ledger as number);
+  await pool.query(
+    `INSERT INTO strategy_withdrawals
+       (withdrawal_id, strategy_id, amount, requested_ledger, claimable_ledger)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (withdrawal_id) DO NOTHING`,
+    [withdrawalId, strategyId, amount, event.ledger, claimableLedger],
+  );
+  await pool.query(
+    `UPDATE treasury_strategies SET current_allocation = current_allocation - $2 WHERE strategy_id = $1`,
+    [strategyId, amount],
+  );
+  invalidatePattern("treasury-strategies:");
+  broadcast({
+    type: "strategy_withdrawal_requested",
+    data: {
+      withdrawal_id: withdrawalId,
+      strategy_id: strategyId,
+      amount,
+      claimable_ledger: claimableLedger,
+    },
+  });
+}
+
+async function handleStrategyWithdrawalClaimed(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const withdrawalId = String(topics[1] as bigint);
+  const data = scValToNative(event.value) as Record<string, unknown>;
+  const actualAmount = String(data.actual_amount as bigint);
+  await pool.query(
+    `UPDATE strategy_withdrawals SET actual_amount = $2, claimed_ledger = $3 WHERE withdrawal_id = $1`,
+    [withdrawalId, actualAmount, event.ledger],
+  );
+  invalidatePattern("treasury-strategies:");
+  broadcast({
+    type: "strategy_withdrawal_claimed",
+    data: { withdrawal_id: withdrawalId, actual_amount: actualAmount, ledger: event.ledger },
+  });
+}
+
 async function handleCoSponsorshipWithdrawn(
   event: SorobanRpc.Api.EventResponse,
   topics: unknown[],
@@ -1127,6 +1604,69 @@ async function handleDraftExpired(
   broadcast({
     type: "draft_expired",
     data: { draft_id: draftId, ledger: event.ledger },
+  });
+}
+
+async function handleBondLocked(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const proposer = topics[1] as string;
+  const data = scValToNative(event.value) as unknown[];
+  const descriptionHash = Buffer.from(data[0] as Uint8Array).toString("hex");
+  const amount = String(data[1] as bigint);
+
+  await pool.query(
+    `INSERT INTO proposal_bonds (description_hash, proposer_address, amount, state, locked_ledger)
+     VALUES ($1, $2, $3, 'locked', $4)
+     ON CONFLICT (description_hash) DO NOTHING`,
+    [descriptionHash, proposer, amount, event.ledger],
+  );
+  invalidatePattern("proposal-bonds:");
+  broadcast({
+    type: "bond_locked",
+    data: { description_hash: descriptionHash, proposer, amount, ledger: event.ledger },
+  });
+}
+
+async function handleBondRefunded(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const proposer = topics[1] as string;
+  const data = scValToNative(event.value) as unknown[];
+  const descriptionHash = Buffer.from(data[0] as Uint8Array).toString("hex");
+  const amount = String(data[1] as bigint);
+
+  await pool.query(
+    `UPDATE proposal_bonds SET state = 'refunded', refunded_ledger = $1 WHERE description_hash = $2`,
+    [event.ledger, descriptionHash],
+  );
+  invalidatePattern("proposal-bonds:");
+  broadcast({
+    type: "bond_refunded",
+    data: { description_hash: descriptionHash, proposer, amount, ledger: event.ledger },
+  });
+}
+
+async function handleBondSlashed(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const proposer = topics[1] as string;
+  const data = scValToNative(event.value) as unknown[];
+  const descriptionHash = Buffer.from(data[0] as Uint8Array).toString("hex");
+  const amount = String(data[1] as bigint);
+  const recipient = data[2] as string;
+
+  await pool.query(
+    `UPDATE proposal_bonds SET state = 'slashed', slashed_ledger = $1, slash_recipient = $2 WHERE description_hash = $3`,
+    [event.ledger, recipient, descriptionHash],
+  );
+  invalidatePattern("proposal-bonds:");
+  broadcast({
+    type: "bond_slashed",
+    data: { description_hash: descriptionHash, proposer, amount, recipient, ledger: event.ledger },
   });
 }
 
