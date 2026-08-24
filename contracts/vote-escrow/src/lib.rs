@@ -1,10 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, Env, Symbol, Vec,
-};
-
-// Symbol is used in events.rs
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Vec};
 
 mod error;
 mod events;

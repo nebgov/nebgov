@@ -6,10 +6,10 @@ import {
   Keypair,
   nativeToScVal,
   scValToNative,
-  xdr,
 } from "@stellar/stellar-sdk";
 import { GovernorConfig } from "./types";
 import { withRetry } from "./utils";
+import { parseVoteEscrowError } from "./errors";
 
 const RPC_URLS: Record<string, string> = {
   futurenet: "https://soroban-futurenet.stellar.org",
@@ -54,12 +54,12 @@ export class VoteEscrowClient {
 
   private async retry<T>(
     fn: () => Promise<T>,
-    filter?: (e: any) => boolean
+    retryOn?: (e: unknown) => boolean
   ): Promise<T> {
     return withRetry(fn, {
-      maxRetries: 5,
-      delayMs: 1000,
-      filter,
+      maxAttempts: 5,
+      baseDelayMs: 1000,
+      retryOn,
     });
   }
 
@@ -91,7 +91,7 @@ export class VoteEscrowClient {
       const prepared = await this.server.prepareTransaction(tx);
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
-      if (result.status === "ERROR") throw new Error(result.errorResultXdr);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
   }
@@ -125,7 +125,7 @@ export class VoteEscrowClient {
         this.networkPassphrase
       );
       const result = await this.server.sendTransaction(signedTx);
-      if (result.status === "ERROR") throw new Error(result.errorResultXdr);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
   }
@@ -152,7 +152,7 @@ export class VoteEscrowClient {
       const prepared = await this.server.prepareTransaction(tx);
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
-      if (result.status === "ERROR") throw new Error(result.errorResultXdr);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
   }
@@ -176,7 +176,7 @@ export class VoteEscrowClient {
       const prepared = await this.server.prepareTransaction(tx);
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
-      if (result.status === "ERROR") throw new Error(result.errorResultXdr);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
   }
@@ -199,7 +199,7 @@ export class VoteEscrowClient {
       const prepared = await this.server.prepareTransaction(tx);
       prepared.sign(signer);
       const result = await this.server.sendTransaction(prepared);
-      if (result.status === "ERROR") throw new Error(result.errorResultXdr);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
   }
