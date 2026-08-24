@@ -244,3 +244,17 @@ fn test_delegator_count_and_received_delegations_reflect_fractional_split() {
     assert_eq!(received_b.len(), 1);
     assert_eq!(received_b.get(0).unwrap().voting_power_at_delegation, 300);
 }
+
+#[test]
+#[should_panic(expected = "unauthorized")]
+fn test_set_max_split_targets_rejects_non_admin_caller() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let not_admin = Address::generate(&env);
+
+    let (contract_id, _token_addr) = setup(&env, &admin);
+    let client = TokenVotesContractClient::new(&env, &contract_id);
+
+    client.set_max_split_targets(&not_admin, &5);
+}
