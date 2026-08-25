@@ -399,6 +399,23 @@ impl SimulationRunner {
                 let delegatee_addr = self.get_actor(delegatee).clone();
                 self.token_votes.delegate(&delegator, &delegatee_addr);
             }
+            SimStep::DelegateSplit { actor, splits } => {
+                let delegator = self.get_actor(actor).clone();
+                let split_delegations: SorobanVec<sorogov_token_votes::SplitDelegation> =
+                    SorobanVec::from_slice(
+                        &self.env,
+                        &splits
+                            .iter()
+                            .map(|(delegatee_name, weight_bps)| {
+                                sorogov_token_votes::SplitDelegation {
+                                    delegatee: self.get_actor(delegatee_name).clone(),
+                                    weight_bps: *weight_bps,
+                                }
+                            })
+                            .collect::<Vec<_>>(),
+                    );
+                self.token_votes.delegate_split(&delegator, &split_delegations);
+            }
             SimStep::MintTokens { actor, amount } => {
                 let addr = self.get_actor(actor).clone();
                 token::StellarAssetClient::new(&self.env, &self.token)
