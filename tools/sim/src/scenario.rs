@@ -106,6 +106,10 @@ pub enum SimStep {
         actor: String,
         delegatee: String,
     },
+    DelegateSplit {
+        actor: String,
+        splits: Vec<(String, u32)>,
+    },
     MintTokens {
         actor: String,
         #[serde(with = "i128_compat")]
@@ -230,6 +234,7 @@ impl SimStep {
             SimStep::Execute { .. } => "Execute",
             SimStep::Cancel { .. } => "Cancel",
             SimStep::Delegate { .. } => "Delegate",
+            SimStep::DelegateSplit { .. } => "DelegateSplit",
             SimStep::MintTokens { .. } => "MintTokens",
             SimStep::BurnTokens { .. } => "BurnTokens",
             SimStep::UpdateConfig { .. } => "UpdateConfig",

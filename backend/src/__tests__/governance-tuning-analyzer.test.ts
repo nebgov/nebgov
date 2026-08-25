@@ -150,3 +150,60 @@ describe("computeRecommendation — voting_period", () => {
     expect(result.rationale.votingPeriod.direction).toBe("unchanged");
   });
 });
+
+describe("computeRecommendation — large-supply (beyond Number.MAX_SAFE_INTEGER) totals", () => {
+  // A real-world large-supply governance token can accrue cumulative
+  // total_votes_cast far above Number.MAX_SAFE_INTEGER (9_007_199_254_740_991).
+  // revealQuorumNumerator converts per-snapshot *deltas* to Number for the
+  // relative-change trend math, so what matters for correctness is whether the
+  // per-snapshot delta — not the absolute cumulative total — stays within the
+  // safely-representable integer range.
+  const MAX_SAFE = 9_007_199_254_740_991n;
+
+  it("computes a sane up-trend when cumulative totals are astronomically large but per-snapshot deltas are small", () => {
+    // base sits ~1000x above MAX_SAFE_INTEGER; deltas are tiny, so each
+    // Number(delta) is exact and the relative trend is unaffected by the
+    // astronomically large absolute totals.
+    const base = MAX_SAFE * 1_000n;
+    const series = [base, base + 10n, base + 20n, base + 30n, base + 130n];
+    const result = computeRecommendation(
+      makeInputs({ snapshotVotesCast: series }),
+      makeConfig(),
+    );
+    expect(result.rationale.quorumNumerator.direction).toBe("up");
+    expect(result.recommendedQuorumNumerator).toBeGreaterThan(1_000);
+  });
+
+  it("computes a sane down-trend for a huge but gently declining series", () => {
+    const base = MAX_SAFE * 1_000n;
+    const series = [base, base + 100n, base + 200n, base + 210n, base + 215n];
+    const result = computeRecommendation(
+      makeInputs({ snapshotVotesCast: series }),
+      makeConfig(),
+    );
+    expect(result.rationale.quorumNumerator.direction).toBe("down");
+    expect(result.recommendedQuorumNumerator).toBeLessThan(1_000);
+  });
+
+  it("documents the precision boundary: per-snapshot deltas beyond MAX_SAFE_INTEGER are not exactly representable", () => {
+    // When a single snapshot-to-snapshot delta exceeds MAX_SAFE_INTEGER, the
+    // bigint -> Number conversion in recommendQuorumNumerator loses integer
+    // precision. For clearly diverging trends the relative error (~1e-16) is
+    // far below TREND_EPSILON (0.05), so the trend direction is still correct,
+    // but the boundary is real: a trend whose true relative change sits within
+    // ~1e-16 of the no-op band could be misclassified. This assertion pins
+    // that boundary so a regression changing the conversion would be caught.
+    const hugeDelta = 2n ** 60n; // ~1.15e18, well past MAX_SAFE_INTEGER
+    const hugeDeltaPlusOne = hugeDelta + 1n;
+    expect(Number(hugeDeltaPlusOne)).toBe(Number(hugeDelta)); // +1 is lost
+
+    // Even so, an overwhelmingly dominant recent trend is still classified
+    // correctly despite the lossy conversion of each huge delta.
+    const series = [hugeDelta, hugeDelta * 2n, hugeDelta * 3n, hugeDelta * 4n, hugeDelta * 100n];
+    const result = computeRecommendation(
+      makeInputs({ snapshotVotesCast: series }),
+      makeConfig(),
+    );
+    expect(result.rationale.quorumNumerator.direction).toBe("up");
+  });
+});

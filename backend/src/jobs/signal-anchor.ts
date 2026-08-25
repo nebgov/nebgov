@@ -10,7 +10,9 @@ import {
 } from "@stellar/stellar-sdk";
 import pool from "../db/pool";
 import { logger } from "../logger";
+import { invalidate } from "../cache";
 import { computeWeightedTally, type PollResults } from "../signaling/tally";
+import { resultsCacheKey } from "../routes/signaling";
 
 const NETWORK_PASSPHRASES: Record<string, string> = {
   mainnet: Networks.PUBLIC,
@@ -147,6 +149,7 @@ export class SignalAnchorService {
            WHERE id = $3`,
           [resultHash, anchoredTxHash, poll.id],
         );
+        invalidate(resultsCacheKey(poll.id));
         logger.info({ pollId: poll.id, resultHash, anchoredTxHash }, "Finalized signaling poll");
       } catch (err) {
         logger.error({ err, pollId: poll.id }, "Failed to finalize signaling poll");

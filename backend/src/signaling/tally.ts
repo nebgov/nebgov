@@ -162,15 +162,25 @@ export async function computeWeightedTally(
   }
 
   const totals = new Array(choices.length).fill(0n) as bigint[];
+  const ids: number[] = [];
+  const powers: string[] = [];
   for (const vote of votes) {
     const power = powerByVoter.get(vote.voter_address) ?? 0n;
     if (vote.choice_index >= 0 && vote.choice_index < totals.length) {
       totals[vote.choice_index] += power;
     }
-    await pool.query(`UPDATE signaling_votes SET voting_power = $1 WHERE id = $2`, [
-      power.toString(),
-      vote.id,
-    ]);
+    ids.push(vote.id);
+    powers.push(power.toString());
+  }
+
+  if (ids.length > 0) {
+    await pool.query(
+      `UPDATE signaling_votes AS v
+       SET voting_power = u.voting_power
+       FROM UNNEST($1::bigint[], $2::numeric[]) AS u(id, voting_power)
+       WHERE v.id = u.id`,
+      [ids, powers],
+    );
   }
 
   const totalWeight = totals.reduce((sum, t) => sum + t, 0n);

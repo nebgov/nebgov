@@ -10,6 +10,9 @@
 #   contract-name is the Cargo package name, e.g.:
 #     sorogov_governor | sorogov_timelock | sorogov_token_votes
 #     sorogov_treasury | sorogov_governor_factory
+#     sorogov_proposal_bonds | sorogov_optimistic_governor
+#     sorogov_conviction_voting | sorogov_treasury_strategies
+#     sorogov_signal_anchor
 #
 # Required env vars (or set in .env.testnet):
 #   GOVERNOR_ADDRESS   — deployed governor contract address
