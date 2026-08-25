@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { GovernorClient, VoteSupport, VotesClient, TreasuryClient, type Network } from "@nebgov/sdk";
+import {
+  GovernorClient,
+  VoteSupport,
+  VotesClient,
+  TreasuryClient,
+  ProposalBondsClient,
+  OptimisticGovernorClient,
+  ConvictionVotingClient,
+  TreasuryStrategiesClient,
+  SignalingClient,
+  type Network,
+} from "@nebgov/sdk";
 import { Keypair } from "@stellar/stellar-sdk";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -453,6 +464,217 @@ program
         const signer = await loadKeypair(options.keypair);
         const opHash = await treasury.batchTransfer(signer, options.token, recipients);
         output({ opHash, recipients: recipients.length }, global);
+      }),
+  );
+
+program
+  .command("proposal-bonds")
+  .description("Proposal bonds commands")
+  .addCommand(
+    new Command("list")
+      .option("--limit <number>", "max bonds", "20")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new ProposalBondsClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const bonds = await client.listBonds({
+          limit: Number(options.limit),
+        });
+        output(bonds, global);
+      }),
+  )
+  .addCommand(
+    new Command("settings")
+      .action(async () => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new ProposalBondsClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const settings = await client.getSettings();
+        output(settings, global);
+      }),
+  );
+
+program
+  .command("conviction-voting")
+  .description("Conviction voting commands")
+  .addCommand(
+    new Command("proposal")
+      .argument("<id>", "proposal id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new ConvictionVotingClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const proposal = await client.getProposal(Number(id));
+        output(proposal, global);
+      }),
+  )
+  .addCommand(
+    new Command("history")
+      .argument("<id>", "proposal id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new ConvictionVotingClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const history = await client.getConvictionHistory(Number(id));
+        output(history, global);
+      }),
+  );
+
+program
+  .command("optimistic-governor")
+  .description("Optimistic governance commands")
+  .addCommand(
+    new Command("list")
+      .option("--status <status>", "proposal status")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new OptimisticGovernorClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const proposals = await client.listProposals(options.status as any);
+        output(proposals, global);
+      }),
+  )
+  .addCommand(
+    new Command("get")
+      .argument("<id>", "proposal id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new OptimisticGovernorClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const proposal = await client.getProposal(Number(id));
+        output(proposal, global);
+      }),
+  )
+  .addCommand(
+    new Command("config")
+      .action(async () => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new OptimisticGovernorClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const config = await client.getConfig();
+        output(config, global);
+      }),
+  );
+
+program
+  .command("treasury-strategies")
+  .description("Treasury strategies commands")
+  .addCommand(
+    new Command("list")
+      .option("--limit <number>", "max strategies", "20")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new TreasuryStrategiesClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const strategies = await client.listStrategies({
+          limit: Number(options.limit),
+        });
+        output(strategies, global);
+      }),
+  )
+  .addCommand(
+    new Command("get")
+      .argument("<id>", "strategy id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new TreasuryStrategiesClient({
+          network: cfg.network,
+          contractAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const strategy = await client.getStrategy(Number(id));
+        output(strategy, global);
+      }),
+  );
+
+program
+  .command("signaling-polls")
+  .description("Signaling polls commands")
+  .addCommand(
+    new Command("list")
+      .option("--status <status>", "poll status (active or closed)")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new SignalingClient({
+          network: cfg.network,
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const polls = await client.listPolls(options.status as any);
+        output(polls, global);
+      }),
+  )
+  .addCommand(
+    new Command("get")
+      .argument("<id>", "poll id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new SignalingClient({
+          network: cfg.network,
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const poll = await client.getPoll(Number(id));
+        output(poll, global);
+      }),
+  )
+  .addCommand(
+    new Command("results")
+      .argument("<id>", "poll id")
+      .action(async (id: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = new SignalingClient({
+          network: cfg.network,
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const results = await client.getResults(Number(id));
+        output(results, global);
       }),
   );
 
