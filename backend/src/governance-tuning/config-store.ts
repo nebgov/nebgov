@@ -103,6 +103,20 @@ export async function updateGovernanceTuningConfig(
     );
   }
 
+  const positiveChecks: Array<[number, string]> = [
+    [patch.maxQuorumDeltaBps ?? current.maxQuorumDeltaBps, "max_quorum_delta_bps"],
+    [patch.maxThresholdDeltaBps ?? current.maxThresholdDeltaBps, "max_threshold_delta_bps"],
+    [patch.intervalMs ?? current.intervalMs, "interval_ms"],
+    [patch.trailingWindow ?? current.trailingWindow, "trailing_window"],
+  ];
+  for (const [value, field] of positiveChecks) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new GovernanceTuningConfigValidationError(
+        `${field} (${value}) must be a positive number`,
+      );
+    }
+  }
+
   const setClauses: string[] = [];
   const values: unknown[] = [];
   keys.forEach((key, i) => {
