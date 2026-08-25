@@ -18,6 +18,7 @@ import type {
   OptimisticProposalState,
 } from "./types";
 import { hexToBytes32 } from "./utils";
+import { parseOptimisticGovernorError } from "./errors";
 
 const RPC_URLS: Record<Network, string> = {
   mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
@@ -174,7 +175,7 @@ export class OptimisticGovernorClient {
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
     const sent = await this.server.sendTransaction(prepared);
-    if (sent.status === "ERROR") throw new Error(`Transaction submission failed: ${fn}`);
+    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -182,10 +183,10 @@ export class OptimisticGovernorClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error(`Transaction failed: ${sent.hash}`);
+        throw parseOptimisticGovernorError(status);
       }
     }
-    throw new Error(`Transaction confirmation timed out: ${sent.hash}`);
+    throw parseOptimisticGovernorError("Transaction confirmation timed out");
   }
 
   /**
@@ -209,7 +210,7 @@ export class OptimisticGovernorClient {
     const signedXdr = await signUnsignedXdr(prepared.toXDR());
     const signed = TransactionBuilder.fromXDR(signedXdr, this.passphrase);
     const sent = await this.server.sendTransaction(signed);
-    if (sent.status === "ERROR") throw new Error(`Transaction submission failed: ${fn}`);
+    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -217,10 +218,10 @@ export class OptimisticGovernorClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error(`Transaction failed: ${sent.hash}`);
+        throw parseOptimisticGovernorError(status);
       }
     }
-    throw new Error(`Transaction confirmation timed out: ${sent.hash}`);
+    throw parseOptimisticGovernorError("Transaction confirmation timed out");
   }
 
   /** Wallet-signing variant of {@link propose}. */
@@ -317,7 +318,7 @@ export class OptimisticGovernorClient {
     }).addOperation(this.contract.call(fn, ...args)).setTimeout(30).build();
     const result = await this.server.simulateTransaction(tx);
     if (SorobanRpc.Api.isSimulationError(result) || !result.result?.retval) {
-      throw new Error(`Simulation failed: ${fn}`);
+      throw parseOptimisticGovernorError(result);
     }
     return scValToNative(result.result.retval);
   }

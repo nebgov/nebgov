@@ -138,7 +138,7 @@ impl OptimisticGovernorContract {
             .storage()
             .instance()
             .get(&DataKey::NextProposalId)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
         let next = id
             .checked_add(1)
             .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
@@ -148,13 +148,13 @@ impl OptimisticGovernorContract {
             .storage()
             .instance()
             .get(&DataKey::ProposerBondAmount)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
         if bond_amount > 0 {
             let bond_token: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::ProposerBondToken)
-                .unwrap();
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
             token::TokenClient::new(&env, &bond_token).transfer(
                 &proposer,
                 &env.current_contract_address(),
@@ -173,7 +173,7 @@ impl OptimisticGovernorContract {
             .storage()
             .instance()
             .get(&DataKey::ChallengeWindowLedgers)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
         let challenge_end_ledger = created_ledger
             .checked_add(challenge_window_ledgers)
             .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
@@ -238,7 +238,7 @@ impl OptimisticGovernorContract {
             .storage()
             .instance()
             .get(&DataKey::ObjectionThresholdBps)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
         let total_supply = Self::votes_client(&env).get_past_total_supply(&proposal.created_ledger);
         let crossed = total_supply > 0
             && running_total
@@ -334,11 +334,21 @@ impl OptimisticGovernorContract {
         Self::require_initialized(&env);
         let storage = env.storage().instance();
         OptimisticGovernorConfig {
-            votes_token: storage.get(&DataKey::VotesToken).unwrap(),
-            challenge_window_ledgers: storage.get(&DataKey::ChallengeWindowLedgers).unwrap(),
-            objection_threshold_bps: storage.get(&DataKey::ObjectionThresholdBps).unwrap(),
-            proposer_bond_amount: storage.get(&DataKey::ProposerBondAmount).unwrap(),
-            proposer_bond_token: storage.get(&DataKey::ProposerBondToken).unwrap(),
+            votes_token: storage
+                .get(&DataKey::VotesToken)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
+            challenge_window_ledgers: storage
+                .get(&DataKey::ChallengeWindowLedgers)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
+            objection_threshold_bps: storage
+                .get(&DataKey::ObjectionThresholdBps)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
+            proposer_bond_amount: storage
+                .get(&DataKey::ProposerBondAmount)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
+            proposer_bond_token: storage
+                .get(&DataKey::ProposerBondToken)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
         }
     }
 
