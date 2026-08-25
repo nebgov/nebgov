@@ -117,7 +117,7 @@ impl ConvictionVotingContract {
             .storage()
             .instance()
             .get(&DataKey::NextProposalId)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         let next = id
             .checked_add(1)
             .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::ArithmeticOverflow));
@@ -281,7 +281,7 @@ impl ConvictionVotingContract {
             .storage()
             .instance()
             .get(&DataKey::MinThresholdConviction)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         if requested_amount == 0 {
             return minimum;
         }
@@ -289,7 +289,11 @@ impl ConvictionVotingContract {
         if supply <= 0 {
             return i128::MAX;
         }
-        let max_ratio: u32 = env.storage().instance().get(&DataKey::MaxRatioBps).unwrap();
+        let max_ratio: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxRatioBps)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         let ratio = requested_amount
             .checked_mul(BPS)
             .and_then(|v| v.checked_div(supply))
@@ -310,7 +314,11 @@ impl ConvictionVotingContract {
     pub fn cancel_proposal(env: Env, caller: Address, proposal_id: u64) {
         caller.require_auth();
         let mut proposal = Self::must_get_open_proposal(&env, proposal_id);
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         if caller != proposal.proposer && caller != admin {
             env.panic_with_error(ConvictionVotingError::Unauthorized);
         }
@@ -390,8 +398,16 @@ impl ConvictionVotingContract {
         if elapsed == 0 || proposal.executed || proposal.cancelled {
             return proposal;
         }
-        let decay_bps: u32 = env.storage().instance().get(&DataKey::DecayBps).unwrap();
-        let weight_bps: u32 = env.storage().instance().get(&DataKey::WeightBps).unwrap();
+        let decay_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DecayBps)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
+        let weight_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::WeightBps)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         let decay = Self::pow_bps(decay_bps as i128, elapsed);
         let total = Self::total_staked(env, proposal.id);
         let steady = total

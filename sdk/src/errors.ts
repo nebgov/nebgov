@@ -1012,6 +1012,190 @@ export function parseTreasuryStrategiesError(
   );
 }
 
+// ─── Conviction Voting Errors ────────────────────────────────────────────
+
+/**
+ * Error codes for the ConvictionVoting contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain ConvictionVotingError enum values
+ * (contracts/conviction-voting/src/error.rs).
+ */
+export enum ConvictionVotingErrorCode {
+  AlreadyInitialized = 1,
+  NotInitialized = 2,
+  InvalidConfiguration = 3,
+  InvalidAmount = 4,
+  ProposalNotFound = 5,
+  ProposalClosed = 6,
+  InsufficientVotingPower = 7,
+  StakeNotFound = 8,
+  Unauthorized = 9,
+  ArithmeticOverflow = 10,
+  InvalidCalldata = 11,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+}
+
+const CONVICTION_VOTING_MESSAGES: Record<ConvictionVotingErrorCode, string> = {
+  [ConvictionVotingErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [ConvictionVotingErrorCode.NotInitialized]: "Contract has not been initialized yet",
+  [ConvictionVotingErrorCode.InvalidConfiguration]: "Invalid configuration parameters",
+  [ConvictionVotingErrorCode.InvalidAmount]: "Amount must be positive",
+  [ConvictionVotingErrorCode.ProposalNotFound]: "Proposal not found",
+  [ConvictionVotingErrorCode.ProposalClosed]: "Proposal is closed or already executed",
+  [ConvictionVotingErrorCode.InsufficientVotingPower]: "Insufficient voting power for this action",
+  [ConvictionVotingErrorCode.StakeNotFound]: "No stake found for this account",
+  [ConvictionVotingErrorCode.Unauthorized]: "Caller is not authorized to perform this action",
+  [ConvictionVotingErrorCode.ArithmeticOverflow]: "Arithmetic overflow in conviction calculation",
+  [ConvictionVotingErrorCode.InvalidCalldata]: "Calldata is invalid or malformed",
+  [ConvictionVotingErrorCode.SimulationFailed]: "Simulation failed",
+  [ConvictionVotingErrorCode.TransactionFailed]: "Transaction failed",
+  [ConvictionVotingErrorCode.TransactionTimeout]: "Transaction timed out",
+};
+
+export class ConvictionVotingError extends Error {
+  readonly name = "ConvictionVotingError";
+
+  constructor(
+    public readonly code: ConvictionVotingErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, ConvictionVotingError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link ConvictionVotingError}.
+ */
+export function parseConvictionVotingError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): ConvictionVotingError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as ConvictionVotingErrorCode;
+    const message =
+      CONVICTION_VOTING_MESSAGES[code] ?? `Conviction-voting contract error #${contractCode}`;
+    return new ConvictionVotingError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new ConvictionVotingError(
+      ConvictionVotingErrorCode.TransactionFailed,
+      `${CONVICTION_VOTING_MESSAGES[ConvictionVotingErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new ConvictionVotingError(
+    ConvictionVotingErrorCode.SimulationFailed,
+    `${CONVICTION_VOTING_MESSAGES[ConvictionVotingErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
+// ─── Optimistic Governor Errors ───────────────────────────────────────────
+
+/**
+ * Error codes for the OptimisticGovernor contract + SDK transport layer.
+ *
+ * Codes 1–99 mirror the on-chain OptimisticGovernorError enum values
+ * (contracts/optimistic-governor/src/error.rs).
+ */
+export enum OptimisticGovernorErrorCode {
+  AlreadyInitialized = 1,
+  NotInitialized = 2,
+  InvalidConfiguration = 3,
+  InvalidCalldata = 4,
+  ProposalNotFound = 5,
+  NotInChallengeWindow = 6,
+  ChallengeWindowNotElapsed = 7,
+  ChallengeWindowElapsed = 8,
+  AlreadyObjected = 9,
+  NoVotingPower = 10,
+  ProposalObjected = 11,
+  ProposalNotPassed = 12,
+  ProposalAlreadyFinalized = 13,
+  Unauthorized = 14,
+  ArithmeticOverflow = 15,
+  ProposalNotCancellable = 16,
+
+  // SDK-level codes
+  SimulationFailed = 100,
+  TransactionFailed = 101,
+  TransactionTimeout = 102,
+}
+
+const OPTIMISTIC_GOVERNOR_MESSAGES: Record<OptimisticGovernorErrorCode, string> = {
+  [OptimisticGovernorErrorCode.AlreadyInitialized]: "Contract is already initialized",
+  [OptimisticGovernorErrorCode.NotInitialized]: "Contract has not been initialized yet",
+  [OptimisticGovernorErrorCode.InvalidConfiguration]: "Invalid configuration parameters",
+  [OptimisticGovernorErrorCode.InvalidCalldata]: "Calldata is invalid or malformed",
+  [OptimisticGovernorErrorCode.ProposalNotFound]: "Proposal not found",
+  [OptimisticGovernorErrorCode.NotInChallengeWindow]: "Proposal is not in the challenge window",
+  [OptimisticGovernorErrorCode.ChallengeWindowNotElapsed]: "Challenge window has not elapsed yet",
+  [OptimisticGovernorErrorCode.ChallengeWindowElapsed]: "Challenge window has already elapsed",
+  [OptimisticGovernorErrorCode.AlreadyObjected]: "Address has already objected to this proposal",
+  [OptimisticGovernorErrorCode.NoVotingPower]: "Account has zero voting power",
+  [OptimisticGovernorErrorCode.ProposalObjected]: "Proposal has been objected and is no longer passing",
+  [OptimisticGovernorErrorCode.ProposalNotPassed]: "Proposal has not passed the challenge window",
+  [OptimisticGovernorErrorCode.ProposalAlreadyFinalized]: "Proposal has already been finalized or objected",
+  [OptimisticGovernorErrorCode.Unauthorized]: "Caller is not authorized to perform this action",
+  [OptimisticGovernorErrorCode.ArithmeticOverflow]: "Arithmetic overflow in objection calculation",
+  [OptimisticGovernorErrorCode.ProposalNotCancellable]: "Proposal cannot be cancelled in its current state",
+  [OptimisticGovernorErrorCode.SimulationFailed]: "Simulation failed",
+  [OptimisticGovernorErrorCode.TransactionFailed]: "Transaction failed",
+  [OptimisticGovernorErrorCode.TransactionTimeout]: "Transaction timed out",
+};
+
+export class OptimisticGovernorError extends Error {
+  readonly name = "OptimisticGovernorError";
+
+  constructor(
+    public readonly code: OptimisticGovernorErrorCode,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, OptimisticGovernorError.prototype);
+  }
+}
+
+/**
+ * Parse a raw Soroban RPC error into a typed {@link OptimisticGovernorError}.
+ */
+export function parseOptimisticGovernorError(
+  raw: SorobanRpcError | string | null | undefined,
+  cause?: unknown,
+): OptimisticGovernorError {
+  const contractCode = extractContractErrorCode(raw);
+  if (contractCode !== null) {
+    const code = contractCode as OptimisticGovernorErrorCode;
+    const message =
+      OPTIMISTIC_GOVERNOR_MESSAGES[code] ?? `Optimistic-governor contract error #${contractCode}`;
+    return new OptimisticGovernorError(code, message, cause);
+  }
+
+  if (hasErrorStatus(raw)) {
+    return new OptimisticGovernorError(
+      OptimisticGovernorErrorCode.TransactionFailed,
+      `${OPTIMISTIC_GOVERNOR_MESSAGES[OptimisticGovernorErrorCode.TransactionFailed]}: ${errorText(raw) || "unknown"}`,
+      cause,
+    );
+  }
+
+  return new OptimisticGovernorError(
+    OptimisticGovernorErrorCode.SimulationFailed,
+    `${OPTIMISTIC_GOVERNOR_MESSAGES[OptimisticGovernorErrorCode.SimulationFailed]}: ${errorText(raw) || "unknown"}`,
+    cause,
+  );
+}
+
 // ─── Voting Rewards Errors ───────────────────────────────────────────────────
 
 /**
