@@ -109,7 +109,7 @@ cargo build --release --target wasm32v1-none --manifest-path "$ROOT_DIR/Cargo.to
 ok "WASM build complete"
 
 # Verify expected artefacts exist
-for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity; do
+for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity sorogov_proposal_bonds; do
   [[ -f "$WASM_DIR/${wasm}.wasm" ]] || fail "Expected WASM not found: $WASM_DIR/${wasm}.wasm"
 done
 
@@ -176,6 +176,9 @@ deploy_contract "$WASM_DIR/sorogov_governor_factory.wasm" "FACTORY_ADDRESS"
 
 # 6. Liquidity
 deploy_contract "$WASM_DIR/sorogov_liquidity.wasm" "LIQUIDITY_ADDRESS"
+
+# 7. Proposal Bonds
+deploy_contract "$WASM_DIR/sorogov_proposal_bonds.wasm" "PROPOSAL_BONDS_ADDRESS"
 
 # ====================================================================
 # Initialize contracts (idempotent — each checks storage internally)
@@ -302,6 +305,31 @@ stellar contract invoke \
   2>/dev/null && ok "factory native token configured" \
   || warn "factory native token already configured (or update failed — check manually)"
 
+# -- Initialize proposal-bonds ----------------------------------------
+PB_BOND_AMOUNT="${PROPOSAL_BOND_AMOUNT:-1000000000}"
+PB_REFUND_GRACE="${PROPOSAL_BOND_REFUND_GRACE_LEDGERS:-720}"
+PB_MAX_LOCK="${PROPOSAL_BOND_MAX_LOCK_LEDGERS:-1000000}"
+
+info "Initializing proposal-bonds ..."
+stellar contract invoke \
+  --id "$PROPOSAL_BONDS_ADDRESS" \
+  --source "$IDENTITY" \
+  --network "$NETWORK" \
+  -- initialize \
+  --admin "$DEPLOYER_ADDR" \
+  --bond_token "$SEP41_TOKEN" \
+  --bond_amount "$PB_BOND_AMOUNT" \
+  --governor "$GOVERNOR_ADDRESS" \
+  --refund_grace_ledgers "$PB_REFUND_GRACE" \
+  --max_lock_ledgers "$PB_MAX_LOCK" \
+  2>/dev/null && ok "proposal-bonds initialized" \
+  || warn "proposal-bonds already initialized (or init failed — check manually)"
+
+# Persist proposal-bonds parameters
+persist "PROPOSAL_BOND_AMOUNT" "$PB_BOND_AMOUNT"
+persist "PROPOSAL_BOND_REFUND_GRACE_LEDGERS" "$PB_REFUND_GRACE"
+persist "PROPOSAL_BOND_MAX_LOCK_LEDGERS" "$PB_MAX_LOCK"
+
 # ====================================================================
 # Summary
 # ====================================================================
@@ -319,6 +347,7 @@ info "  Governor ............. $GOVERNOR_ADDRESS"
 info "  Treasury ............. $TREASURY_ADDRESS"
 info "  Factory .............. $FACTORY_ADDRESS"
 info "  Liquidity ............ $LIQUIDITY_ADDRESS"
+info "  Proposal Bonds ....... $PROPOSAL_BONDS_ADDRESS"
 info "  Env file ............. $ENV_FILE"
 info "============================================================"
 printf '\n'
