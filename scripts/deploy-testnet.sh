@@ -109,7 +109,7 @@ cargo build --release --target wasm32v1-none --manifest-path "$ROOT_DIR/Cargo.to
 ok "WASM build complete"
 
 # Verify expected artefacts exist
-for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity; do
+for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity sorogov_signal_anchor; do
   [[ -f "$WASM_DIR/${wasm}.wasm" ]] || fail "Expected WASM not found: $WASM_DIR/${wasm}.wasm"
 done
 
@@ -176,6 +176,9 @@ deploy_contract "$WASM_DIR/sorogov_governor_factory.wasm" "FACTORY_ADDRESS"
 
 # 6. Liquidity
 deploy_contract "$WASM_DIR/sorogov_liquidity.wasm" "LIQUIDITY_ADDRESS"
+
+# 7. Signal-Anchor
+deploy_contract "$WASM_DIR/sorogov_signal_anchor.wasm" "SIGNAL_ANCHOR_CONTRACT_ID"
 
 # ====================================================================
 # Initialize contracts (idempotent — each checks storage internally)
@@ -302,6 +305,17 @@ stellar contract invoke \
   2>/dev/null && ok "factory native token configured" \
   || warn "factory native token already configured (or update failed — check manually)"
 
+# -- Initialize signal-anchor -----------------------------------------
+info "Initializing signal-anchor ..."
+stellar contract invoke \
+  --id "$SIGNAL_ANCHOR_CONTRACT_ID" \
+  --source "$IDENTITY" \
+  --network "$NETWORK" \
+  -- initialize \
+  --admin "$DEPLOYER_ADDR" \
+  2>/dev/null && ok "signal-anchor initialized" \
+  || warn "signal-anchor already initialized (or init failed — check manually)"
+
 # ====================================================================
 # Summary
 # ====================================================================
@@ -319,6 +333,7 @@ info "  Governor ............. $GOVERNOR_ADDRESS"
 info "  Treasury ............. $TREASURY_ADDRESS"
 info "  Factory .............. $FACTORY_ADDRESS"
 info "  Liquidity ............ $LIQUIDITY_ADDRESS"
+info "  Signal-Anchor ........ $SIGNAL_ANCHOR_CONTRACT_ID"
 info "  Env file ............. $ENV_FILE"
 info "============================================================"
 printf '\n'
