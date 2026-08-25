@@ -22,6 +22,10 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | Multi-sig treasury     | DAO-controlled treasury with configurable threshold |
 | Treasury yield strategies | Governance-controlled allocation of idle treasury funds to whitelisted yield adapters ([docs](./docs/treasury-strategies.md)) |
 | Permissionless factory | Deploy your own governance instance in one call     |
+| Conviction voting      | Self-executing voting based on staking duration and amount ([docs](./docs/conviction-voting.md)) |
+| Optimistic governance  | Fast-track proposals that execute unless challenged ([docs](./docs/optimistic-governance.md)) |
+| Proposal bonds         | Refundable proposer bonds with governance-triggered slashing ([docs](./docs/proposal-bonds.md)) |
+| Gasless signaling      | Off-chain polling with on-chain result anchoring ([docs](./docs/signal-anchor.md)) |
 
 ---
 
