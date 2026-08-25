@@ -17,7 +17,7 @@ const router = Router();
 // polls within the window are free; invalidated below the moment a new vote
 // is recorded so the tally doesn't look stale to the voter who just cast it.
 const RESULTS_CACHE_TTL_MS = Number(process.env.SIGNAL_RESULTS_CACHE_TTL_MS ?? "15000");
-const resultsCacheKey = (pollId: number) => `signaling:results:${pollId}`;
+export const resultsCacheKey = (pollId: number) => `signaling:results:${pollId}`;
 
 // Poll creation and voting are free/gasless — unlike /relayer (which costs
 // the relayer real transaction fees and is throttled at 10 req/min), there's
