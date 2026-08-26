@@ -94,6 +94,7 @@ pub enum TreasuryStrategiesError {
     WithdrawalNotYetClaimable = 10,
     InvalidAmount = 11,
     InvalidBps = 12,
+    NotInitialized = 13,
 }
 
 #[contract]
@@ -323,7 +324,11 @@ impl TreasuryStrategiesContract {
             .persistent()
             .get(&DataKey::Strategy(withdrawal.strategy_id))
             .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::StrategyNotFound));
-        let treasury: Address = env.storage().instance().get(&DataKey::Treasury).unwrap();
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::NotInitialized));
 
         let actual_amount = StrategyAdapterClient::new(&env, &strategy.adapter).adapter_withdraw(
             &env.current_contract_address(),
@@ -378,7 +383,10 @@ impl TreasuryStrategiesContract {
     /// confirm the contract is both deployed and initialized without
     /// mutating state.
     pub fn get_treasury(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::Treasury).unwrap()
+        env.storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::NotInitialized))
     }
 
     pub fn get_total_value(env: Env, token: Address) -> i128 {
@@ -449,14 +457,22 @@ impl TreasuryStrategiesContract {
     }
 
     fn require_admin(env: &Env, caller: &Address) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::NotInitialized));
         if caller != &admin {
             env.panic_with_error(TreasuryStrategiesError::NotAdmin);
         }
     }
 
     fn require_treasury(env: &Env, caller: &Address) {
-        let treasury: Address = env.storage().instance().get(&DataKey::Treasury).unwrap();
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::NotInitialized));
         if caller != &treasury {
             env.panic_with_error(TreasuryStrategiesError::NotTreasury);
         }

@@ -159,8 +159,8 @@ fn moving_stake_updates_both_proposals() {
     let second = proposal(&f, 0);
     client.stake(&f.staker, &first, &1_000);
     client.stake(&f.staker, &second, &800);
-    assert!(client.get_stakes(&first).is_empty());
-    assert_eq!(client.get_stakes(&second).get(0).unwrap().amount, 800);
+    assert!(client.get_stakes(&first, &0, &100).is_empty());
+    assert_eq!(client.get_stakes(&second, &0, &100).get(0).unwrap().amount, 800);
 }
 
 #[test]

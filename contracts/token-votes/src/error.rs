@@ -30,4 +30,8 @@ pub enum TokenVotesError {
     SplitDuplicateDelegatee = 19,
     SplitZeroWeight = 20,
     SplitWeightsMustSum10000 = 21,
+    SplitTargetsBelowMin = 22,
+    SplitEmpty = 23,
+    WeightBpsOverflow = 24,
+    TokenNotSet = 25,
 }

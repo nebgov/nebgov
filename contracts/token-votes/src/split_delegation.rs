@@ -51,7 +51,9 @@ pub(crate) fn get_max_split_targets(env: &Env) -> u32 {
 }
 
 pub(crate) fn set_max_split_targets(env: &Env, max_targets: u32) {
-    assert!(max_targets >= 1, "max targets must be at least 1");
+    if max_targets < 1 {
+        env.panic_with_error(TokenVotesError::SplitTargetsBelowMin);
+    }
     env.storage()
         .instance()
         .set(&DataKey::MaxSplitTargets, &max_targets);
@@ -59,7 +61,9 @@ pub(crate) fn set_max_split_targets(env: &Env, max_targets: u32) {
 
 fn validate_splits(env: &Env, splits: &Vec<SplitDelegation>) {
     let n = splits.len();
-    assert!(n > 0, "splits must not be empty");
+    if n == 0 {
+        env.panic_with_error(TokenVotesError::SplitEmpty);
+    }
 
     let max_targets = get_max_split_targets(env);
     if n > max_targets {
@@ -73,7 +77,9 @@ fn validate_splits(env: &Env, splits: &Vec<SplitDelegation>) {
         if s.weight_bps == 0 {
             env.panic_with_error(TokenVotesError::SplitZeroWeight);
         }
-        sum = sum.checked_add(s.weight_bps).expect("weight_bps overflow");
+        sum = sum
+            .checked_add(s.weight_bps)
+            .unwrap_or_else(|| env.panic_with_error(TokenVotesError::WeightBpsOverflow));
 
         let mut j = i + 1;
         while j < n {
@@ -244,7 +250,7 @@ fn apply_split_core(env: &Env, delegator: Address, splits: Vec<SplitDelegation>)
         .storage()
         .instance()
         .get(&DataKey::Token)
-        .expect("token not set");
+        .unwrap_or_else(|| env.panic_with_error(TokenVotesError::TokenNotSet));
     let balance = token::TokenClient::new(env, &token_addr).balance(&delegator);
 
     let current_ledger = env.ledger().sequence();

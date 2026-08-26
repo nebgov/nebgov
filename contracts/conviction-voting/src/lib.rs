@@ -265,10 +265,23 @@ impl ConvictionVotingContract {
         Self::must_get_proposal(&env, proposal_id)
     }
 
-    /// Return all current stakes for a proposal.
-    pub fn get_stakes(env: Env, proposal_id: u64) -> Vec<Stake> {
+    /// Return a paginated slice of current stakes for a proposal.
+    pub fn get_stakes(env: Env, proposal_id: u64, offset: u64, limit: u64) -> Vec<Stake> {
+        if limit == 0 {
+            return Vec::new(&env);
+        }
         Self::must_get_proposal(&env, proposal_id);
-        Self::stakes(&env, proposal_id)
+        let all = Self::stakes(&env, proposal_id);
+        let len = all.len() as u64;
+        if offset >= len {
+            return Vec::new(&env);
+        }
+        let end = core::cmp::min(offset.saturating_add(limit), len);
+        let mut result = Vec::new(&env);
+        for i in offset..end {
+            result.push_back(all.get(i as u32).unwrap());
+        }
+        result
     }
 
     /// Return the dynamic threshold for a requested token amount.

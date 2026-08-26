@@ -260,6 +260,51 @@ fn test_set_max_split_targets_rejects_non_admin_caller() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_set_max_split_targets_rejects_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+
+    let (contract_id, _token_addr) = setup(&env, &admin);
+    let client = TokenVotesContractClient::new(&env, &contract_id);
+
+    client.set_max_split_targets(&admin, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #23)")]
+fn test_delegate_split_rejects_empty_splits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let delegator = Address::generate(&env);
+
+    let (contract_id, token_addr) = setup(&env, &admin);
+    let client = TokenVotesContractClient::new(&env, &contract_id);
+    token::StellarAssetClient::new(&env, &token_addr).mint(&delegator, &1000i128);
+
+    let empty: Vec<SplitDelegation> = Vec::new(&env);
+    client.delegate_split(&delegator, &empty);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #25)")]
+fn test_delegate_split_rejects_when_token_not_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let _admin = Address::generate(&env);
+    let delegator = Address::generate(&env);
+
+    let contract_id = env.register(TokenVotesContract, ());
+    let client = TokenVotesContractClient::new(&env, &contract_id);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    client.delegate_split(&delegator, &splits(&env, &[(a, 6000), (b, 4000)]));
+}
+
+#[test]
 fn test_single_100_weight_delegate_split_collapses_to_legacy_delegate_key() {
     let env = Env::default();
     env.mock_all_auths();
