@@ -2150,12 +2150,21 @@ export function createApp(server: SorobanRpc.Server): express.Application {
   });
 
   app.get("/conviction/proposals/:id/stakes", async (req: Request, res: Response): Promise<void> => {
+    const pagination = parsePagination(req.query.limit, req.query.offset, 50, 200);
+    if (!pagination) {
+      res.status(400).json({ error: "Invalid pagination parameters" });
+      return;
+    }
+    const { limit, offset } = pagination;
     try {
       const result = await pool.query(
-        "SELECT * FROM conviction_stakes WHERE proposal_id = $1 ORDER BY amount DESC",
-        [req.params.id],
+        "SELECT * FROM conviction_stakes WHERE proposal_id = $1 ORDER BY amount DESC LIMIT $2 OFFSET $3",
+        [req.params.id, limit, offset],
       );
-      res.json({ data: result.rows });
+      res.json({
+        data: result.rows,
+        pagination: { limit, offset, hasMore: result.rows.length === limit },
+      });
     } catch {
       res.status(500).json({ error: "Internal server error" });
     }
