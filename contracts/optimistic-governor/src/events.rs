@@ -41,3 +41,14 @@ pub fn emit_proposal_cancelled(env: &Env, proposal_id: u64, caller: &Address) {
         caller.clone(),
     );
 }
+
+pub fn emit_config_updated(
+    env: &Env,
+    challenge_window_ledgers: u32,
+    objection_threshold_bps: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "ConfigUpdated"),),
+        (challenge_window_ledgers, objection_threshold_bps),
+    );
+}
