@@ -345,7 +345,13 @@ impl ProposalBondsContract {
         if new_amount <= 0 {
             env.panic_with_error(ProposalBondsError::InvalidBondAmount);
         }
+        let old_amount: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BondAmount)
+            .unwrap_or(0);
         env.storage().instance().set(&DataKey::BondAmount, &new_amount);
+        events::emit_bond_amount_updated(&env, &admin, old_amount, new_amount);
     }
 
     /// Read-only settings snapshot — lets callers (e.g. the frontend) work
