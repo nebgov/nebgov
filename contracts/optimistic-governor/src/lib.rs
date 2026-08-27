@@ -379,6 +379,7 @@ impl OptimisticGovernorContract {
         let storage = env.storage().instance();
         storage.set(&DataKey::ChallengeWindowLedgers, &challenge_window_ledgers);
         storage.set(&DataKey::ObjectionThresholdBps, &objection_threshold_bps);
+        events::emit_config_updated(&env, challenge_window_ledgers, objection_threshold_bps);
     }
 
     fn require_initialized(env: &Env) {
