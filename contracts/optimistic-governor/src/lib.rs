@@ -245,7 +245,7 @@ impl OptimisticGovernorContract {
                 .checked_mul(BPS)
                 .and_then(|v| v.checked_div(total_supply))
                 .map(|ratio| ratio >= threshold_bps as i128)
-                .unwrap_or(true);
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
 
         if crossed {
             proposal.state = OptimisticProposalState::Objected;
