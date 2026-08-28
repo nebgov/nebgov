@@ -198,20 +198,19 @@ impl TreasuryStrategiesContract {
         let token_client = token::TokenClient::new(&env, &token);
         token_client.transfer(&caller, &env.current_contract_address(), &amount);
 
-        let (strategy_id, strategy, mut allocation) = Self::least_allocated_active_strategy(
-            &env,
-            &token,
-        )
-        .unwrap_or_else(|| env.panic_with_error(TreasuryStrategiesError::NoActiveStrategy));
-
         let balance_key = DataKey::TokenBalance(token.clone());
         let total_before: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         let total_after = total_before + amount;
-        let cap = (strategy.max_allocation_bps as i128 * total_after) / BPS_DENOMINATOR;
+
+        let (strategy_id, strategy, mut allocation) = Self::least_allocated_active_strategy_with_room(
+            &env,
+            &token,
+            amount,
+            total_after,
+        )
+        .unwrap_or_else(|e| env.panic_with_error(e));
+
         let new_alloc_amount = allocation.amount + amount;
-        if new_alloc_amount > cap {
-            env.panic_with_error(TreasuryStrategiesError::AllocationCapExceeded);
-        }
 
         // Effects before interactions: Allocation/TokenBalance are updated
         // here, before the adapter transfer/call below, so a reentrant read
@@ -346,7 +345,7 @@ impl TreasuryStrategiesContract {
         let total: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&balance_key, &(total - withdrawal.amount));
+            .set(&balance_key, &(total - actual_amount));
         env.storage()
             .persistent()
             .extend_ttl(&balance_key, TTL_LEDGERS, TTL_LEDGERS);
@@ -412,10 +411,12 @@ impl TreasuryStrategiesContract {
         total
     }
 
-    fn least_allocated_active_strategy(
+    fn least_allocated_active_strategy_with_room(
         env: &Env,
         token: &Address,
-    ) -> Option<(u64, Strategy, Allocation)> {
+        amount: i128,
+        total_after: i128,
+    ) -> Result<(u64, Strategy, Allocation), TreasuryStrategiesError> {
         let ids: Vec<u64> = env
             .storage()
             .persistent()
@@ -423,6 +424,8 @@ impl TreasuryStrategiesContract {
             .unwrap_or(Vec::new(env));
 
         let mut best: Option<(u64, Strategy, Allocation)> = None;
+        let mut has_active = false;
+
         for strategy_id in ids.iter() {
             let strategy: Strategy = match env
                 .storage()
@@ -435,6 +438,8 @@ impl TreasuryStrategiesContract {
             if !strategy.active {
                 continue;
             }
+            has_active = true;
+
             let allocation: Allocation = env
                 .storage()
                 .persistent()
@@ -445,6 +450,11 @@ impl TreasuryStrategiesContract {
                     deposited_ledger: 0,
                 });
 
+            let cap = (strategy.max_allocation_bps as i128 * total_after) / BPS_DENOMINATOR;
+            if allocation.amount + amount > cap {
+                continue;
+            }
+
             let is_better = match &best {
                 None => true,
                 Some((_, _, best_allocation)) => allocation.amount < best_allocation.amount,
@@ -453,7 +463,12 @@ impl TreasuryStrategiesContract {
                 best = Some((strategy_id, strategy, allocation));
             }
         }
-        best
+
+        if !has_active {
+            return Err(TreasuryStrategiesError::NoActiveStrategy);
+        }
+
+        best.ok_or(TreasuryStrategiesError::AllocationCapExceeded)
     }
 
     fn require_admin(env: &Env, caller: &Address) {
