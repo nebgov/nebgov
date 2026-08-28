@@ -157,7 +157,6 @@ export async function computeWeightedTally(
         { err, pollId, voter: vote.voter_address },
         "Failed to resolve voting power for signaling vote",
       );
-      powerByVoter.set(vote.voter_address, 0n);
     }
   }
 
@@ -165,7 +164,8 @@ export async function computeWeightedTally(
   const ids: number[] = [];
   const powers: string[] = [];
   for (const vote of votes) {
-    const power = powerByVoter.get(vote.voter_address) ?? 0n;
+    if (!powerByVoter.has(vote.voter_address)) continue;
+    const power = powerByVoter.get(vote.voter_address)!;
     if (vote.choice_index >= 0 && vote.choice_index < totals.length) {
       totals[vote.choice_index] += power;
     }
