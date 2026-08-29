@@ -14,6 +14,8 @@ import { invalidate } from "../cache";
 import { computeWeightedTally, type PollResults } from "../signaling/tally";
 import { resultsCacheKey } from "../routes/signaling";
 
+const MAX_ANCHOR_ATTEMPTS = 5;
+
 const NETWORK_PASSPHRASES: Record<string, string> = {
   mainnet: Networks.PUBLIC,
   public: Networks.PUBLIC,
@@ -125,9 +127,12 @@ export class SignalAnchorService {
 
   private async finalizeEndedPolls(): Promise<void> {
     const { rows: polls } = await pool.query(
-      `SELECT id, choices, snapshot_ledger FROM signaling_polls
-       WHERE finalized = FALSE AND end_time <= NOW()`,
+      `SELECT id, choices, snapshot_ledger, anchor_attempts FROM signaling_polls
+       WHERE finalized = FALSE AND end_time <= NOW()
+         AND (next_anchor_at IS NULL OR next_anchor_at <= NOW())`,
     );
+
+    const anchorEnabled = process.env.SIGNAL_ANCHOR_ON_CHAIN === "true";
 
     for (const poll of polls) {
       try {
@@ -135,22 +140,49 @@ export class SignalAnchorService {
         const resultHash = computeResultHash(poll.id, results);
 
         let anchoredTxHash: string | null = null;
-        if (process.env.SIGNAL_ANCHOR_ON_CHAIN === "true") {
+        let anchorSucceeded = !anchorEnabled;
+
+        if (anchorEnabled) {
           try {
             anchoredTxHash = await anchorOnChain(poll.id, resultHash);
+            anchorSucceeded = true;
           } catch (err) {
-            logger.error({ err, pollId: poll.id }, "Failed to anchor signaling result on-chain");
+            const attempts = (poll.anchor_attempts ?? 0) + 1;
+            const backoffMs = Math.min(attempts * 30_000, 300_000);
+
+            if (attempts >= MAX_ANCHOR_ATTEMPTS) {
+              logger.error(
+                { err, pollId: poll.id, attempts },
+                "Anchor failed after max retries — marking finalized without on-chain proof",
+              );
+              anchorSucceeded = true;
+            } else {
+              logger.error(
+                { err, pollId: poll.id, attempts, nextRetryMs: backoffMs },
+                "Failed to anchor on-chain, scheduling retry",
+              );
+              await pool.query(
+                `UPDATE signaling_polls
+                 SET result_hash = $1, anchor_attempts = $2, next_anchor_at = NOW() + ($3 || ' ms')::INTERVAL
+                 WHERE id = $4`,
+                [resultHash, attempts, String(backoffMs), poll.id],
+              );
+              invalidate(resultsCacheKey(poll.id));
+              continue;
+            }
           }
         }
 
-        await pool.query(
-          `UPDATE signaling_polls
-           SET finalized = TRUE, result_hash = $1, anchored_tx_hash = $2
-           WHERE id = $3`,
-          [resultHash, anchoredTxHash, poll.id],
-        );
-        invalidate(resultsCacheKey(poll.id));
-        logger.info({ pollId: poll.id, resultHash, anchoredTxHash }, "Finalized signaling poll");
+        if (anchorSucceeded) {
+          await pool.query(
+            `UPDATE signaling_polls
+             SET finalized = TRUE, result_hash = $1, anchored_tx_hash = $2
+             WHERE id = $3`,
+            [resultHash, anchoredTxHash, poll.id],
+          );
+          invalidate(resultsCacheKey(poll.id));
+          logger.info({ pollId: poll.id, resultHash, anchoredTxHash }, "Finalized signaling poll");
+        }
       } catch (err) {
         logger.error({ err, pollId: poll.id }, "Failed to finalize signaling poll");
       }

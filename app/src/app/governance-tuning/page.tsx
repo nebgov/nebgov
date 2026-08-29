@@ -1,7 +1,12 @@
 "use client";
 
-import { useGovernanceTuning } from "../../hooks/useGovernanceTuning";
+import { useState } from "react";
+import {
+  useGovernanceTuning,
+  useGovernanceTuningConfig,
+} from "../../hooks/useGovernanceTuning";
 import { TuningRecommendationCard } from "../../components/TuningRecommendationCard";
+import { GovernanceTuningConfigEditor } from "../../components/GovernanceTuningConfigEditor";
 
 function ParticipationTrendChart({ snapshotVotesCast }: { snapshotVotesCast: string[] }) {
   if (!snapshotVotesCast || snapshotVotesCast.length < 2) {
@@ -47,6 +52,14 @@ function ParticipationTrendChart({ snapshotVotesCast }: { snapshotVotesCast: str
 
 export default function GovernanceTuningPage() {
   const { latest, history, loading, error } = useGovernanceTuning();
+  const {
+    config,
+    loading: configLoading,
+    error: configError,
+    updateConfig,
+    refresh: refreshConfig,
+  } = useGovernanceTuningConfig();
+  const [configExpanded, setConfigExpanded] = useState(false);
 
   const snapshotVotesCast = (latest?.rationale.inputs.snapshotVotesCast as string[] | undefined) ?? [];
 
@@ -116,6 +129,32 @@ export default function GovernanceTuningPage() {
               </li>
             ))}
           </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <button
+          type="button"
+          onClick={() => setConfigExpanded(!configExpanded)}
+          className="flex w-full items-center justify-between p-5 text-left"
+        >
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Admin config
+          </h2>
+          <span className="text-gray-400 dark:text-gray-500 text-lg">
+            {configExpanded ? "−" : "+"}
+          </span>
+        </button>
+        {configExpanded && (
+          <div className="border-t border-gray-200 dark:border-gray-800 p-5">
+            {configLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading config...</p>
+            ) : configError ? (
+              <p className="text-sm text-rose-600 dark:text-rose-400">{configError}</p>
+            ) : config ? (
+              <GovernanceTuningConfigEditor config={config} onUpdate={updateConfig} />
+            ) : null}
+          </div>
         )}
       </section>
     </div>

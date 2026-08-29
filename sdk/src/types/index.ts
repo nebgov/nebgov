@@ -304,6 +304,8 @@ export interface GovernorConfig {
   baseDelayMs?: number;
   /** Token decimals for vote display (optional — fetched from contract if not provided) */
   decimals?: number;
+  /** Admin secret for admin-only backend endpoints (e.g. governance tuning config update) */
+  adminSecret?: string;
 }
 
 export interface ConvictionProposal {
