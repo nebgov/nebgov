@@ -94,6 +94,50 @@ export class ConvictionVotingClient {
     return { conviction, executed: proposal.executed };
   }
 
+  async stakeWithSign(
+    signerPublicKey: string,
+    proposalId: number,
+    amount: bigint,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    return (await this.submitWithSign(
+      signerPublicKey,
+      signUnsignedXdr,
+      "stake",
+      nativeToScVal(signerPublicKey, { type: "address" }),
+      nativeToScVal(proposalId, { type: "u64" }),
+      nativeToScVal(amount, { type: "i128" }),
+    )).hash;
+  }
+
+  async withdrawStakeWithSign(
+    signerPublicKey: string,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    return (await this.submitWithSign(
+      signerPublicKey,
+      signUnsignedXdr,
+      "withdraw_stake",
+      nativeToScVal(signerPublicKey, { type: "address" }),
+    )).hash;
+  }
+
+  async checkpointConvictionWithSign(
+    signerPublicKey: string,
+    proposalId: number,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<{ conviction: bigint; executed: boolean }> {
+    const result = await this.submitWithSign(
+      signerPublicKey,
+      signUnsignedXdr,
+      "checkpoint_conviction",
+      nativeToScVal(proposalId, { type: "u64" }),
+    );
+    const conviction = BigInt(scValToNative(result.returnValue!));
+    const proposal = await this.getProposal(proposalId);
+    return { conviction, executed: proposal.executed };
+  }
+
   async getProposal(proposalId: number): Promise<ConvictionProposal> {
     const native = await this.simulate(
       "get_proposal",
@@ -144,6 +188,35 @@ export class ConvictionVotingClient {
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
     const sent = await this.server.sendTransaction(prepared);
+    if (sent.status === "ERROR") throw parseConvictionVotingError(sent);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      const status = await this.server.getTransaction(sent.hash);
+      if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+        return { hash: sent.hash, ...status };
+      }
+      if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+        throw parseConvictionVotingError(status);
+      }
+    }
+    throw parseConvictionVotingError("Transaction confirmation timed out");
+  }
+
+  private async submitWithSign(
+    signerPublicKey: string,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+    fn: string,
+    ...args: xdr.ScVal[]
+  ) {
+    const account = await this.server.getAccount(signerPublicKey);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.passphrase,
+    }).addOperation(this.contract.call(fn, ...args)).setTimeout(30).build();
+    const prepared = await this.server.prepareTransaction(tx);
+    const signedXdr = await signUnsignedXdr(prepared.toXDR());
+    const signed = TransactionBuilder.fromXDR(signedXdr, this.passphrase);
+    const sent = await this.server.sendTransaction(signed);
     if (sent.status === "ERROR") throw parseConvictionVotingError(sent);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));

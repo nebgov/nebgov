@@ -403,10 +403,8 @@ impl TreasuryStrategiesContract {
                 .persistent()
                 .get::<DataKey, Strategy>(&DataKey::Strategy(strategy_id))
             {
-                if strategy.active {
-                    total +=
-                        StrategyAdapterClient::new(&env, &strategy.adapter).adapter_balance(&token);
-                }
+                total +=
+                    StrategyAdapterClient::new(&env, &strategy.adapter).adapter_balance(&token);
             }
         }
         total
