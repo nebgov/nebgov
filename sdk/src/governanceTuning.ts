@@ -136,4 +136,42 @@ export class GovernanceTuningClient {
     const raw = await this.backendRequest<any>("/governance-tuning/config");
     return mapConfig(raw);
   }
+
+  /**
+   * Admin-only partial update of the tunable config.
+   *
+   * Hits `PUT /governance-tuning/config`. Requires the backend's
+   * `ADMIN_SECRET` header to be set via `config.adminSecret`.
+   */
+  async updateConfig(
+    patch: Partial<Omit<TuningConfig, "updatedAt">>,
+  ): Promise<TuningConfig> {
+    if (!this.config.adminSecret) {
+      throw new GovernorError(
+        GovernorErrorCode.SimulationFailed,
+        `GovernanceTuningClient.updateConfig requires config.adminSecret to be set`,
+      );
+    }
+
+    const body: Record<string, unknown> = {};
+    if (patch.minQuorumNumerator !== undefined) body.min_quorum_numerator = patch.minQuorumNumerator;
+    if (patch.maxQuorumNumerator !== undefined) body.max_quorum_numerator = patch.maxQuorumNumerator;
+    if (patch.maxQuorumDeltaBps !== undefined) body.max_quorum_delta_bps = patch.maxQuorumDeltaBps;
+    if (patch.minProposalThreshold !== undefined) body.min_proposal_threshold = patch.minProposalThreshold.toString();
+    if (patch.maxProposalThreshold !== undefined) body.max_proposal_threshold = patch.maxProposalThreshold === null ? null : patch.maxProposalThreshold.toString();
+    if (patch.maxThresholdDeltaBps !== undefined) body.max_threshold_delta_bps = patch.maxThresholdDeltaBps;
+    if (patch.trailingWindow !== undefined) body.trailing_window = patch.trailingWindow;
+    if (patch.intervalMs !== undefined) body.interval_ms = patch.intervalMs;
+    if (patch.autoPropose !== undefined) body.auto_propose = patch.autoPropose;
+
+    const raw = await this.backendRequest<any>("/governance-tuning/config", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ADMIN-SECRET": this.config.adminSecret,
+      },
+      body: JSON.stringify(body),
+    });
+    return mapConfig(raw);
+  }
 }

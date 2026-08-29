@@ -3,9 +3,9 @@
 /**
  * Optimistic-governance proposal detail (Issue #993).
  *
- * Shows the challenge-window countdown, objector list, and an "Object"
- * button gated to connected-wallet holders who had voting power at the
- * proposal's created_ledger and haven't already objected.
+ * Shows the challenge-window countdown, objector list, and action buttons:
+ * "Object" (gated to voting-power holders), "Finalize" (permissionless once
+ * challenge window elapses), and "Execute" (permissionless once passed).
  */
 
 import { useEffect, useState } from "react";
@@ -38,6 +38,7 @@ export default function OptimisticProposalPage() {
   const { currentLedger } = useLedgerClock();
   const [votingPower, setVotingPower] = useState<bigint | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [actionType, setActionType] = useState<"object" | "finalize" | "execute" | null>(null);
 
   const hasObjected = !!publicKey && objections.some((o) => o.objector === publicKey);
   const challengeElapsed = !!proposal && currentLedger >= proposal.challengeEndLedger;
@@ -68,6 +69,7 @@ export default function OptimisticProposalPage() {
       return;
     }
     setSubmitting(true);
+    setActionType("object");
     try {
       const client = new OptimisticGovernorClient(config);
       await client.objectWithSign(publicKey, Number(proposal.proposalId), signTransaction);
@@ -77,6 +79,51 @@ export default function OptimisticProposalPage() {
       toast.error(e instanceof Error ? e.message : "Objection failed");
     } finally {
       setSubmitting(false);
+      setActionType(null);
+    }
+  }
+
+  async function handleFinalize() {
+    if (!publicKey || !signTransaction || !proposal) return;
+    const config = readGovernorConfig();
+    if (!config || !config.optimisticGovernorAddress) {
+      toast.error("Optimistic governance is not configured.");
+      return;
+    }
+    setSubmitting(true);
+    setActionType("finalize");
+    try {
+      const client = new OptimisticGovernorClient(config);
+      await client.finalizeWithSign(publicKey, Number(proposal.proposalId), signTransaction);
+      toast.success("Proposal finalized.");
+      refresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Finalize failed");
+    } finally {
+      setSubmitting(false);
+      setActionType(null);
+    }
+  }
+
+  async function handleExecute() {
+    if (!publicKey || !signTransaction || !proposal) return;
+    const config = readGovernorConfig();
+    if (!config || !config.optimisticGovernorAddress) {
+      toast.error("Optimistic governance is not configured.");
+      return;
+    }
+    setSubmitting(true);
+    setActionType("execute");
+    try {
+      const client = new OptimisticGovernorClient(config);
+      await client.executeWithSign(publicKey, Number(proposal.proposalId), signTransaction);
+      toast.success("Proposal executed.");
+      refresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Execute failed");
+    } finally {
+      setSubmitting(false);
+      setActionType(null);
     }
   }
 
@@ -94,6 +141,15 @@ export default function OptimisticProposalPage() {
     !hasObjected &&
     votingPower !== null &&
     votingPower > 0n;
+
+  const canFinalize =
+    !!publicKey &&
+    proposal.state === "challenge_window" &&
+    challengeElapsed;
+
+  const canExecute =
+    !!publicKey &&
+    proposal.state === "passed";
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -121,28 +177,71 @@ export default function OptimisticProposalPage() {
         </div>
       </dl>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Objections</h2>
+      {proposal.state === "challenge_window" && (
+        <section className="mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Actions</h2>
+            {!publicKey && (
+              <span className="text-sm text-slate-500">Connect your wallet to interact.</span>
+            )}
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={handleObject}
+              disabled={!canObject || submitting}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting && actionType === "object" ? "Submitting…" : "Object"}
+            </button>
+            <button
+              onClick={handleFinalize}
+              disabled={!canFinalize || submitting}
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting && actionType === "finalize" ? "Submitting…" : "Finalize"}
+            </button>
+          </div>
           {!publicKey && (
-            <span className="text-sm text-slate-500">Connect your wallet to object.</span>
+            <p className="mt-2 text-sm text-slate-500">Connect your wallet to object or finalize.</p>
           )}
           {publicKey && hasObjected && (
-            <span className="text-sm text-slate-500">You&apos;ve already objected.</span>
+            <p className="mt-2 text-sm text-slate-500">You&apos;ve already objected.</p>
           )}
           {publicKey && !hasObjected && votingPower !== null && votingPower <= 0n && (
-            <span className="text-sm text-slate-500">
+            <p className="mt-2 text-sm text-slate-500">
               No voting power at this proposal&apos;s created ledger.
-            </span>
+            </p>
           )}
-          <button
-            onClick={handleObject}
-            disabled={!canObject || submitting}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "Submitting…" : "Object"}
-          </button>
-        </div>
+          {publicKey && !challengeElapsed && (
+            <p className="mt-2 text-sm text-slate-500">
+              Challenge window is still open — finalize once it closes.
+            </p>
+          )}
+        </section>
+      )}
+
+      {proposal.state === "passed" && (
+        <section className="mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Actions</h2>
+            {!publicKey && (
+              <span className="text-sm text-slate-500">Connect your wallet to execute.</span>
+            )}
+          </div>
+          <div className="mt-4">
+            <button
+              onClick={handleExecute}
+              disabled={!canExecute || submitting}
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting && actionType === "execute" ? "Submitting…" : "Execute"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">Objections</h2>
         <div className="mt-4 grid gap-2">
           {objections.map((objection) => (
             <div
