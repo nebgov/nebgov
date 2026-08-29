@@ -245,7 +245,7 @@ impl OptimisticGovernorContract {
                 .checked_mul(BPS)
                 .and_then(|v| v.checked_div(total_supply))
                 .map(|ratio| ratio >= threshold_bps as i128)
-                .unwrap_or(true);
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
 
         if crossed {
             proposal.state = OptimisticProposalState::Objected;
@@ -379,6 +379,7 @@ impl OptimisticGovernorContract {
         let storage = env.storage().instance();
         storage.set(&DataKey::ChallengeWindowLedgers, &challenge_window_ledgers);
         storage.set(&DataKey::ObjectionThresholdBps, &objection_threshold_bps);
+        events::emit_config_updated(&env, challenge_window_ledgers, objection_threshold_bps);
     }
 
     fn require_initialized(env: &Env) {

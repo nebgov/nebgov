@@ -6,7 +6,7 @@ mod events;
 pub use error::ConvictionVotingError;
 
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, xdr::FromXdr, Address, Bytes, Env,
+    contract, contractclient, contractimpl, contracttype, xdr::FromXdr, Address, Bytes, Env, Map,
     Symbol, Val, Vec,
 };
 
@@ -50,6 +50,7 @@ pub enum DataKey {
     NextProposalId,
     Proposal(u64),
     StakesByProposal(u64),
+    TotalStakedByProposal(u64),
     StakeByStaker(Address),
     DecayBps,
     MaxRatioBps,
@@ -140,7 +141,10 @@ impl ConvictionVotingContract {
             .set(&DataKey::Proposal(id), &proposal);
         env.storage()
             .persistent()
-            .set(&DataKey::StakesByProposal(id), &Vec::<Stake>::new(&env));
+            .set(&DataKey::StakesByProposal(id), &Map::<Address, i128>::new(&env));
+        env.storage()
+            .persistent()
+            .set(&DataKey::TotalStakedByProposal(id), &0i128);
         env.storage()
             .instance()
             .set(&DataKey::NextProposalId, &next);
@@ -183,32 +187,23 @@ impl ConvictionVotingContract {
         }
 
         let mut stakes = Self::stakes(&env, proposal_id);
-        let mut replaced = false;
-        for index in 0..stakes.len() {
-            let existing = stakes.get(index).unwrap();
-            if existing.staker == staker {
-                stakes.set(
-                    index,
-                    Stake {
-                        staker: staker.clone(),
-                        proposal_id,
-                        amount,
-                    },
-                );
-                replaced = true;
-                break;
-            }
-        }
-        if !replaced {
-            stakes.push_back(Stake {
-                staker: staker.clone(),
-                proposal_id,
-                amount,
-            });
-        }
+        let prev_amount = stakes.get(staker.clone()).unwrap_or(0);
+        stakes.set(staker.clone(), amount);
+        let delta = amount - prev_amount;
         env.storage()
             .persistent()
             .set(&DataKey::StakesByProposal(proposal_id), &stakes);
+        let prev_total: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TotalStakedByProposal(proposal_id))
+            .unwrap_or(0);
+        let new_total = prev_total
+            .checked_add(delta)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::ArithmeticOverflow));
+        env.storage()
+            .persistent()
+            .set(&DataKey::TotalStakedByProposal(proposal_id), &new_total);
         env.storage()
             .persistent()
             .set(&DataKey::StakeByStaker(staker.clone()), &proposal_id);
@@ -278,8 +273,17 @@ impl ConvictionVotingContract {
         }
         let end = core::cmp::min(offset.saturating_add(limit), len);
         let mut result = Vec::new(&env);
-        for i in offset..end {
-            result.push_back(all.get(i as u32).unwrap());
+        for (i, (staker, amount)) in all.iter().enumerate() {
+            if (i as u64) >= offset && (i as u64) < end {
+                result.push_back(Stake {
+                    staker,
+                    proposal_id,
+                    amount,
+                });
+            }
+            if (i as u64) >= end {
+                break;
+            }
         }
         result
     }
@@ -372,37 +376,43 @@ impl ConvictionVotingContract {
         proposal
     }
 
-    fn stakes(env: &Env, id: u64) -> Vec<Stake> {
+    fn stakes(env: &Env, id: u64) -> Map<Address, i128> {
         env.storage()
             .persistent()
             .get(&DataKey::StakesByProposal(id))
-            .unwrap_or(Vec::new(env))
+            .unwrap_or(Map::new(env))
     }
 
     fn remove_stake(env: &Env, staker: &Address, proposal_id: u64) {
-        let stakes = Self::stakes(env, proposal_id);
-        let mut retained = Vec::new(env);
-        for stake in stakes.iter() {
-            if stake.staker != *staker {
-                retained.push_back(stake);
-            }
+        let mut stakes = Self::stakes(env, proposal_id);
+        if let Some(amount) = stakes.get(staker.clone()) {
+            stakes.remove(staker.clone());
+            env.storage()
+                .persistent()
+                .set(&DataKey::StakesByProposal(proposal_id), &stakes);
+            let prev_total: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::TotalStakedByProposal(proposal_id))
+                .unwrap_or(0);
+            let new_total = prev_total.checked_sub(amount).unwrap_or_else(|| {
+                env.panic_with_error(ConvictionVotingError::ArithmeticOverflow)
+            });
+            env.storage().persistent().set(
+                &DataKey::TotalStakedByProposal(proposal_id),
+                &new_total,
+            );
         }
-        env.storage()
-            .persistent()
-            .set(&DataKey::StakesByProposal(proposal_id), &retained);
         env.storage()
             .persistent()
             .remove(&DataKey::StakeByStaker(staker.clone()));
     }
 
     fn total_staked(env: &Env, proposal_id: u64) -> i128 {
-        let mut total = 0i128;
-        for stake in Self::stakes(env, proposal_id).iter() {
-            total = total
-                .checked_add(stake.amount)
-                .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::ArithmeticOverflow));
-        }
-        total
+        env.storage()
+            .persistent()
+            .get(&DataKey::TotalStakedByProposal(proposal_id))
+            .unwrap_or(0)
     }
 
     fn update_conviction(env: &Env, mut proposal: ConvictionProposal) -> ConvictionProposal {

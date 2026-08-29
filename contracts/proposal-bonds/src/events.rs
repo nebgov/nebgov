@@ -3,6 +3,7 @@ use soroban_sdk::{Address, BytesN, Env, Symbol};
 pub const BOND_LOCKED_TOPIC: &str = "BondLocked";
 pub const BOND_REFUNDED_TOPIC: &str = "BondRefunded";
 pub const BOND_SLASHED_TOPIC: &str = "BondSlashed";
+pub const BOND_AMOUNT_UPDATED_TOPIC: &str = "BondAmountUpdated";
 
 pub fn emit_bond_locked(env: &Env, proposer: &Address, description_hash: &BytesN<32>, amount: i128) {
     env.events().publish(
@@ -28,5 +29,12 @@ pub fn emit_bond_slashed(
     env.events().publish(
         (Symbol::new(env, BOND_SLASHED_TOPIC), proposer.clone()),
         (description_hash.clone(), amount, recipient.clone()),
+    );
+}
+
+pub fn emit_bond_amount_updated(env: &Env, admin: &Address, old_amount: i128, new_amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, BOND_AMOUNT_UPDATED_TOPIC), admin.clone()),
+        (old_amount, new_amount),
     );
 }
