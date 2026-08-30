@@ -4,10 +4,18 @@
 //! reputation score, and derives a reputation-adjusted effective proposal
 //! threshold so that a proven, high-participation proposer can propose at a
 //! discount while a repeat spammer pays a penalty. All storage/behavior here
-//! is additive: when `ReputationConfig::enabled` is false (or no proposals
-//! have been recorded yet for an address) `get_effective_threshold` degrades
-//! to the flat `proposal_threshold`, so existing governance flows are
-//! unaffected by default beyond the one call-site changes in `lib.rs`.
+//! is additive: until an address has proposals recorded,
+//! `get_effective_threshold` degrades to the flat `proposal_threshold`, so
+//! existing governance flows are unaffected by default beyond the one
+//! call-site change in `lib.rs`.
+//!
+//! `ReputationConfig::enabled` exists in the struct and is honoured by
+//! `get_effective_threshold` (an `enabled == false` config would make it a
+//! no-op), but it is currently a **compile-time constant with no runtime
+//! toggle**: `get_config` always returns `default_config()` (`enabled: true`)
+//! and no setter persists a different value. There is no operational
+//! kill-switch today — one requires the `ReputationConfig` setter tracked
+//! separately.
 
 use soroban_sdk::{Address, Env, Symbol};
 
