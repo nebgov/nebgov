@@ -1,4 +1,3 @@
-import { describe, it, expect } from "@jest/globals";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AmendmentTimeline } from "@/components/AmendmentTimeline";
 import type { ProposalAmendment } from "@nebgov/sdk/amendments";
