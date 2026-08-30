@@ -13,6 +13,7 @@ import signalingRouter from "./routes/signaling";
 import governanceTuningRouter from "./routes/governance-tuning";
 import proposalSimulationRouter from "./routes/proposal-simulation";
 import votingRewardsRouter from "./routes/voting-rewards";
+import proposalAmendmentsRouter from "./routes/proposal-amendments";
 import { securityMonitor } from "./services/security-monitor";
 import { notificationProcessor } from "./jobs/notification-processor";
 import { deliveryRetry } from "./jobs/delivery-retry";
@@ -120,6 +121,7 @@ app.use("/signaling", signalingRouter);
 app.use("/governance-tuning", governanceTuningRouter);
 app.use("/proposal-simulation", proposalSimulationRouter);
 app.use("/voting-rewards", votingRewardsRouter);
+app.use("/proposals", proposalAmendmentsRouter);
 
 // Error handling
 app.use(
