@@ -8,6 +8,7 @@ import {
   updateLastIndexedLedger,
   maybeTakeGovernanceSnapshot,
 } from "./events";
+import { maybeTakeConcentrationSnapshot } from "./concentration";
 import { createApp } from "./api";
 import { createWsServer } from "./ws";
 import { createTreasuryStateReader } from "./treasuryReader";
@@ -125,6 +126,7 @@ async function runIndexer(): Promise<void> {
         lastLedger = latestLedger;
         console.log(`Indexed up to ledger ${lastLedger}`);
         await maybeTakeGovernanceSnapshot(latestLedger);
+        await maybeTakeConcentrationSnapshot(latestLedger);
       }
     })();
     currentBatchPromise = batchPromise.catch((err) => {

@@ -2470,5 +2470,144 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     },
   );
 
+  // --- Voting-power concentration endpoints (issue #1012) ---
+  //
+  // Backed by `concentration_snapshots`, written on a schedule by
+  // `maybeTakeConcentrationSnapshot` in concentration.ts. `top-holders` /
+  // `top-delegates` are derived live from the same indexed vote-weight and
+  // delegation data the snapshot is computed from.
+
+  // GET /analytics/concentration/latest
+  app.get(
+    "/analytics/concentration/latest",
+    async (_req: Request, res: Response): Promise<void> => {
+      try {
+        const data = await cached(
+          "analytics:concentration:latest",
+          TTL.analytics,
+          async () => {
+            const result = await pool.query(
+              `SELECT * FROM concentration_snapshots ORDER BY ledger DESC LIMIT 1`,
+            );
+            return result.rows[0] ?? null;
+          },
+        );
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/history?limit=90
+  app.get(
+    "/analytics/concentration/history",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 90), 1), 365);
+      const key = `analytics:concentration:history:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const result = await pool.query(
+            `SELECT * FROM concentration_snapshots ORDER BY ledger DESC LIMIT $1`,
+            [limit],
+          );
+          return { snapshots: result.rows };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/top-holders?limit=20 — live from votes.
+  app.get(
+    "/analytics/concentration/top-holders",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      const key = `analytics:concentration:top-holders:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const result = await pool.query(
+            `WITH latest AS (
+               SELECT DISTINCT ON (voter) voter, weight
+                 FROM votes
+                ORDER BY voter, ledger DESC, id DESC
+             )
+             SELECT voter, weight FROM latest
+              WHERE weight > 0
+              ORDER BY weight DESC
+              LIMIT $1`,
+            [limit],
+          );
+          const total = result.rows.reduce(
+            (acc: bigint, r: { weight: string | number }) => acc + BigInt(r.weight),
+            0n,
+          );
+          return {
+            top_holders: result.rows.map(
+              (r: { voter: string; weight: string | number }, i: number) => ({
+                rank: i + 1,
+                address: r.voter,
+                voting_power: String(r.weight),
+              }),
+            ),
+            listed_total: total.toString(),
+          };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  // GET /analytics/concentration/top-delegates?limit=20 — live from delegates + votes.
+  app.get(
+    "/analytics/concentration/top-delegates",
+    async (req: Request, res: Response): Promise<void> => {
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      const key = `analytics:concentration:top-delegates:${limit}`;
+      try {
+        const data = await cached(key, TTL.analytics, async () => {
+          const result = await pool.query(
+            `WITH latest_delegation AS (
+               SELECT DISTINCT ON (delegator) delegator, new_delegatee
+                 FROM delegates
+                ORDER BY delegator, ledger DESC, id DESC
+             ),
+             latest_power AS (
+               SELECT DISTINCT ON (voter) voter, weight
+                 FROM votes
+                ORDER BY voter, ledger DESC, id DESC
+             )
+             SELECT d.new_delegatee AS delegatee,
+                    COALESCE(SUM(p.weight), 0) AS received_power
+               FROM latest_delegation d
+               LEFT JOIN latest_power p ON p.voter = d.delegator
+              WHERE d.new_delegatee <> ''
+              GROUP BY d.new_delegatee
+              HAVING COALESCE(SUM(p.weight), 0) > 0
+              ORDER BY received_power DESC
+              LIMIT $1`,
+            [limit],
+          );
+          return {
+            top_delegates: result.rows.map(
+              (r: { delegatee: string; received_power: string | number }, i: number) => ({
+                rank: i + 1,
+                address: r.delegatee,
+                received_voting_power: String(r.received_power),
+              }),
+            ),
+          };
+        });
+        res.json(data);
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   return app;
 }
