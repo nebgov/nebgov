@@ -2,6 +2,10 @@
 
 Thank you for contributing to NebGov, the permissionless governance framework for Stellar.
 
+> **Code of Conduct** — All participants are expected to follow our
+> [Code of Conduct](./CODE_OF_CONDUCT.md). Please read it before contributing.
+> Report unacceptable behaviour to **conduct@nebgov.dev**.
+
 ## Prerequisites
 
 - **Rust** (stable toolchain) with `wasm32-unknown-unknown` target
@@ -246,6 +250,7 @@ Use imperative mood with conventional prefixes:
 4. Update docs if you changed any public API
 5. Open a PR referencing the issue: `Closes #<number>`
 6. Wait for maintainer review. Note that reviewers are automatically assigned based on our [CODEOWNERS](.github/CODEOWNERS) configuration. For more details on our branch protection rules, see [Branch Protection](docs/contributing/branch-protection.md).
+7. By submitting a contribution you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## Security Issues
 
