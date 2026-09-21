@@ -453,6 +453,21 @@ impl VoteEscrowContract {
             .unwrap()
     }
 
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(VoteEscrowError::NotInitialized)
+            .unwrap()
+    }
+
+    pub fn get_total_locked(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalLocked)
+            .unwrap_or(0)
+    }
+
     pub fn get_lock(env: Env, owner: Address) -> Option<Lock> {
         env.storage()
             .persistent()
@@ -632,6 +647,30 @@ mod tests {
                 .get(&DataKey::LockedToken)
                 .unwrap();
             assert_eq!(stored_token, token);
+        });
+    }
+
+    #[test]
+    fn test_get_admin_and_get_total_locked() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let contract_id = env.register(VoteEscrowContract, ());
+
+        env.as_contract(&contract_id, || {
+            VoteEscrowContract::initialize(
+                env.clone(),
+                admin.clone(),
+                token.clone(),
+                100,
+                1000,
+                25000,
+            );
+
+            assert_eq!(VoteEscrowContract::get_admin(env.clone()), admin);
+            assert_eq!(VoteEscrowContract::get_total_locked(env.clone()), 0);
         });
     }
 
