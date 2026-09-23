@@ -25,6 +25,7 @@ import {
   TrendingUp,
   FastForward,
   Gift,
+  Lock,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { useTranslations } from "next-intl";
@@ -50,6 +51,7 @@ const NAV_LINKS = [
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Signals", href: "/signals", icon: Radio },
   { name: "Rewards", href: "/rewards", icon: Gift },
+  { name: "Vote Escrow", href: "/vote-escrow", icon: Lock },
   { name: "Delegates", href: "/delegates", icon: Users },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Treasury", href: "/treasury", icon: Wallet2 },
@@ -57,6 +59,12 @@ const NAV_LINKS = [
   { name: "Governance Tuning", href: "/governance-tuning", icon: SlidersHorizontal },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
+
+const VOTE_ESCROW_ENABLED = Boolean(process.env.NEXT_PUBLIC_VOTE_ESCROW_ADDRESS);
+
+const VISIBLE_NAV_LINKS = NAV_LINKS.filter(
+  (link) => link.href !== "/vote-escrow" || VOTE_ESCROW_ENABLED
+);
 
 export function NavBar() {
   const t = useTranslations("nav");
@@ -158,7 +166,7 @@ export function NavBar() {
             role="navigation"
             aria-label="Main"
           >
-            {NAV_LINKS.map((link) => {
+            {VISIBLE_NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <Link
@@ -371,7 +379,7 @@ export function NavBar() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-2 mb-3">
                 Navigation
               </p>
-              {NAV_LINKS.map((link) => {
+              {VISIBLE_NAV_LINKS.map((link) => {
                 const isActive = pathname === link.href;
                 const LinkIcon = link.icon;
                 return (

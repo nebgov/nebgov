@@ -55,11 +55,13 @@ export function buildVotingRewardsClient(): VotingRewardsClient | null {
   return new VotingRewardsClient(config);
 }
 
-/** The epochs the backend has computed, newest first. */
+/** The epochs the backend has computed, newest first, with offset-based paging. */
 export function useRewardEpochs(limit = 20) {
   const [epochs, setEpochs] = useState<RewardEpochSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [refetchToken, setRefetchToken] = useState(0);
 
   useEffect(() => {
@@ -67,9 +69,11 @@ export function useRewardEpochs(limit = 20) {
     setLoading(true);
     setError(null);
 
-    backendFetch<{ data: EpochResponseRow[] }>(`/voting-rewards/epochs?limit=${limit}`)
+    backendFetch<{ data: EpochResponseRow[] }>(`/voting-rewards/epochs?limit=${limit}&offset=0`)
       .then((res) => {
-        if (!cancelled) setEpochs(res.data.map(toEpochSummary));
+        if (cancelled) return;
+        setEpochs(res.data.map(toEpochSummary));
+        setHasMore(res.data.length === limit);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -83,7 +87,34 @@ export function useRewardEpochs(limit = 20) {
     };
   }, [limit, refetchToken]);
 
-  return { epochs, loading, error, refetch: useCallback(() => setRefetchToken((t) => t + 1), []) };
+  const loadMore = useCallback(() => {
+    setLoadingMore(true);
+    setError(null);
+
+    backendFetch<{ data: EpochResponseRow[] }>(
+      `/voting-rewards/epochs?limit=${limit}&offset=${epochs.length}`,
+    )
+      .then((res) => {
+        setEpochs((prev) => [...prev, ...res.data.map(toEpochSummary)]);
+        setHasMore(res.data.length === limit);
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        setLoadingMore(false);
+      });
+  }, [limit, epochs.length]);
+
+  return {
+    epochs,
+    loading,
+    loadingMore,
+    error,
+    hasMore,
+    loadMore,
+    refetch: useCallback(() => setRefetchToken((t) => t + 1), []),
+  };
 }
 
 /**

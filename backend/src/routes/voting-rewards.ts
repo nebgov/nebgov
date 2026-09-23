@@ -41,6 +41,11 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
+const epochListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
 const epochParamSchema = z.object({
   epochId: z.coerce.bigint().nonnegative(),
 });
@@ -51,15 +56,15 @@ const addressParamSchema = z.object({
   address: z.string().regex(/^[A-Z0-9]{56}$/, "must be a Stellar address"),
 });
 
-// GET /voting-rewards/epochs?limit=20
+// GET /voting-rewards/epochs?limit=20&offset=0
 router.get(
   "/epochs",
-  validate({ query: listQuerySchema }),
+  validate({ query: epochListQuerySchema }),
   async (req, res: Response): Promise<void> => {
-    const { limit } = req.query as unknown as z.infer<typeof listQuerySchema>;
+    const { limit, offset } = req.query as unknown as z.infer<typeof epochListQuerySchema>;
     try {
-      const epochs = await listEpochs(limit);
-      res.json({ data: epochs.map(serializeEpoch) });
+      const epochs = await listEpochs(limit, offset);
+      res.json({ data: epochs.map(serializeEpoch), limit, offset });
     } catch (error) {
       logger.error({ err: error }, "Error in GET /voting-rewards/epochs");
       res.status(500).json({ error: "Internal server error" });

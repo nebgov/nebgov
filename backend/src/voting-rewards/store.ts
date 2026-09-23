@@ -158,11 +158,11 @@ export async function getEpoch(epochId: bigint): Promise<StoredEpoch | null> {
   return result.rows[0] ? toEpoch(result.rows[0]) : null;
 }
 
-export async function listEpochs(limit: number): Promise<StoredEpoch[]> {
+export async function listEpochs(limit: number, offset = 0): Promise<StoredEpoch[]> {
   const result = await pool.query<EpochRow>(
     `SELECT epoch_id, start_ledger, end_ledger, merkle_root, total_reward_amount, published_at, publish_proposal_id
-       FROM voting_reward_epochs ORDER BY epoch_id DESC LIMIT $1`,
-    [limit],
+       FROM voting_reward_epochs ORDER BY epoch_id DESC LIMIT $1 OFFSET $2`,
+    [limit, offset],
   );
   return result.rows.map(toEpoch);
 }

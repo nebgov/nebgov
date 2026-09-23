@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { VoteEscrowClient, VoteEscrowLock, VoteEscrowStats } from "@nebgov/sdk";
+import { parseNetwork } from "../lib/nebgov-env";
 
 export interface UseVoteEscrowResult {
   lock: VoteEscrowLock | null;
@@ -45,7 +46,7 @@ export function useVoteEscrow(address: string | undefined): UseVoteEscrowResult 
           timelockAddress: timelockAddress || "",
           votesAddress: votesAddress || "",
           voteEscrowAddress,
-          network: (process.env.NEXT_PUBLIC_NETWORK || "testnet") as any,
+          network: parseNetwork(process.env.NEXT_PUBLIC_NETWORK),
           rpcUrl: process.env.NEXT_PUBLIC_RPC_URL,
           simulationAccount: process.env.NEXT_PUBLIC_SIMULATION_ACCOUNT,
         });
