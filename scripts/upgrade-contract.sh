@@ -12,7 +12,7 @@
 #     sorogov_treasury | sorogov_governor_factory
 #     sorogov_proposal_bonds | sorogov_optimistic_governor
 #     sorogov_conviction_voting | sorogov_treasury_strategies
-#     sorogov_signal_anchor
+#     sorogov_signal_anchor | sorogov_vote_escrow | sorogov_voting_rewards
 #
 # Required env vars (or set in .env.testnet):
 #   GOVERNOR_ADDRESS   — deployed governor contract address
