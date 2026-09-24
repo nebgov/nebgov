@@ -51,6 +51,9 @@ pnpm test:sdk
 # Frontend tests
 pnpm test:app
 
+# CLI unit tests (SDK clients are mocked; build the SDK first so its enums resolve)
+pnpm build:sdk && pnpm test:cli
+
 # E2E tests (requires running app)
 cd app && npx playwright test
 ```
@@ -156,6 +159,16 @@ cargo test -p sorogov-liquidity test_swap_reverse_direction_finds_pool -- --noca
 ```
 
 Every new function must have at least one unit test. Cross-contract interactions require an integration test in the contract's `integration_tests.rs` or `tests.rs` module. Tests that involve the full governance lifecycle (propose → vote → queue → execute) should live in integration test files.
+
+### Test Snapshots
+
+Soroban's test harness writes a JSON snapshot of every test's ledger state to `contracts/<name>/test_snapshots/` on each `cargo test` run. These files are generated output: they are ignored by `.gitignore`, not tracked in the repository, and not read by CI.
+
+- **When a snapshot changes:** do nothing. Leave the regenerated files out of your commit; `git status` will not show them.
+- **Do not force-add them** (`git add -f`) to "pin" behaviour. Assert the state you care about in the test itself.
+- **If an old checkout still tracks some:** run `git rm -r --cached contracts/*/test_snapshots` before committing.
+
+Captured command output (for example `cargo test > test_output.txt`) likewise stays out of the tree. `*.txt` under `contracts/*/src/` is ignored.
 
 ### Code Style for Contracts
 
