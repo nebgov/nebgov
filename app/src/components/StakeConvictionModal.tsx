@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface StakeConvictionModalProps {
   open: boolean;
@@ -16,6 +17,7 @@ export function StakeConvictionModal(props: StakeConvictionModalProps) {
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
 
   useEffect(() => {
     if (props.open) setAmount(props.currentStake?.toString() ?? "");
@@ -40,7 +42,14 @@ export function StakeConvictionModal(props: StakeConvictionModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="stake-title">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stake-title"
+      tabIndex={-1}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+    >
       <div className="w-full max-w-md rounded-xl bg-white p-6 text-slate-950 shadow-xl dark:bg-slate-900 dark:text-white">
         <h2 id="stake-title" className="text-xl font-semibold">Support proposal #{props.proposalId}</h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">

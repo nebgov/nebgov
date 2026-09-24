@@ -31,9 +31,11 @@ use sorogov_governor::{
     VoteType,
 };
 use sorogov_proposal_bonds::{BondState, ProposalBondsContract, ProposalBondsContractClient};
+use sorogov_signal_anchor::{SignalAnchorContract, SignalAnchorContractClient};
 use sorogov_timelock::{TimelockContract, TimelockContractClient};
 use sorogov_token_votes::{TokenVotesContract, TokenVotesContractClient};
 use sorogov_treasury::{TreasuryContract, TreasuryContractClient};
+use sorogov_vote_escrow::{VoteEscrowContract, VoteEscrowContractClient};
 
 use crate::report::{SimulationReport, StepResult};
 use crate::scenario::{
@@ -73,6 +75,8 @@ pub struct SimulationRunner {
     #[allow(dead_code)]
     conviction_voting: ConvictionVotingContractClient<'static>,
     proposal_bonds: ProposalBondsContractClient<'static>,
+    vote_escrow: VoteEscrowContractClient<'static>,
+    signal_anchor: SignalAnchorContractClient<'static>,
     token: Address,
     target: Address,
     treasury_addr: Address,
@@ -183,6 +187,20 @@ impl SimulationRunner {
         let proposal_bonds = ProposalBondsContractClient::new(&env, &proposal_bonds_id);
         proposal_bonds.initialize(&admin, &token, &100i128, &governor_id, &2u32, &10_000u32);
 
+        let vote_escrow_id = env.register(VoteEscrowContract, ());
+        let vote_escrow = VoteEscrowContractClient::new(&env, &vote_escrow_id);
+        vote_escrow.initialize(
+            &admin,
+            &token,
+            &100u32,  // min_lock_duration
+            &1100u32, // max_lock_duration
+            &10_000u32, // max_multiplier_bps: 100% boost (2x) at max duration
+        );
+
+        let signal_anchor_id = env.register(SignalAnchorContract, ());
+        let signal_anchor = SignalAnchorContractClient::new(&env, &signal_anchor_id);
+        signal_anchor.initialize(&admin);
+
         let target = env.register(SimTargetContract, ());
 
         let sac = token::StellarAssetClient::new(&env, &token);
@@ -211,6 +229,8 @@ impl SimulationRunner {
             co_sponsorship,
             conviction_voting,
             proposal_bonds,
+            vote_escrow,
+            signal_anchor,
             token,
             target,
             treasury_addr: treasury_id,
@@ -762,6 +782,98 @@ impl SimulationRunner {
                     panic!(
                         "expected bond for '{}' to be {:?}, was {:?}",
                         description, expected, actual
+                    );
+                }
+            }
+            SimStep::CreateVoteEscrowLock {
+                actor,
+                amount,
+                duration_ledgers,
+            } => {
+                let owner = self.get_actor(actor).clone();
+                self.vote_escrow
+                    .create_lock(&owner, &(*amount as i128), duration_ledgers);
+            }
+            SimStep::IncreaseVoteEscrowLock {
+                actor,
+                additional_amount,
+            } => {
+                let owner = self.get_actor(actor).clone();
+                self.vote_escrow
+                    .increase_lock_amount(&owner, &(*additional_amount as i128));
+            }
+            SimStep::ExtendVoteEscrowLock {
+                actor,
+                new_end_ledger,
+            } => {
+                let owner = self.get_actor(actor).clone();
+                self.vote_escrow.extend_lock(&owner, new_end_ledger);
+            }
+            SimStep::WithdrawVoteEscrowLock { actor } => {
+                let owner = self.get_actor(actor).clone();
+                self.vote_escrow.withdraw(&owner);
+            }
+            SimStep::ExpectVotingPower {
+                actor,
+                expected_power,
+            } => {
+                let owner = self.get_actor(actor).clone();
+                let actual = self.vote_escrow.get_votes(&owner);
+                if actual != *expected_power {
+                    panic!(
+                        "expected voting power for '{}' to be {}, was {}",
+                        actor, expected_power, actual
+                    );
+                }
+            }
+            SimStep::ExpectPastVotingPower {
+                actor,
+                ledger,
+                expected_power,
+            } => {
+                let owner = self.get_actor(actor).clone();
+                let actual = self.vote_escrow.get_past_votes(&owner, ledger);
+                if actual != *expected_power {
+                    panic!(
+                        "expected past voting power for '{}' at ledger {} to be {}, was {}",
+                        actor, ledger, expected_power, actual
+                    );
+                }
+            }
+            SimStep::ExpectPastTotalSupply {
+                ledger,
+                expected_total,
+            } => {
+                let actual = self.vote_escrow.get_past_total_supply(ledger);
+                if actual != *expected_total {
+                    panic!(
+                        "expected past total supply at ledger {} to be {}, was {}",
+                        ledger, expected_total, actual
+                    );
+                }
+            }
+            SimStep::AnchorResult {
+                actor,
+                poll_id,
+                result_seed,
+            } => {
+                let anchorer = self.get_actor(actor).clone();
+                let hash = description_hash(&self.env, result_seed);
+                self.signal_anchor.anchor_result(&anchorer, poll_id, &hash);
+            }
+            SimStep::ExpectAnchor {
+                poll_id,
+                result_seed,
+            } => {
+                let expected_hash = description_hash(&self.env, result_seed);
+                let record = self
+                    .signal_anchor
+                    .get_anchor(poll_id)
+                    .unwrap_or_else(|| panic!("no anchor found for poll_id {}", poll_id));
+                if record.result_hash != expected_hash {
+                    panic!(
+                        "anchored result_hash for poll_id {} did not match expected seed '{}'",
+                        poll_id, result_seed
                     );
                 }
             }

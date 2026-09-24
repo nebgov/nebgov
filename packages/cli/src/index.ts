@@ -11,6 +11,7 @@ import {
   ConvictionVotingClient,
   TreasuryStrategiesClient,
   SignalingClient,
+  CoSponsorshipClient,
   type Network,
 } from "@nebgov/sdk";
 import { Keypair } from "@stellar/stellar-sdk";
@@ -675,6 +676,204 @@ program
 
         const results = await client.getResults(Number(id));
         output(results, global);
+      }),
+  );
+
+function coSponsorshipClient(cfg: NebGovCliConfig): CoSponsorshipClient {
+  return new CoSponsorshipClient({
+    network: cfg.network,
+    governorAddress: required(cfg.governorAddress, "governorAddress"),
+    timelockAddress: required(cfg.timelockAddress, "timelockAddress"),
+    votesAddress: required(cfg.votesAddress, "votesAddress"),
+    coSponsorshipAddress: required(
+      process.env.NEBGOV_CO_SPONSORSHIP_ADDRESS,
+      "NEBGOV_CO_SPONSORSHIP_ADDRESS",
+    ),
+    indexerUrl: process.env.NEBGOV_INDEXER_URL,
+    rpcUrl: cfg.rpcUrl,
+  });
+}
+
+/** `show`/`list` shape: draft plus expiryLedger surfaced explicitly per #1316's AC. */
+function formatDraft(draft: {
+  id: bigint;
+  creator: string;
+  description: string;
+  expiryLedger: number;
+  createdLedger: number;
+  coSponsors: string[];
+  totalPower: bigint;
+  finalized: boolean;
+  cancelled: boolean;
+}) {
+  return {
+    id: draft.id,
+    creator: draft.creator,
+    description: draft.description,
+    createdLedger: draft.createdLedger,
+    expiryLedger: draft.expiryLedger,
+    coSponsors: draft.coSponsors,
+    totalPower: draft.totalPower,
+    finalized: draft.finalized,
+    cancelled: draft.cancelled,
+  };
+}
+
+program
+  .command("drafts")
+  .description("Co-sponsorship draft commands")
+  .addCommand(
+    new Command("list")
+      .option("--status <status>", "active|finalized|cancelled|expired")
+      .option("--page <number>", "page number", "1")
+      .option("--limit <number>", "max drafts", "20")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = coSponsorshipClient(cfg);
+
+        const { data, pagination } = await client.listDrafts({
+          status: options.status,
+          page: Number(options.page),
+          limit: Number(options.limit),
+        });
+        output({ drafts: data.map(formatDraft), pagination }, global);
+      }),
+  )
+  .addCommand(
+    new Command("show")
+      .argument("<draftId>", "draft id")
+      .action(async (draftId: string) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const client = coSponsorshipClient(cfg);
+
+        const draft = await client.getDraft(BigInt(draftId));
+        const thresholdMet = await client.draftThresholdMet(BigInt(draftId));
+        output({ ...formatDraft(draft), thresholdMet }, global);
+      }),
+  )
+  .addCommand(
+    new Command("create")
+      .requiredOption("--description-file <file>", "draft description markdown/text file")
+      .option("--metadata-uri <uri>", "off-chain metadata URI", "")
+      .requiredOption("--target <address>", "target contract address")
+      .requiredOption("--fn <name>", "target function name")
+      .option("--calldata-hex <hex>", "hex calldata bytes (default empty)")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+
+        const description = await readFile(resolvePath(options.descriptionFile), "utf8");
+        const descriptionHash = createHash("sha256").update(description).digest();
+        const calldata = Buffer.from((options.calldataHex ?? "").replace(/^0x/i, ""), "hex");
+
+        if (global.dryRun) {
+          output(
+            {
+              action: "drafts.create",
+              descriptionHash: descriptionHash.toString("hex"),
+              target: options.target,
+              fn: options.fn,
+              calldataHex: calldata.toString("hex"),
+            },
+            global,
+          );
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const client = coSponsorshipClient(cfg);
+
+        const draftId = await client.createDraft(
+          signer,
+          description,
+          descriptionHash,
+          options.metadataUri,
+          [options.target],
+          [options.fn],
+          [calldata],
+        );
+        output({ draftId }, global);
+      }),
+  )
+  .addCommand(
+    new Command("co-sponsor")
+      .argument("<draftId>", "draft id")
+      .requiredOption("--keypair <file>", "keypair file path")
+      .action(async (draftId: string, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+
+        if (global.dryRun) {
+          output({ action: "drafts.co-sponsor", draftId }, global);
+          return;
+        }
+
+        const signer = await loadKeypair(options.keypair);
+        const client = coSponsorshipClient(cfg);
+        const hash = await client.coSponsor(signer, BigInt(draftId));
+        output({ ok: true, draftId, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("withdraw")
+      .argument("<draftId>", "draft id")
+      .requiredOption("--keypair <file>", "keypair file path")
+      .action(async (draftId: string, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+
+        if (global.dryRun) {
+          output({ action: "drafts.withdraw", draftId }, global);
+          return;
+        }
+
+        const signer = await loadKeypair(options.keypair);
+        const client = coSponsorshipClient(cfg);
+        const hash = await client.withdrawCoSponsorship(signer, BigInt(draftId));
+        output({ ok: true, draftId, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("finalize")
+      .argument("<draftId>", "draft id")
+      .requiredOption("--keypair <file>", "keypair file path")
+      .action(async (draftId: string, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+
+        if (global.dryRun) {
+          output({ action: "drafts.finalize", draftId }, global);
+          return;
+        }
+
+        const signer = await loadKeypair(options.keypair);
+        const client = coSponsorshipClient(cfg);
+        const proposalId = await client.finalizeDraft(signer, BigInt(draftId));
+        output({ draftId, proposalId }, global);
+      }),
+  )
+  .addCommand(
+    new Command("cancel")
+      .argument("<draftId>", "draft id")
+      .requiredOption("--keypair <file>", "keypair file path")
+      .action(async (draftId: string, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+
+        if (global.dryRun) {
+          output({ action: "drafts.cancel", draftId }, global);
+          return;
+        }
+
+        const signer = await loadKeypair(options.keypair);
+        const client = coSponsorshipClient(cfg);
+        const hash = await client.cancelDraft(signer, BigInt(draftId));
+        output({ ok: true, draftId, hash }, global);
       }),
   );
 

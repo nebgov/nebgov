@@ -221,6 +221,52 @@ pub enum SimStep {
         description: String,
         expected_state: SimBondState,
     },
+    CreateVoteEscrowLock {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        amount: i128,
+        duration_ledgers: u32,
+    },
+    IncreaseVoteEscrowLock {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        additional_amount: i128,
+    },
+    ExtendVoteEscrowLock {
+        actor: String,
+        new_end_ledger: u32,
+    },
+    WithdrawVoteEscrowLock {
+        actor: String,
+    },
+    ExpectVotingPower {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        expected_power: i128,
+    },
+    ExpectPastVotingPower {
+        actor: String,
+        ledger: u32,
+        #[serde(with = "i128_compat")]
+        expected_power: i128,
+    },
+    ExpectPastTotalSupply {
+        ledger: u32,
+        #[serde(with = "i128_compat")]
+        expected_total: i128,
+    },
+    AnchorResult {
+        actor: String,
+        poll_id: u64,
+        /// Hashed with sha256 (same treatment as `LockProposalBond`'s
+        /// `description`) to produce the on-chain `result_hash` — the sim
+        /// harness has no off-chain tallying to hash a real result from.
+        result_seed: String,
+    },
+    ExpectAnchor {
+        poll_id: u64,
+        result_seed: String,
+    },
 }
 
 impl SimStep {
@@ -261,6 +307,15 @@ impl SimStep {
             SimStep::RefundProposalBond { .. } => "RefundProposalBond",
             SimStep::ProposeBondSlash { .. } => "ProposeBondSlash",
             SimStep::ExpectBondState { .. } => "ExpectBondState",
+            SimStep::CreateVoteEscrowLock { .. } => "CreateVoteEscrowLock",
+            SimStep::IncreaseVoteEscrowLock { .. } => "IncreaseVoteEscrowLock",
+            SimStep::ExtendVoteEscrowLock { .. } => "ExtendVoteEscrowLock",
+            SimStep::WithdrawVoteEscrowLock { .. } => "WithdrawVoteEscrowLock",
+            SimStep::ExpectVotingPower { .. } => "ExpectVotingPower",
+            SimStep::ExpectPastVotingPower { .. } => "ExpectPastVotingPower",
+            SimStep::ExpectPastTotalSupply { .. } => "ExpectPastTotalSupply",
+            SimStep::AnchorResult { .. } => "AnchorResult",
+            SimStep::ExpectAnchor { .. } => "ExpectAnchor",
         }
     }
 }
