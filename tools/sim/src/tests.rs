@@ -350,3 +350,145 @@ fn test_all_shipped_scenarios_are_structurally_valid() {
     }
     assert!(checked >= 9, "expected at least 9 shipped scenarios, found {}", checked);
 }
+
+fn liquidity_actor(name: &str) -> SimActor {
+    SimActor {
+        name: name.to_string(),
+        initial_balance: 0,
+        delegate_to: None,
+        role: ActorRole::TokenHolder,
+    }
+}
+
+fn run_liquidity_steps(steps: std::vec::Vec<SimStep>) -> crate::report::SimulationReport {
+    let scenario = Scenario {
+        name: "liquidity_test".to_string(),
+        description: "liquidity invariant checks".to_string(),
+        seed: 1,
+        governor_settings: base_settings(),
+        actors: std::vec![liquidity_actor("dao"), liquidity_actor("lp")],
+        steps,
+    };
+    let mut runner = SimulationRunner::new(&scenario);
+    runner.run()
+}
+
+#[test]
+fn test_liquidity_scenario_passes() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/scenarios/liquidity.json");
+    let scenario = Scenario::from_file(&path).expect("liquidity.json parses");
+    scenario.validate().expect("liquidity.json is valid");
+
+    let mut runner = SimulationRunner::new(&scenario);
+    runner.run();
+    runner.check_expect_errors();
+    let report = runner.get_report();
+
+    assert_eq!(report.total_steps, scenario.steps.len());
+    assert_eq!(report.failed_steps, 0, "steps: {:#?}", report.step_results);
+}
+
+#[test]
+fn test_pool_invariant_flags_dilution_of_existing_lps() {
+    // At a 3:1 reserve ratio the second deposit's required B side is
+    // 10000 * 10000 / 30000 = 3333.3, rounded down in the depositor's
+    // favour, so the incumbent LP's product per share dips slightly.
+    let report = run_liquidity_steps(std::vec![
+        SimStep::CreateLiquidityPool { fee_bps: 30 },
+        SimStep::MintPoolTokens {
+            actor: "dao".into(),
+            amount_a: 30_000,
+            amount_b: 10_000
+        },
+        SimStep::MintPoolTokens {
+            actor: "lp".into(),
+            amount_a: 10_000,
+            amount_b: 10_000
+        },
+        SimStep::AddLiquidity {
+            actor: "dao".into(),
+            amount_a: 30_000,
+            amount_b: 10_000,
+            min_lp_tokens_out: 0,
+        },
+        SimStep::AddLiquidity {
+            actor: "lp".into(),
+            amount_a: 10_000,
+            amount_b: 10_000,
+            min_lp_tokens_out: 0,
+        },
+        SimStep::ExpectPoolInvariant {
+            expect_growth: false
+        },
+    ]);
+
+    let check = &report.step_results[5];
+    assert!(
+        !check.success,
+        "invariant check should fail: {:#?}",
+        report.step_results
+    );
+    assert!(
+        check
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("product per LP share decreased"),
+        "unexpected error: {:?}",
+        check.error
+    );
+}
+
+#[test]
+fn test_pool_invariant_expect_growth_rejects_unchanged_pool() {
+    // A 1:1 second deposit keeps the product per share exactly equal:
+    // accepted as non-decreasing, rejected when growth is required.
+    let steps = |expect_growth| {
+        std::vec![
+            SimStep::CreateLiquidityPool { fee_bps: 30 },
+            SimStep::MintPoolTokens {
+                actor: "dao".into(),
+                amount_a: 10_000,
+                amount_b: 10_000
+            },
+            SimStep::MintPoolTokens {
+                actor: "lp".into(),
+                amount_a: 5_000,
+                amount_b: 5_000
+            },
+            SimStep::AddLiquidity {
+                actor: "dao".into(),
+                amount_a: 10_000,
+                amount_b: 10_000,
+                min_lp_tokens_out: 0,
+            },
+            SimStep::AddLiquidity {
+                actor: "lp".into(),
+                amount_a: 5_000,
+                amount_b: 5_000,
+                min_lp_tokens_out: 0,
+            },
+            SimStep::ExpectPoolInvariant { expect_growth },
+        ]
+    };
+
+    assert_eq!(run_liquidity_steps(steps(false)).failed_steps, 0);
+    let report = run_liquidity_steps(steps(true));
+    assert!(report.step_results[5]
+        .error
+        .as_deref()
+        .unwrap_or("")
+        .contains("did not grow"));
+}
+
+#[test]
+fn test_pool_invariant_requires_a_prior_pool_change() {
+    let report = run_liquidity_steps(std::vec![
+        SimStep::CreateLiquidityPool { fee_bps: 30 },
+        SimStep::ExpectPoolInvariant {
+            expect_growth: false
+        },
+    ]);
+    assert!(!report.step_results[1].success);
+}

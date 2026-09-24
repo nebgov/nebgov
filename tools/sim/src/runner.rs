@@ -30,6 +30,7 @@ use sorogov_governor::{
     GovernorContract, GovernorContractClient, GovernorSettings, ProposalState, VoteSupport,
     VoteType,
 };
+use sorogov_liquidity::{LiquidityContract, LiquidityContractClient, Pool};
 use sorogov_proposal_bonds::{BondState, ProposalBondsContract, ProposalBondsContractClient};
 use sorogov_signal_anchor::{SignalAnchorContract, SignalAnchorContractClient};
 use sorogov_timelock::{TimelockContract, TimelockContractClient};
@@ -39,8 +40,8 @@ use sorogov_vote_escrow::{VoteEscrowContract, VoteEscrowContractClient};
 
 use crate::report::{SimulationReport, StepResult};
 use crate::scenario::{
-    ActorRole, Scenario, SimBondState, SimGovernorSettings, SimProposalState, SimStep,
-    SimVoteSupport, SimVoteType,
+    ActorRole, Scenario, SimBondState, SimGovernorSettings, SimPoolAsset, SimProposalState,
+    SimStep, SimVoteSupport, SimVoteType,
 };
 
 /// A no-op target contract used to resolve `SimStep::Propose` targets that
@@ -62,6 +63,11 @@ impl SimTargetContract {
 /// `contracts/governor/src/lib.rs`.
 const SECONDS_PER_LEDGER: u64 = 5;
 
+/// Outcome ids of the harness's single liquidity pool: asset A is outcome 0
+/// (the pool's `reserve_a`), asset B is outcome 1 (`reserve_b`).
+const POOL_OUTCOME_A: u32 = 0;
+const POOL_OUTCOME_B: u32 = 1;
+
 pub struct SimulationRunner {
     env: Env,
     scenario: Scenario,
@@ -77,6 +83,12 @@ pub struct SimulationRunner {
     proposal_bonds: ProposalBondsContractClient<'static>,
     vote_escrow: VoteEscrowContractClient<'static>,
     signal_anchor: SignalAnchorContractClient<'static>,
+    liquidity: LiquidityContractClient<'static>,
+    pool_token_a: Address,
+    pool_token_b: Address,
+    /// Pool state captured just before the most recent `AddLiquidity`,
+    /// `RemoveLiquidity` or `Swap`, compared against by `ExpectPoolInvariant`.
+    pool_before_last_change: Option<Pool>,
     token: Address,
     target: Address,
     treasury_addr: Address,
@@ -201,6 +213,16 @@ impl SimulationRunner {
         let signal_anchor = SignalAnchorContractClient::new(&env, &signal_anchor_id);
         signal_anchor.initialize(&admin);
 
+        let liquidity_id = env.register(LiquidityContract, ());
+        let liquidity = LiquidityContractClient::new(&env, &liquidity_id);
+        liquidity.initialize(&governor_id);
+        let pool_token_a = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        let pool_token_b = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+
         let target = env.register(SimTargetContract, ());
 
         let sac = token::StellarAssetClient::new(&env, &token);
@@ -231,6 +253,10 @@ impl SimulationRunner {
             proposal_bonds,
             vote_escrow,
             signal_anchor,
+            liquidity,
+            pool_token_a,
+            pool_token_b,
+            pool_before_last_change: None,
             token,
             target,
             treasury_addr: treasury_id,
@@ -877,7 +903,128 @@ impl SimulationRunner {
                     );
                 }
             }
+            SimStep::CreateLiquidityPool { fee_bps } => {
+                let governor = self.governor.address.clone();
+                self.liquidity.create_pool(
+                    &governor,
+                    &POOL_OUTCOME_A,
+                    &POOL_OUTCOME_B,
+                    &self.pool_token_a,
+                    &self.pool_token_b,
+                );
+                self.liquidity
+                    .initialize_pool(&governor, &POOL_OUTCOME_A, &POOL_OUTCOME_B, fee_bps);
+            }
+            SimStep::MintPoolTokens {
+                actor,
+                amount_a,
+                amount_b,
+            } => {
+                let addr = self.get_actor(actor).clone();
+                token::StellarAssetClient::new(&self.env, &self.pool_token_a).mint(&addr, amount_a);
+                token::StellarAssetClient::new(&self.env, &self.pool_token_b).mint(&addr, amount_b);
+            }
+            SimStep::AddLiquidity {
+                actor,
+                amount_a,
+                amount_b,
+                min_lp_tokens_out,
+            } => {
+                let provider = self.get_actor(actor).clone();
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity.add_liquidity(
+                    &provider,
+                    &POOL_OUTCOME_A,
+                    &POOL_OUTCOME_B,
+                    amount_a,
+                    amount_b,
+                    min_lp_tokens_out,
+                );
+            }
+            SimStep::RemoveLiquidity { actor, lp_tokens } => {
+                let provider = self.get_actor(actor).clone();
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity
+                    .remove_liquidity(&provider, &POOL_OUTCOME_A, &POOL_OUTCOME_B, lp_tokens);
+            }
+            SimStep::Swap {
+                actor,
+                asset_in,
+                amount_in,
+                min_amount_out,
+            } => {
+                let trader = self.get_actor(actor).clone();
+                let (outcome_in, outcome_out) = match asset_in {
+                    SimPoolAsset::A => (POOL_OUTCOME_A, POOL_OUTCOME_B),
+                    SimPoolAsset::B => (POOL_OUTCOME_B, POOL_OUTCOME_A),
+                };
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity
+                    .swap(&trader, &outcome_in, &outcome_out, amount_in, min_amount_out);
+            }
+            SimStep::UpdatePoolFee { fee_bps } => {
+                let governor = self.governor.address.clone();
+                self.liquidity
+                    .update_pool_fee(&governor, &POOL_OUTCOME_A, &POOL_OUTCOME_B, fee_bps);
+            }
+            SimStep::ExpectPool {
+                reserve_a,
+                reserve_b,
+                total_lp_supply,
+                fee_bps,
+            } => {
+                let actual = self.liquidity.get_pool(&POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                let expected = Pool {
+                    reserve_a: *reserve_a,
+                    reserve_b: *reserve_b,
+                    total_lp_supply: *total_lp_supply,
+                    fee_bps: *fee_bps,
+                };
+                if actual != expected {
+                    panic!("expected pool {:?}, was {:?}", expected, actual);
+                }
+            }
+            SimStep::ExpectLpShares { actor, lp_tokens } => {
+                let provider = self.get_actor(actor).clone();
+                let actual =
+                    self.liquidity
+                        .get_lp_position(&provider, &POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                if actual != *lp_tokens {
+                    panic!(
+                        "expected '{}' to hold {} LP shares, held {}",
+                        actor, lp_tokens, actual
+                    );
+                }
+            }
+            SimStep::ExpectPoolTokenBalance {
+                actor,
+                balance_a,
+                balance_b,
+            } => {
+                let addr = self.get_actor(actor).clone();
+                let actual_a = token::TokenClient::new(&self.env, &self.pool_token_a).balance(&addr);
+                let actual_b = token::TokenClient::new(&self.env, &self.pool_token_b).balance(&addr);
+                if (actual_a, actual_b) != (*balance_a, *balance_b) {
+                    panic!(
+                        "expected '{}' to hold ({}, {}) of pool assets (A, B), held ({}, {})",
+                        actor, balance_a, balance_b, actual_a, actual_b
+                    );
+                }
+            }
+            SimStep::ExpectPoolInvariant { expect_growth } => {
+                let before = self.pool_before_last_change.clone().unwrap_or_else(|| {
+                    panic!("ExpectPoolInvariant needs a prior AddLiquidity, RemoveLiquidity or Swap")
+                });
+                let after = self.liquidity.get_pool(&POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                check_pool_invariant(&before, &after, *expect_growth);
+            }
         }
+    }
+
+    /// The pool's current state, or `None` before `CreateLiquidityPool`.
+    fn current_pool(&self) -> Option<Pool> {
+        self.liquidity
+            .get_pool_safe(&POOL_OUTCOME_A, &POOL_OUTCOME_B)
     }
 
     /// Post-process `ExpectError` steps against already-recorded results —
@@ -983,6 +1130,58 @@ fn from_proposal_state(s: ProposalState) -> SimProposalState {
         ProposalState::Executed => SimProposalState::Executed,
         ProposalState::Cancelled => SimProposalState::Cancelled,
         ProposalState::Expired => SimProposalState::Expired,
+    }
+}
+
+/// Panics unless `reserve_a * reserve_b / total_lp_supply^2` is no lower
+/// after the change than before it (strictly higher if `expect_growth`).
+/// Cross-multiplied to stay in integers: `k_after * S_before^2` vs
+/// `k_before * S_after^2`.
+fn check_pool_invariant(before: &Pool, after: &Pool, expect_growth: bool) {
+    if after.total_lp_supply == 0 {
+        // A fully withdrawn pool must not strand reserves with no LP claim.
+        if after.reserve_a != 0 || after.reserve_b != 0 {
+            panic!(
+                "pool has no LP supply but still holds reserves: {:?}",
+                after
+            );
+        }
+        return;
+    }
+    if before.total_lp_supply == 0 {
+        // First deposit: nothing to compare against, only that it is funded.
+        if after.reserve_a <= 0 || after.reserve_b <= 0 {
+            panic!("first deposit left an unfunded pool: {:?}", after);
+        }
+        return;
+    }
+
+    let mul = |a: i128, b: i128| {
+        a.checked_mul(b).unwrap_or_else(|| {
+            panic!(
+                "overflow checking pool invariant: {:?} -> {:?}",
+                before, after
+            )
+        })
+    };
+    let k_before = mul(before.reserve_a, before.reserve_b);
+    let k_after = mul(after.reserve_a, after.reserve_b);
+    let lhs = mul(k_after, mul(before.total_lp_supply, before.total_lp_supply));
+    let rhs = mul(k_before, mul(after.total_lp_supply, after.total_lp_supply));
+
+    if lhs < rhs || (expect_growth && lhs == rhs) {
+        panic!(
+            "pool product per LP share {} (k {} -> {}, LP supply {} -> {})",
+            if lhs < rhs {
+                "decreased"
+            } else {
+                "did not grow"
+            },
+            k_before,
+            k_after,
+            before.total_lp_supply,
+            after.total_lp_supply
+        );
     }
 }
 

@@ -268,6 +268,34 @@ path, create a follow-up proposal with `ProposeBondSlash`:
 After that proposal passes, queue and execute it normally, then assert
 `"expected_state": "Slashed"` with `ExpectBondState`.
 
+**Liquidity Pool**
+
+The harness deploys `contracts/liquidity` with one A/B pool (outcomes 0 and 1,
+backed by two dedicated test assets). `CreateLiquidityPool` and
+`UpdatePoolFee` are called as the governor, like `UpdateConfig`.
+
+```json
+{ "type": "CreateLiquidityPool", "fee_bps": 30 }
+{ "type": "MintPoolTokens", "actor": "dao", "amount_a": 100000, "amount_b": 100000 }
+{ "type": "AddLiquidity", "actor": "dao", "amount_a": 100000, "amount_b": 100000, "min_lp_tokens_out": 0 }
+{ "type": "Swap", "actor": "trader", "asset_in": "A", "amount_in": 10000, "min_amount_out": 0 }
+{ "type": "UpdatePoolFee", "fee_bps": 100 }
+{ "type": "RemoveLiquidity", "actor": "dao", "lp_tokens": 50000 }
+{ "type": "ExpectPool", "reserve_a": 100000, "reserve_b": 100000, "total_lp_supply": 100000, "fee_bps": 30 }
+{ "type": "ExpectLpShares", "actor": "dao", "lp_tokens": 100000 }
+{ "type": "ExpectPoolTokenBalance", "actor": "dao", "balance_a": 0, "balance_b": 0 }
+{ "type": "ExpectPoolInvariant", "expect_growth": true }
+```
+
+`min_lp_tokens_out` and `min_amount_out` default to 0. `ExpectPoolInvariant`
+compares the pool against its state just before the most recent
+`AddLiquidity` / `RemoveLiquidity` / `Swap` and fails if
+`reserve_a * reserve_b / total_lp_supply²` decreased: for a swap that is the
+constant-product invariant `k' >= k`, for an add or remove it means existing
+LPs were not diluted. `expect_growth: true` requires a strict increase (a
+fee-charging swap), and a pool with zero LP supply must hold zero reserves.
+See `scenarios/liquidity.json`.
+
 ## Simulation Report
 
 Each run produces a JSON report with per-step results and aggregate metrics:

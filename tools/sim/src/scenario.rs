@@ -267,6 +267,75 @@ pub enum SimStep {
         poll_id: u64,
         result_seed: String,
     },
+    /// Register and initialize the harness's single liquidity pool (asset A /
+    /// asset B), called as the governor like `UpdateConfig`.
+    CreateLiquidityPool {
+        fee_bps: u32,
+    },
+    MintPoolTokens {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        amount_a: i128,
+        #[serde(with = "i128_compat")]
+        amount_b: i128,
+    },
+    AddLiquidity {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        amount_a: i128,
+        #[serde(with = "i128_compat")]
+        amount_b: i128,
+        #[serde(default, with = "i128_compat")]
+        min_lp_tokens_out: i128,
+    },
+    RemoveLiquidity {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        lp_tokens: i128,
+    },
+    Swap {
+        actor: String,
+        asset_in: SimPoolAsset,
+        #[serde(with = "i128_compat")]
+        amount_in: i128,
+        #[serde(default, with = "i128_compat")]
+        min_amount_out: i128,
+    },
+    /// Change the pool fee, called as the governor like `UpdateConfig`.
+    UpdatePoolFee {
+        fee_bps: u32,
+    },
+    ExpectPool {
+        #[serde(with = "i128_compat")]
+        reserve_a: i128,
+        #[serde(with = "i128_compat")]
+        reserve_b: i128,
+        #[serde(with = "i128_compat")]
+        total_lp_supply: i128,
+        fee_bps: u32,
+    },
+    ExpectLpShares {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        lp_tokens: i128,
+    },
+    ExpectPoolTokenBalance {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        balance_a: i128,
+        #[serde(with = "i128_compat")]
+        balance_b: i128,
+    },
+    /// Assert the pool's product per LP share (`reserve_a * reserve_b /
+    /// total_lp_supply^2`) did not decrease across the most recent
+    /// `AddLiquidity` / `RemoveLiquidity` / `Swap`. For a swap (LP supply
+    /// unchanged) this is the constant-product invariant `k' >= k`; for an
+    /// add or remove it means existing LPs' claim on the pool was not
+    /// diluted. `expect_growth` requires a strict increase (fee accrual).
+    ExpectPoolInvariant {
+        #[serde(default)]
+        expect_growth: bool,
+    },
 }
 
 impl SimStep {
@@ -316,6 +385,16 @@ impl SimStep {
             SimStep::ExpectPastTotalSupply { .. } => "ExpectPastTotalSupply",
             SimStep::AnchorResult { .. } => "AnchorResult",
             SimStep::ExpectAnchor { .. } => "ExpectAnchor",
+            SimStep::CreateLiquidityPool { .. } => "CreateLiquidityPool",
+            SimStep::MintPoolTokens { .. } => "MintPoolTokens",
+            SimStep::AddLiquidity { .. } => "AddLiquidity",
+            SimStep::RemoveLiquidity { .. } => "RemoveLiquidity",
+            SimStep::Swap { .. } => "Swap",
+            SimStep::UpdatePoolFee { .. } => "UpdatePoolFee",
+            SimStep::ExpectPool { .. } => "ExpectPool",
+            SimStep::ExpectLpShares { .. } => "ExpectLpShares",
+            SimStep::ExpectPoolTokenBalance { .. } => "ExpectPoolTokenBalance",
+            SimStep::ExpectPoolInvariant { .. } => "ExpectPoolInvariant",
         }
     }
 }
@@ -337,6 +416,13 @@ pub enum SimProposalState {
     Executed,
     Cancelled,
     Expired,
+}
+
+/// Which side of the harness's liquidity pool a `Swap` sells into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SimPoolAsset {
+    A,
+    B,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -450,7 +536,13 @@ impl Scenario {
                 | SimStep::ExecuteBatch { actor, .. }
                 | SimStep::LockProposalBond { actor, .. }
                 | SimStep::RefundProposalBond { actor, .. }
-                | SimStep::ProposeBondSlash { actor, .. } => Some(actor.as_str()),
+                | SimStep::ProposeBondSlash { actor, .. }
+                | SimStep::MintPoolTokens { actor, .. }
+                | SimStep::AddLiquidity { actor, .. }
+                | SimStep::RemoveLiquidity { actor, .. }
+                | SimStep::Swap { actor, .. }
+                | SimStep::ExpectLpShares { actor, .. }
+                | SimStep::ExpectPoolTokenBalance { actor, .. } => Some(actor.as_str()),
                 _ => None,
             };
             if let Some(name) = actor_ref {
