@@ -12,6 +12,8 @@ import {
   TreasuryStrategiesClient,
   SignalingClient,
   CoSponsorshipClient,
+  VoteEscrowClient,
+  VotingRewardsClient,
   type Network,
 } from "@nebgov/sdk";
 import { Keypair } from "@stellar/stellar-sdk";
@@ -27,6 +29,9 @@ type NebGovCliConfig = {
   timelockAddress?: string;
   votesAddress?: string;
   treasuryAddress?: string;
+  voteEscrowAddress?: string;
+  votingRewardsAddress?: string;
+  backendUrl?: string;
   keypairFile?: string;
   defaultAccount?: string;
 };
@@ -88,6 +93,9 @@ async function loadConfig(configPathArg?: string): Promise<NebGovCliConfig> {
     timelockAddress: process.env.NEBGOV_TIMELOCK_ADDRESS,
     votesAddress: process.env.NEBGOV_VOTES_ADDRESS,
     treasuryAddress: process.env.NEBGOV_TREASURY_ADDRESS,
+    voteEscrowAddress: process.env.NEBGOV_VOTE_ESCROW_ADDRESS,
+    votingRewardsAddress: process.env.NEBGOV_VOTING_REWARDS_ADDRESS,
+    backendUrl: process.env.NEBGOV_BACKEND_URL,
     keypairFile: process.env.NEBGOV_KEYPAIR_FILE,
     defaultAccount: process.env.NEBGOV_DEFAULT_ACCOUNT,
   };
@@ -328,7 +336,7 @@ program
           (cfg.keypairFile ? (await loadKeypair(cfg.keypairFile)).publicKey() : undefined);
         if (!voter) throw new Error("Provide --voter or set NEBGOV_DEFAULT_ACCOUNT / keypair");
 
-        const receipt = await governor.getReceipt(BigInt(proposalId), voter);
+        const receipt = await governor.hasVoted(BigInt(proposalId), voter);
         output({ proposalId, voter, receipt }, global);
       }),
   );
@@ -478,8 +486,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ProposalBondsClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          proposalBondsAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -495,8 +506,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ProposalBondsClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          proposalBondsAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_PROPOSAL_BONDS_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -515,8 +529,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ConvictionVotingClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          convictionVotingAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -531,8 +548,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ConvictionVotingClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          convictionVotingAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -551,8 +571,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -567,8 +590,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -582,8 +608,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -602,8 +631,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new TreasuryStrategiesClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          treasuryStrategiesAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -620,8 +652,11 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new TreasuryStrategiesClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          treasuryStrategiesAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
           network: cfg.network,
-          contractAddress: process.env.NEBGOV_TREASURY_STRATEGIES_ADDRESS || "",
           rpcUrl: cfg.rpcUrl,
         });
 
@@ -640,6 +675,10 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new SignalingClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          signalAnchorAddress: process.env.NEBGOV_SIGNAL_ANCHOR_ADDRESS,
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
         });
@@ -655,6 +694,10 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new SignalingClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          signalAnchorAddress: process.env.NEBGOV_SIGNAL_ANCHOR_ADDRESS,
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
         });
@@ -670,6 +713,10 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new SignalingClient({
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          signalAnchorAddress: process.env.NEBGOV_SIGNAL_ANCHOR_ADDRESS,
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
         });
@@ -874,6 +921,313 @@ program
         const client = coSponsorshipClient(cfg);
         const hash = await client.cancelDraft(signer, BigInt(draftId));
         output({ ok: true, draftId, hash }, global);
+      }),
+  );
+
+program
+  .command("vote-escrow")
+  .description("Vote escrow commands")
+  .addCommand(
+    new Command("lock")
+      .requiredOption("--amount <amount>", "amount to lock")
+      .requiredOption("--duration <ledgers>", "duration in ledgers")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const voteEscrowAddress =
+          cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
+        const voteEscrow = new VoteEscrowClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const amount = BigInt(options.amount);
+        const duration = Number(options.duration);
+
+        if (global.dryRun) {
+          output({ action: "vote-escrow.lock", amount, duration }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await voteEscrow.createLock(signer, amount, duration);
+        output({ action: "vote-escrow.lock", amount, duration, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("increase")
+      .requiredOption("--amount <amount>", "additional amount to lock")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const voteEscrowAddress =
+          cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
+        const voteEscrow = new VoteEscrowClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const amount = BigInt(options.amount);
+
+        if (global.dryRun) {
+          output({ action: "vote-escrow.increase", amount }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await voteEscrow.increaseLockAmount(signer, amount);
+        output({ action: "vote-escrow.increase", amount, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("extend")
+      .requiredOption("--new-end-ledger <ledger>", "new end ledger sequence")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const voteEscrowAddress =
+          cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
+        const voteEscrow = new VoteEscrowClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const newEndLedger = Number(options.newEndLedger);
+
+        if (global.dryRun) {
+          output({ action: "vote-escrow.extend", newEndLedger }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await voteEscrow.extendLock(signer, newEndLedger);
+        output({ action: "vote-escrow.extend", newEndLedger, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("withdraw")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const voteEscrowAddress =
+          cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
+        const voteEscrow = new VoteEscrowClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        if (global.dryRun) {
+          output({ action: "vote-escrow.withdraw" }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await voteEscrow.withdraw(signer);
+        output({ action: "vote-escrow.withdraw", hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("show")
+      .argument("[owner]", "owner address")
+      .option("--owner <address>", "owner address")
+      .action(async (argOwner: string | undefined, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const voteEscrowAddress =
+          cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
+        const voteEscrow = new VoteEscrowClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const owner =
+          argOwner ??
+          options.owner ??
+          cfg.defaultAccount ??
+          (cfg.keypairFile ? (await loadKeypair(cfg.keypairFile)).publicKey() : undefined);
+
+        if (!owner) throw new Error("Provide owner address or set NEBGOV_DEFAULT_ACCOUNT / keypair");
+
+        const [lock, votingPower] = await Promise.all([
+          voteEscrow.getLock(owner),
+          voteEscrow.getVotingPower(owner),
+        ]);
+        output({ owner, lock, votingPower }, global);
+      }),
+  );
+
+program
+  .command("voting-rewards")
+  .description("Voting rewards commands")
+  .addCommand(
+    new Command("epochs")
+      .option("--epoch <id>", "epoch id to query")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const votingRewardsAddress =
+          cfg.votingRewardsAddress ?? process.env.NEBGOV_VOTING_REWARDS_ADDRESS;
+        const client = new VotingRewardsClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          votingRewardsAddress: required(votingRewardsAddress, "votingRewardsAddress"),
+          backendUrl: cfg.backendUrl ?? process.env.NEBGOV_BACKEND_URL,
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        if (options.epoch) {
+          const epoch = await client.getEpoch(BigInt(options.epoch));
+          output(epoch, global);
+        } else {
+          const [currentEpochId, availablePool] = await Promise.all([
+            client.getCurrentEpochId(),
+            client.getAvailablePool(),
+          ]);
+          const currentEpoch = await client.getEpoch(currentEpochId);
+          output({ currentEpochId, availablePool, currentEpoch }, global);
+        }
+      }),
+  )
+  .addCommand(
+    new Command("claims")
+      .argument("[address]", "claimant address")
+      .option("--address <address>", "claimant address")
+      .action(async (argAddress: string | undefined, options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const votingRewardsAddress =
+          cfg.votingRewardsAddress ?? process.env.NEBGOV_VOTING_REWARDS_ADDRESS;
+        const client = new VotingRewardsClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          votingRewardsAddress: required(votingRewardsAddress, "votingRewardsAddress"),
+          backendUrl: required(
+            cfg.backendUrl ?? process.env.NEBGOV_BACKEND_URL,
+            "backendUrl",
+          ),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const address =
+          argAddress ??
+          options.address ??
+          cfg.defaultAccount ??
+          (cfg.keypairFile ? (await loadKeypair(cfg.keypairFile)).publicKey() : undefined);
+
+        if (!address) throw new Error("Provide address or set NEBGOV_DEFAULT_ACCOUNT / keypair");
+
+        const rewards = await client.getClaimableRewards(address);
+        output(rewards, global);
+      }),
+  )
+  .addCommand(
+    new Command("claim")
+      .requiredOption("--epoch <id>", "epoch id")
+      .requiredOption("--amount <amount>", "claim amount")
+      .requiredOption("--proof <proof>", "Merkle proof (JSON string array or comma-separated hex strings)")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const votingRewardsAddress =
+          cfg.votingRewardsAddress ?? process.env.NEBGOV_VOTING_REWARDS_ADDRESS;
+        const client = new VotingRewardsClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          votingRewardsAddress: required(votingRewardsAddress, "votingRewardsAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        let proof: string[];
+        try {
+          proof = JSON.parse(options.proof);
+        } catch {
+          proof = options.proof.split(",").map((s: string) => s.trim()).filter(Boolean);
+        }
+
+        const epochId = BigInt(options.epoch);
+        const amount = BigInt(options.amount);
+
+        if (global.dryRun) {
+          output({ action: "voting-rewards.claim", epochId, amount, proof }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await client.claim(signer, epochId, amount, proof);
+        output({ action: "voting-rewards.claim", epochId, amount, hash }, global);
+      }),
+  )
+  .addCommand(
+    new Command("fund")
+      .requiredOption("--amount <amount>", "amount to fund")
+      .option("--keypair <file>", "keypair file path")
+      .action(async (options) => {
+        const global = program.opts<GlobalOptions>();
+        const cfg = await loadConfig(global.config);
+        const votingRewardsAddress =
+          cfg.votingRewardsAddress ?? process.env.NEBGOV_VOTING_REWARDS_ADDRESS;
+        const client = new VotingRewardsClient({
+          network: cfg.network,
+          governorAddress: cfg.governorAddress ?? "",
+          timelockAddress: cfg.timelockAddress ?? "",
+          votesAddress: cfg.votesAddress ?? "",
+          votingRewardsAddress: required(votingRewardsAddress, "votingRewardsAddress"),
+          rpcUrl: cfg.rpcUrl,
+        });
+
+        const amount = BigInt(options.amount);
+
+        if (global.dryRun) {
+          output({ action: "voting-rewards.fund", amount }, global);
+          return;
+        }
+
+        const keypairPath = options.keypair ?? cfg.keypairFile;
+        if (!keypairPath) throw new Error("Missing --keypair or NEBGOV_KEYPAIR_FILE");
+        const signer = await loadKeypair(keypairPath);
+        const hash = await client.fundPool(signer, amount);
+        output({ action: "voting-rewards.fund", amount, hash }, global);
       }),
   );
 

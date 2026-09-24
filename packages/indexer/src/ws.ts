@@ -76,7 +76,11 @@ export type WsEventType =
   | "strategy_deactivated"
   | "strategy_deposited"
   | "strategy_withdrawal_requested"
-  | "strategy_withdrawal_claimed";
+  | "strategy_withdrawal_claimed"
+  | "vote_escrow_lock_created"
+  | "vote_escrow_lock_increased"
+  | "vote_escrow_lock_extended"
+  | "vote_escrow_lock_withdrawn";
 
 export interface WsEvent {
   type: WsEventType;

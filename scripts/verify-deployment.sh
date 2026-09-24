@@ -177,6 +177,21 @@ if [[ "$PROPOSAL_BONDS_SETTINGS" != "ERROR" ]]; then
     "${GOVERNOR_ADDRESS:-}"
 fi
 
+# ---- CoSponsorship -------------------------------------------------------
+info "CoSponsorship (${CO_SPONSORSHIP_ADDRESS:-<not set>})"
+check_initialized "  co_sponsorship.admin" \
+  "$(query "${CO_SPONSORSHIP_ADDRESS:-}" admin)"
+
+# ---- TokenVotesWrapper ---------------------------------------------------
+info "TokenVotesWrapper (${WRAPPER_ADDRESS:-<not set>})"
+check_initialized "  token_votes_wrapper.admin" \
+  "$(query "${WRAPPER_ADDRESS:-}" admin)"
+
+# ---- GovernorFactory -----------------------------------------------------
+info "GovernorFactory (${FACTORY_ADDRESS:-<not set>})"
+check_initialized "  governor_factory.admin" \
+  "$(query "${FACTORY_ADDRESS:-}" admin)"
+
 printf '\n'
 if [[ "$FAILURES" -gt 0 ]]; then
   printf "${RED}%d check(s) failed.${NC}\n" "$FAILURES" >&2

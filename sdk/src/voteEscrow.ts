@@ -6,6 +6,7 @@ import {
   Keypair,
   nativeToScVal,
   scValToNative,
+  xdr,
 } from "@stellar/stellar-sdk";
 import { GovernorConfig } from "./types";
 import { createRetry, type RetryFunction } from "./utils";
@@ -34,8 +35,19 @@ export interface Lock {
 
 export interface VoteEscrowStats {
   total_locked: bigint;
-  avg_lock_duration: number;
-  num_active_locks: number;
+}
+
+export interface LockHistory {
+  owner: string;
+  locks: Lock[];
+}
+
+export interface EscrowConfig {
+  admin: string;
+  token: string;
+  min_lock_duration: number;
+  max_lock_duration: number;
+  max_multiplier_bps: number;
 }
 
 export class VoteEscrowClient {
@@ -119,6 +131,150 @@ export class VoteEscrowClient {
       if (result.status === "ERROR") throw parseVoteEscrowError(result);
       return result.hash;
     });
+  }
+
+  async increaseLockAmountWithSign(
+    signerPublicKey: string,
+    additionalAmount: bigint,
+    signUnsignedXdr: (xdr: string) => Promise<string>
+  ): Promise<string> {
+    return this.retry(async () => {
+      const account = await this.server.getAccount(signerPublicKey);
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.contract.call(
+            "increase_lock_amount",
+            nativeToScVal(signerPublicKey, { type: "address" }),
+            nativeToScVal(additionalAmount, { type: "i128" })
+          )
+        )
+        .setTimeout(30)
+        .build();
+      const prepared = await this.server.prepareTransaction(tx);
+      const signedXdr = await signUnsignedXdr(prepared.toXDR());
+      const signedTx = TransactionBuilder.fromXDR(
+        signedXdr,
+        this.networkPassphrase
+      );
+      const result = await this.server.sendTransaction(signedTx);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
+      return result.hash;
+    });
+  }
+
+  async extendLockWithSign(
+    signerPublicKey: string,
+    newEndLedger: number,
+    signUnsignedXdr: (xdr: string) => Promise<string>
+  ): Promise<string> {
+    return this.retry(async () => {
+      const account = await this.server.getAccount(signerPublicKey);
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.contract.call(
+            "extend_lock",
+            nativeToScVal(signerPublicKey, { type: "address" }),
+            nativeToScVal(newEndLedger, { type: "u32" })
+          )
+        )
+        .setTimeout(30)
+        .build();
+      const prepared = await this.server.prepareTransaction(tx);
+      const signedXdr = await signUnsignedXdr(prepared.toXDR());
+      const signedTx = TransactionBuilder.fromXDR(
+        signedXdr,
+        this.networkPassphrase
+      );
+      const result = await this.server.sendTransaction(signedTx);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
+      return result.hash;
+    });
+  }
+
+  async withdrawWithSign(
+    signerPublicKey: string,
+    signUnsignedXdr: (xdr: string) => Promise<string>
+  ): Promise<string> {
+    return this.retry(async () => {
+      const account = await this.server.getAccount(signerPublicKey);
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.contract.call(
+            "withdraw",
+            nativeToScVal(signerPublicKey, { type: "address" })
+          )
+        )
+        .setTimeout(30)
+        .build();
+      const prepared = await this.server.prepareTransaction(tx);
+      const signedXdr = await signUnsignedXdr(prepared.toXDR());
+      const signedTx = TransactionBuilder.fromXDR(
+        signedXdr,
+        this.networkPassphrase
+      );
+      const result = await this.server.sendTransaction(signedTx);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
+      return result.hash;
+    });
+  }
+
+  async updateEscrowConfig(
+    signer: Keypair,
+    minLockDuration: number,
+    maxLockDuration: number,
+    maxMultiplierBps: number
+  ): Promise<string> {
+    return this.retry(async () => {
+      const account = await this.server.getAccount(signer.publicKey());
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.contract.call(
+            "update_escrow_config",
+            nativeToScVal(signer.publicKey(), { type: "address" }),
+            nativeToScVal(minLockDuration, { type: "u32" }),
+            nativeToScVal(maxLockDuration, { type: "u32" }),
+            nativeToScVal(maxMultiplierBps, { type: "u32" })
+          )
+        )
+        .setTimeout(30)
+        .build();
+      const prepared = await this.server.prepareTransaction(tx);
+      prepared.sign(signer);
+      const result = await this.server.sendTransaction(prepared);
+      if (result.status === "ERROR") throw parseVoteEscrowError(result);
+      return result.hash;
+    });
+  }
+
+  encodeUpdateEscrowConfigCalldata(
+    adminAddress: string,
+    minLockDuration: number,
+    maxLockDuration: number,
+    maxMultiplierBps: number
+  ): { target: string; fnName: string; calldata: Buffer } {
+    const args = xdr.ScVal.scvVec([
+      nativeToScVal(adminAddress, { type: "address" }),
+      nativeToScVal(minLockDuration, { type: "u32" }),
+      nativeToScVal(maxLockDuration, { type: "u32" }),
+      nativeToScVal(maxMultiplierBps, { type: "u32" }),
+    ]);
+    return {
+      target: this.contract.contractId(),
+      fnName: "update_escrow_config",
+      calldata: Buffer.from(args.toXDR("base64"), "base64"),
+    };
   }
 
   async increaseLockAmount(
@@ -259,6 +415,18 @@ export class VoteEscrowClient {
     });
   }
 
+  /**
+   * Reads `total_locked` (the only escrow-wide figure the contract actually
+   * exposes) from `get_past_total_supply` at the latest ledger. Returns
+   * `null` on simulation failure, a missing/unparseable retval, or a
+   * reported total of zero (no meaningful data yet).
+   *
+   * `avg_lock_duration` and `num_active_locks` were removed (#1257): the
+   * contract has no entrypoint that can supply either, so this method
+   * previously shipped them as hardcoded zeros — see the related
+   * contract issue tracking `get_total_locked`/`get_admin` getters that
+   * would be needed to compute them for real.
+   */
   async getEscrowStats(): Promise<VoteEscrowStats | null> {
     return this.retry(async () => {
       // Determine a ledger sequence to query the historical total supply at
@@ -303,11 +471,129 @@ export class VoteEscrowClient {
       // If the contract reports zero, treat it as no meaningful data
       if (totalLocked === 0n) return null;
 
-      return {
-        total_locked: totalLocked,
-        avg_lock_duration: 0,
-        num_active_locks: 0,
-      };
+      return { total_locked: totalLocked };
+    });
+  }
+
+  async getPastVotes(owner: string, ledger: number): Promise<bigint> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount(owner)),
+          {
+            fee: BASE_FEE,
+            networkPassphrase: this.networkPassphrase,
+          }
+        )
+          .addOperation(
+            this.contract.call(
+              "get_past_votes",
+              nativeToScVal(owner, { type: "address" }),
+              nativeToScVal(ledger, { type: "u32" })
+            )
+          )
+          .setTimeout(30)
+          .build()
+      );
+      if (SorobanRpc.Api.isSimulationError(result)) return 0n;
+      const raw = (
+        result as SorobanRpc.Api.SimulateTransactionSuccessResponse
+      ).result?.retval;
+      return raw ? BigInt(scValToNative(raw)) : 0n;
+    });
+  }
+
+  async getPastTotalSupply(ledger: number): Promise<bigint> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount()),
+          {
+            fee: BASE_FEE,
+            networkPassphrase: this.networkPassphrase,
+          }
+        )
+          .addOperation(
+            this.contract.call(
+              "get_past_total_supply",
+              nativeToScVal(ledger, { type: "u32" })
+            )
+          )
+          .setTimeout(30)
+          .build()
+      );
+      if (SorobanRpc.Api.isSimulationError(result)) return 0n;
+      const raw = (
+        result as SorobanRpc.Api.SimulateTransactionSuccessResponse
+      ).result?.retval;
+      return raw ? BigInt(scValToNative(raw)) : 0n;
+    });
+  }
+
+  async getLockHistory(
+    owner: string,
+    offset: number = 0,
+    limit: number = 10
+  ): Promise<Lock[]> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount(owner)),
+          {
+            fee: BASE_FEE,
+            networkPassphrase: this.networkPassphrase,
+          }
+        )
+          .addOperation(
+            this.contract.call(
+              "get_lock_history",
+              nativeToScVal(owner, { type: "address" }),
+              nativeToScVal(offset, { type: "u32" }),
+              nativeToScVal(limit, { type: "u32" })
+            )
+          )
+          .setTimeout(30)
+          .build()
+      );
+      if (SorobanRpc.Api.isSimulationError(result)) return [];
+      const raw = (
+        result as SorobanRpc.Api.SimulateTransactionSuccessResponse
+      ).result?.retval;
+      if (!raw) return [];
+      const native = scValToNative(raw) as any[];
+      if (!Array.isArray(native)) return [];
+      return native.map((lockData) => ({
+        owner: lockData.owner,
+        amount: BigInt(lockData.amount),
+        start_ledger: Number(lockData.start_ledger),
+        end_ledger: Number(lockData.end_ledger),
+        initial_voting_power: BigInt(lockData.initial_voting_power),
+        withdrawn: Boolean(lockData.withdrawn),
+      }));
+    });
+  }
+
+  async getToken(): Promise<string> {
+    return this.retry(async () => {
+      const result = await this.server.simulateTransaction(
+        new TransactionBuilder(
+          await this.server.getAccount(this.readAccount()),
+          {
+            fee: BASE_FEE,
+            networkPassphrase: this.networkPassphrase,
+          }
+        )
+          .addOperation(
+            this.contract.call("token")
+          )
+          .setTimeout(30)
+          .build()
+      );
+      if (SorobanRpc.Api.isSimulationError(result)) return "";
+      const raw = (
+        result as SorobanRpc.Api.SimulateTransactionSuccessResponse
+      ).result?.retval;
+      return raw ? String(scValToNative(raw)) : "";
     });
   }
 }

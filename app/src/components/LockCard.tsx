@@ -32,11 +32,16 @@ export function LockCard({ lock, currentVotingPower, loading }: LockCardProps) {
   }
 
   const durationLedgers = lock.end_ledger - lock.start_ledger;
+  // Share of the boost (initial power above the locked amount) that has
+  // decayed, measured from the contract's current power: 0% at lock
+  // creation, 100% at maturity when power has fallen back to the amount.
+  const boost = lock.initial_voting_power - lock.amount;
   const decayPercentage =
-    durationLedgers > 0
-      ? ((Number(lock.initial_voting_power - lock.amount) * 100) /
-          Number(lock.initial_voting_power)) |
-        0
+    boost > 0n
+      ? Math.min(
+          100,
+          Math.max(0, Number(((lock.initial_voting_power - currentVotingPower) * 100n) / boost)),
+        )
       : 0;
 
   return (

@@ -1748,3 +1748,150 @@ export function subscribeToResultAnchored(
 ): () => void {
   return createTopicSubscription(signalAnchorAddress, SIGNAL_ANCHOR_TOPICS.resultAnchored, callback, opts);
 }
+
+// ── Vote escrow events ─────────────────────────────────────────────────────
+
+const VOTE_ESCROW_TOPICS = {
+  lockCreated: "LockCreated",
+  lockIncreased: "LockIncreased",
+  lockExtended: "LockExtended",
+  lockWithdrawn: "LockWithdrawn",
+} as const;
+
+export interface LockCreatedEventData {
+  owner: string;
+  amount: bigint;
+  endLedger: number;
+  initialVotingPower: bigint;
+}
+
+export interface LockIncreasedEventData {
+  owner: string;
+  addedAmount: bigint;
+  newVotingPower: bigint;
+}
+
+export interface LockExtendedEventData {
+  owner: string;
+  oldEndLedger: number;
+  newEndLedger: number;
+}
+
+export interface LockWithdrawnEventData {
+  owner: string;
+  amount: bigint;
+}
+
+export function parseLockCreatedEvent(event: SorobanEvent): LockCreatedEventData | null {
+  if (event.topic[0] !== VOTE_ESCROW_TOPICS.lockCreated || !isRecord(event.value)) return null;
+  const amount = toBigInt(event.value.amount);
+  const endLedger = toNumber(event.value.end_ledger);
+  const initialVotingPower = toBigInt(event.value.initial_voting_power);
+  if (amount === null || endLedger === null || initialVotingPower === null) return null;
+  return {
+    owner: String(event.value.owner ?? event.topic[1] ?? ""),
+    amount,
+    endLedger,
+    initialVotingPower,
+  };
+}
+
+export function parseLockIncreasedEvent(event: SorobanEvent): LockIncreasedEventData | null {
+  if (event.topic[0] !== VOTE_ESCROW_TOPICS.lockIncreased || !isRecord(event.value)) return null;
+  const addedAmount = toBigInt(event.value.added_amount);
+  const newVotingPower = toBigInt(event.value.new_voting_power);
+  if (addedAmount === null || newVotingPower === null) return null;
+  return {
+    owner: String(event.value.owner ?? event.topic[1] ?? ""),
+    addedAmount,
+    newVotingPower,
+  };
+}
+
+export function parseLockExtendedEvent(event: SorobanEvent): LockExtendedEventData | null {
+  if (event.topic[0] !== VOTE_ESCROW_TOPICS.lockExtended || !isRecord(event.value)) return null;
+  const oldEndLedger = toNumber(event.value.old_end_ledger);
+  const newEndLedger = toNumber(event.value.new_end_ledger);
+  if (oldEndLedger === null || newEndLedger === null) return null;
+  return {
+    owner: String(event.value.owner ?? event.topic[1] ?? ""),
+    oldEndLedger,
+    newEndLedger,
+  };
+}
+
+export function parseLockWithdrawnEvent(event: SorobanEvent): LockWithdrawnEventData | null {
+  if (event.topic[0] !== VOTE_ESCROW_TOPICS.lockWithdrawn || !isRecord(event.value)) return null;
+  const amount = toBigInt(event.value.amount);
+  if (amount === null) return null;
+  return { owner: String(event.value.owner ?? event.topic[1] ?? ""), amount };
+}
+
+export function subscribeToLockCreated(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockCreated, callback, opts);
+}
+export function subscribeToLockIncreased(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockIncreased, callback, opts);
+}
+export function subscribeToLockExtended(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockExtended, callback, opts);
+}
+export function subscribeToLockWithdrawn(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockWithdrawn, callback, opts);
+}
+
+// ── Voting rewards events ──────────────────────────────────────────────────
+
+const VOTING_REWARDS_TOPICS = {
+  epochStarted: "EpochStarted",
+  epochRootPublished: "EpochRootPublished",
+  rewardClaimed: "RewardClaimed",
+  poolFunded: "PoolFunded",
+} as const;
+
+export interface EpochStartedEventData { epochId: bigint; startLedger: number; endLedger: number }
+export interface EpochRootPublishedEventData { epochId: bigint; merkleRoot: string; totalRewardAmount: bigint }
+export interface RewardClaimedEventData { claimant: string; epochId: bigint; amount: bigint }
+export interface PoolFundedEventData { funder: string; amount: bigint }
+
+export function parseEpochStartedEvent(event: SorobanEvent): EpochStartedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.epochStarted || !Array.isArray(event.value) || event.value.length < 2) return null;
+  const epochId = toBigInt(event.topic[1]);
+  const startLedger = toNumber(event.value[0]);
+  const endLedger = toNumber(event.value[1]);
+  return epochId === null || startLedger === null || endLedger === null ? null : { epochId, startLedger, endLedger };
+}
+
+export function parseEpochRootPublishedEvent(event: SorobanEvent): EpochRootPublishedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.epochRootPublished || !Array.isArray(event.value) || event.value.length < 2) return null;
+  const epochId = toBigInt(event.topic[1]);
+  const totalRewardAmount = toBigInt(event.value[1]);
+  if (epochId === null || totalRewardAmount === null) return null;
+  return { epochId, merkleRoot: toHex(event.value[0]), totalRewardAmount };
+}
+
+export function parseRewardClaimedEvent(event: SorobanEvent): RewardClaimedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.rewardClaimed || !Array.isArray(event.value) || event.value.length < 2) return null;
+  const epochId = toBigInt(event.value[0]);
+  const amount = toBigInt(event.value[1]);
+  return epochId === null || amount === null ? null : { claimant: String(event.topic[1] ?? ""), epochId, amount };
+}
+
+export function parsePoolFundedEvent(event: SorobanEvent): PoolFundedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.poolFunded) return null;
+  const amount = toBigInt(event.value);
+  return amount === null ? null : { funder: String(event.topic[1] ?? ""), amount };
+}
+
+export function subscribeToEpochStarted(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.epochStarted, callback, opts);
+}
+export function subscribeToEpochRootPublished(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.epochRootPublished, callback, opts);
+}
+export function subscribeToRewardClaimed(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.rewardClaimed, callback, opts);
+}
+export function subscribeToPoolFunded(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.poolFunded, callback, opts);
+}

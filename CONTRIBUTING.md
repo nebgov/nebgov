@@ -41,6 +41,16 @@ pnpm build:sdk
 
 ## Running Tests
 
+Run everything CI checks, in one command:
+
+```bash
+make check
+```
+
+Or the two halves separately: `make test-contracts` (Rust) and `make test-ts lint-ts build-ts` (every `pnpm` workspace — `sdk/`, `app/`, `backend/`, `packages/cli/`, `packages/indexer/`, `tools/simulation/`).
+
+Individual commands, if you only touched one package:
+
 ```bash
 # Rust contract tests
 cargo test --workspace
@@ -255,7 +265,7 @@ Use imperative mood with conventional prefixes:
 
 1. Fork the repo and create a branch from `main`
 2. Make your changes with tests for new features
-3. Ensure all CI checks pass: `cargo test --workspace && pnpm test:sdk`
+3. Ensure all CI checks pass: `make check` (aggregates the Rust contract suite and every TypeScript workspace — see [`test-ts` / `lint-ts` / `build-ts`](./Makefile))
 4. Update docs if you changed any public API
 5. Open a PR referencing the issue: `Closes #<number>`
 6. Wait for maintainer review. Note that reviewers are automatically assigned based on our [CODEOWNERS](.github/CODEOWNERS) configuration. For more details on our branch protection rules, see [Branch Protection](docs/contributing/branch-protection.md).

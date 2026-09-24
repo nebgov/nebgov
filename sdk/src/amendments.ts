@@ -47,7 +47,7 @@ export class AmendmentsClient {
     if (!response.ok) {
       throw new Error(`Failed to fetch amendments: ${response.statusText}`);
     }
-    return response.json();
+    return (await response.json()) as { proposal_id: number; current_amendment_version: number; amendments: ProposalAmendment[] };
   }
 
   /**
@@ -58,7 +58,7 @@ export class AmendmentsClient {
     if (!response.ok) {
       throw new Error(`Failed to fetch amendment version: ${response.statusText}`);
     }
-    return response.json();
+    return (await response.json()) as ProposalAmendment;
   }
 
   /**
@@ -128,7 +128,7 @@ export class AmendmentsClient {
       throw new Error(`Failed to fetch amendment diff: ${response.statusText}`);
     }
 
-    return response.json();
+    return (await response.json()) as JsonMergePatch[];
   }
 }
 
