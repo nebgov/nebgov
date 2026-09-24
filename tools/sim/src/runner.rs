@@ -986,16 +986,6 @@ fn from_proposal_state(s: ProposalState) -> SimProposalState {
     }
 }
 
-fn from_optimistic_state(s: OptimisticProposalState) -> SimOptimisticProposalState {
-    match s {
-        OptimisticProposalState::ChallengeWindow => SimOptimisticProposalState::ChallengeWindow,
-        OptimisticProposalState::Objected => SimOptimisticProposalState::Objected,
-        OptimisticProposalState::Passed => SimOptimisticProposalState::Passed,
-        OptimisticProposalState::Executed => SimOptimisticProposalState::Executed,
-        OptimisticProposalState::Cancelled => SimOptimisticProposalState::Cancelled,
-    }
-}
-
 fn merge_settings(current: &GovernorSettings, overrides: &SimGovernorSettings) -> GovernorSettings {
     GovernorSettings {
         voting_delay: overrides.voting_delay,
