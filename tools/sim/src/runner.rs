@@ -37,6 +37,7 @@ use sorogov_timelock::{TimelockContract, TimelockContractClient};
 use sorogov_token_votes::{TokenVotesContract, TokenVotesContractClient};
 use sorogov_treasury::{TreasuryContract, TreasuryContractClient};
 use sorogov_vote_escrow::{VoteEscrowContract, VoteEscrowContractClient};
+use sorogov_voting_rewards::{merkle, VotingRewardsContract, VotingRewardsContractClient};
 
 use crate::report::{SimulationReport, StepResult};
 use crate::scenario::{
@@ -68,6 +69,10 @@ const SECONDS_PER_LEDGER: u64 = 5;
 const POOL_OUTCOME_A: u32 = 0;
 const POOL_OUTCOME_B: u32 = 1;
 
+/// Voting-rewards epoch length. Epoch 0 opens at genesis (ledger 1), so it
+/// covers ledgers 1..21, epoch 1 covers 21..41, and so on.
+const REWARDS_EPOCH_LEDGERS: u32 = 20;
+
 pub struct SimulationRunner {
     env: Env,
     scenario: Scenario,
@@ -89,6 +94,11 @@ pub struct SimulationRunner {
     /// Pool state captured just before the most recent `AddLiquidity`,
     /// `RemoveLiquidity` or `Swap`, compared against by `ExpectPoolInvariant`.
     pool_before_last_change: Option<Pool>,
+    voting_rewards: VotingRewardsContractClient<'static>,
+    reward_token: Address,
+    /// Each successfully published epoch's `(claimant, amount)` leaves, in
+    /// tree order, so `ClaimReward` can rebuild a claimant's proof.
+    reward_allocations: HashMap<u64, Vec<(Address, i128)>>,
     token: Address,
     target: Address,
     treasury_addr: Address,
@@ -223,6 +233,15 @@ impl SimulationRunner {
             .register_stellar_asset_contract_v2(admin.clone())
             .address();
 
+        // The governor is the admin, matching the intended deployment where
+        // publishing a root is itself a governance-executed action.
+        let reward_token = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        let voting_rewards_id = env.register(VotingRewardsContract, ());
+        let voting_rewards = VotingRewardsContractClient::new(&env, &voting_rewards_id);
+        voting_rewards.initialize(&governor_id, &reward_token, &REWARDS_EPOCH_LEDGERS);
+
         let target = env.register(SimTargetContract, ());
 
         let sac = token::StellarAssetClient::new(&env, &token);
@@ -257,6 +276,9 @@ impl SimulationRunner {
             pool_token_a,
             pool_token_b,
             pool_before_last_change: None,
+            voting_rewards,
+            reward_token,
+            reward_allocations: HashMap::new(),
             token,
             target,
             treasury_addr: treasury_id,
@@ -1018,6 +1040,118 @@ impl SimulationRunner {
                 let after = self.liquidity.get_pool(&POOL_OUTCOME_A, &POOL_OUTCOME_B);
                 check_pool_invariant(&before, &after, *expect_growth);
             }
+            SimStep::FundRewardsPool { actor, amount } => {
+                let funder = self.get_actor(actor).clone();
+                token::StellarAssetClient::new(&self.env, &self.reward_token).mint(&funder, amount);
+                self.voting_rewards.fund_pool(&funder, amount);
+            }
+            SimStep::StartNextRewardsEpoch => {
+                self.voting_rewards.start_next_epoch();
+            }
+            SimStep::PublishRewardsRoot {
+                epoch_id,
+                total_reward_amount,
+                allocations,
+            } => {
+                let leaves: Vec<(Address, i128)> = allocations
+                    .iter()
+                    .map(|a| (self.get_actor(&a.actor).clone(), a.amount))
+                    .collect();
+                let hashes = reward_leaves(&self.env, *epoch_id, &leaves);
+                let root = merkle_root(&self.env, &hashes);
+                let governor = self.governor.address.clone();
+                self.voting_rewards
+                    .publish_epoch_root(&governor, epoch_id, &root, total_reward_amount);
+                // Only reached if the contract accepted the root, so a
+                // rejected re-publish can't replace the stored allocation.
+                self.reward_allocations.insert(*epoch_id, leaves);
+            }
+            SimStep::ClaimReward {
+                actor,
+                epoch_id,
+                amount,
+            } => {
+                let claimant = self.get_actor(actor).clone();
+                let mut proof = SorobanVec::new(&self.env);
+                if let Some(leaves) = self.reward_allocations.get(epoch_id) {
+                    if let Some(index) = leaves.iter().position(|(addr, _)| *addr == claimant) {
+                        let hashes = reward_leaves(&self.env, *epoch_id, leaves);
+                        proof = merkle_proof(&self.env, &hashes, index);
+                    }
+                }
+                self.voting_rewards.claim(&claimant, epoch_id, amount, &proof);
+            }
+            SimStep::ExpectRewardsEpoch {
+                epoch_id,
+                start_ledger,
+                end_ledger,
+                total_reward_amount,
+                claimed_amount,
+                finalized,
+            } => {
+                let epoch = self
+                    .voting_rewards
+                    .get_epoch(epoch_id)
+                    .unwrap_or_else(|| panic!("no rewards epoch {}", epoch_id));
+                let actual = (
+                    epoch.start_ledger,
+                    epoch.end_ledger,
+                    epoch.total_reward_amount,
+                    epoch.claimed_amount,
+                    epoch.finalized,
+                    epoch.merkle_root.is_some(),
+                );
+                let expected = (
+                    *start_ledger,
+                    *end_ledger,
+                    *total_reward_amount,
+                    *claimed_amount,
+                    *finalized,
+                    *finalized,
+                );
+                if actual != expected {
+                    panic!(
+                        "expected rewards epoch {} (start, end, total, claimed, finalized, has_root) = {:?}, was {:?}",
+                        epoch_id, expected, actual
+                    );
+                }
+            }
+            SimStep::ExpectCurrentRewardsEpoch { epoch_id } => {
+                let actual = self.voting_rewards.get_current_epoch_id();
+                if actual != *epoch_id {
+                    panic!("expected current rewards epoch {}, was {}", epoch_id, actual);
+                }
+            }
+            SimStep::ExpectAvailableRewardsPool { amount } => {
+                let actual = self.voting_rewards.get_available_pool();
+                if actual != *amount {
+                    panic!("expected available rewards pool {}, was {}", amount, actual);
+                }
+            }
+            SimStep::ExpectRewardClaimed {
+                actor,
+                epoch_id,
+                claimed,
+            } => {
+                let claimant = self.get_actor(actor).clone();
+                let actual = self.voting_rewards.has_claimed(epoch_id, &claimant);
+                if actual != *claimed {
+                    panic!(
+                        "expected has_claimed('{}', epoch {}) to be {}, was {}",
+                        actor, epoch_id, claimed, actual
+                    );
+                }
+            }
+            SimStep::ExpectRewardBalance { actor, balance } => {
+                let addr = self.get_actor(actor).clone();
+                let actual = token::TokenClient::new(&self.env, &self.reward_token).balance(&addr);
+                if actual != *balance {
+                    panic!(
+                        "expected '{}' to hold {} of the reward asset, held {}",
+                        actor, balance, actual
+                    );
+                }
+            }
         }
     }
 
@@ -1131,6 +1265,66 @@ fn from_proposal_state(s: ProposalState) -> SimProposalState {
         ProposalState::Cancelled => SimProposalState::Cancelled,
         ProposalState::Expired => SimProposalState::Expired,
     }
+}
+
+fn reward_leaves(env: &Env, epoch_id: u64, leaves: &[(Address, i128)]) -> Vec<BytesN<32>> {
+    leaves
+        .iter()
+        .map(|(addr, amount)| merkle::compute_leaf(env, addr, epoch_id, *amount))
+        .collect()
+}
+
+/// `sha256(min(a, b) || max(a, b))` — mirrors the crate-private
+/// `merkle::hash_pair` in `contracts/voting-rewards`. A mismatch would make
+/// every valid `ClaimReward` fail with `InvalidProof`.
+fn merkle_hash_pair(env: &Env, a: &BytesN<32>, b: &BytesN<32>) -> BytesN<32> {
+    let (first, second) = if a.to_array() <= b.to_array() {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let mut buf = Bytes::from_array(env, &first.to_array());
+    buf.append(&Bytes::from_array(env, &second.to_array()));
+    env.crypto().sha256(&buf).into()
+}
+
+/// One tree level up: hash adjacent pairs, promoting an odd trailing node
+/// unchanged (the same rule as `backend/src/voting-rewards/merkle.ts` and
+/// the contract's own reference tree in `tests.rs`).
+fn merkle_parent_level(env: &Env, level: &[BytesN<32>]) -> Vec<BytesN<32>> {
+    level
+        .chunks(2)
+        .map(|pair| match pair {
+            [a, b] => merkle_hash_pair(env, a, b),
+            [a] => a.clone(),
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
+fn merkle_root(env: &Env, leaves: &[BytesN<32>]) -> BytesN<32> {
+    if leaves.is_empty() {
+        // No leaves: publish an all-zero root nothing can prove against.
+        return BytesN::from_array(env, &[0; 32]);
+    }
+    let mut level = leaves.to_vec();
+    while level.len() > 1 {
+        level = merkle_parent_level(env, &level);
+    }
+    level.remove(0)
+}
+
+fn merkle_proof(env: &Env, leaves: &[BytesN<32>], mut index: usize) -> SorobanVec<BytesN<32>> {
+    let mut proof = SorobanVec::new(env);
+    let mut level = leaves.to_vec();
+    while level.len() > 1 {
+        if let Some(sibling) = level.get(index ^ 1) {
+            proof.push_back(sibling.clone());
+        }
+        level = merkle_parent_level(env, &level);
+        index /= 2;
+    }
+    proof
 }
 
 /// Panics unless `reserve_a * reserve_b / total_lp_supply^2` is no lower

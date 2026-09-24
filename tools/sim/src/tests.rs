@@ -1,8 +1,8 @@
 use crate::report::{BUDGET_WARNING_THRESHOLD_PCT, CPU_INSN_BUDGET};
 use crate::runner::SimulationRunner;
 use crate::scenario::{
-    ActorRole, Scenario, SimActor, SimGovernorSettings, SimProposalState, SimStep, SimVoteSupport,
-    SimVoteType,
+    ActorRole, Scenario, SimActor, SimGovernorSettings, SimProposalState, SimRewardAllocation,
+    SimStep, SimVoteSupport, SimVoteType,
 };
 
 fn base_settings() -> SimGovernorSettings {
@@ -491,4 +491,82 @@ fn test_pool_invariant_requires_a_prior_pool_change() {
         },
     ]);
     assert!(!report.step_results[1].success);
+}
+
+#[test]
+fn test_voting_rewards_scenario_passes() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/scenarios/voting_rewards.json");
+    let scenario = Scenario::from_file(&path).expect("voting_rewards.json parses");
+    scenario.validate().expect("voting_rewards.json is valid");
+
+    let mut runner = SimulationRunner::new(&scenario);
+    runner.run();
+    runner.check_expect_errors();
+    let report = runner.get_report();
+
+    assert_eq!(report.total_steps, scenario.steps.len());
+    assert_eq!(report.failed_steps, 0, "steps: {:#?}", report.step_results);
+}
+
+#[test]
+fn test_reward_claims_verify_against_odd_sized_multi_level_tree() {
+    // Five leaves: three tree levels, and an odd node promoted unchanged at
+    // each of the first two, so every claimant's proof has a different
+    // shape. Every claim succeeding means the harness builds trees and
+    // proofs exactly as `contracts/voting-rewards` verifies them.
+    let names = ["v0", "v1", "v2", "v3", "v4"];
+    let amounts: [i128; 5] = [250_000, 42, 1, 999_999, 7_500];
+
+    let mut steps = std::vec![
+        SimStep::FundRewardsPool {
+            actor: "v0".into(),
+            amount: 2_000_000,
+        },
+        SimStep::AdvanceLedger { ledgers: 20 },
+        SimStep::PublishRewardsRoot {
+            epoch_id: 0,
+            total_reward_amount: amounts.iter().sum(),
+            allocations: names
+                .iter()
+                .zip(amounts)
+                .map(|(name, amount)| SimRewardAllocation {
+                    actor: name.to_string(),
+                    amount,
+                })
+                .collect(),
+        },
+    ];
+    for (name, amount) in names.iter().zip(amounts) {
+        steps.push(SimStep::ClaimReward {
+            actor: name.to_string(),
+            epoch_id: 0,
+            amount,
+        });
+        steps.push(SimStep::ExpectRewardClaimed {
+            actor: name.to_string(),
+            epoch_id: 0,
+            claimed: true,
+        });
+    }
+
+    let scenario = Scenario {
+        name: "voting_rewards_tree_test".to_string(),
+        description: "multi-level reward proofs".to_string(),
+        seed: 1,
+        governor_settings: base_settings(),
+        actors: names
+            .iter()
+            .map(|name| SimActor {
+                name: name.to_string(),
+                initial_balance: 0,
+                delegate_to: None,
+                role: ActorRole::TokenHolder,
+            })
+            .collect(),
+        steps,
+    };
+    let mut runner = SimulationRunner::new(&scenario);
+    let report = runner.run();
+    assert_eq!(report.failed_steps, 0, "steps: {:#?}", report.step_results);
 }

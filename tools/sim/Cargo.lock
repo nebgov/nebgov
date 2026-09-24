@@ -911,6 +911,7 @@ dependencies = [
  "sorogov-token-votes",
  "sorogov-treasury",
  "sorogov-vote-escrow",
+ "sorogov-voting-rewards",
 ]
 
 [[package]]
@@ -1540,6 +1541,13 @@ dependencies = [
 
 [[package]]
 name = "sorogov-vote-escrow"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "sorogov-voting-rewards"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",

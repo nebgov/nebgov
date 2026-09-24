@@ -296,6 +296,34 @@ LPs were not diluted. `expect_growth: true` requires a strict increase (a
 fee-charging swap), and a pool with zero LP supply must hold zero reserves.
 See `scenarios/liquidity.json`.
 
+**Voting Rewards**
+
+The harness deploys `contracts/voting-rewards` with the governor as its admin,
+a dedicated reward asset, and 20-ledger epochs; epoch 0 opens at genesis
+(ledger 1) and ends at ledger 21.
+
+```json
+{ "type": "FundRewardsPool", "actor": "treasury", "amount": 10000 }
+{ "type": "StartNextRewardsEpoch" }
+{ "type": "PublishRewardsRoot", "epoch_id": 0, "total_reward_amount": 1500,
+  "allocations": [{ "actor": "alice", "amount": 1000 }, { "actor": "bob", "amount": 500 }] }
+{ "type": "ClaimReward", "actor": "alice", "epoch_id": 0, "amount": 1000 }
+{ "type": "ExpectRewardsEpoch", "epoch_id": 0, "start_ledger": 1, "end_ledger": 21,
+  "total_reward_amount": 1500, "claimed_amount": 1000, "finalized": true }
+{ "type": "ExpectCurrentRewardsEpoch", "epoch_id": 1 }
+{ "type": "ExpectAvailableRewardsPool", "amount": 8500 }
+{ "type": "ExpectRewardClaimed", "actor": "alice", "epoch_id": 0, "claimed": true }
+{ "type": "ExpectRewardBalance", "actor": "alice", "balance": 1000 }
+```
+
+`FundRewardsPool` mints the reward asset to `actor` and pays it in through
+`fund_pool`. `PublishRewardsRoot` builds the Merkle tree over `allocations`
+(the contract's leaf encoding, sorted-pair hashing, odd nodes promoted) and
+publishes its root as the governor. `ClaimReward` submits the proof of the
+actor's own leaf in that epoch's published allocation, so claiming any other
+amount fails with `InvalidProof`; with no published allocation the proof is
+empty. See `scenarios/voting_rewards.json`.
+
 ## Simulation Report
 
 Each run produces a JSON report with per-step results and aggregate metrics:

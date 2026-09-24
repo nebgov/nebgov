@@ -336,6 +336,59 @@ pub enum SimStep {
         #[serde(default)]
         expect_growth: bool,
     },
+    /// Mint `amount` of the harness's reward asset to `actor`, then have
+    /// `actor` pay it into the voting-rewards pool via `fund_pool`.
+    FundRewardsPool {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        amount: i128,
+    },
+    StartNextRewardsEpoch,
+    /// Build a Merkle tree over `allocations` (leaves as the contract's
+    /// `merkle::compute_leaf`) and publish its root for `epoch_id`, called as
+    /// the governor (the contract's admin) like `UpdateConfig`.
+    PublishRewardsRoot {
+        epoch_id: u64,
+        #[serde(with = "i128_compat")]
+        total_reward_amount: i128,
+        allocations: Vec<SimRewardAllocation>,
+    },
+    /// Claim `amount` from `epoch_id` with the proof of `actor`'s own leaf in
+    /// that epoch's published allocation (empty if it has none), so claiming
+    /// any amount other than the allocated one fails proof verification.
+    ClaimReward {
+        actor: String,
+        epoch_id: u64,
+        #[serde(with = "i128_compat")]
+        amount: i128,
+    },
+    ExpectRewardsEpoch {
+        epoch_id: u64,
+        start_ledger: u32,
+        end_ledger: u32,
+        #[serde(with = "i128_compat")]
+        total_reward_amount: i128,
+        #[serde(with = "i128_compat")]
+        claimed_amount: i128,
+        finalized: bool,
+    },
+    ExpectCurrentRewardsEpoch {
+        epoch_id: u64,
+    },
+    ExpectAvailableRewardsPool {
+        #[serde(with = "i128_compat")]
+        amount: i128,
+    },
+    ExpectRewardClaimed {
+        actor: String,
+        epoch_id: u64,
+        claimed: bool,
+    },
+    ExpectRewardBalance {
+        actor: String,
+        #[serde(with = "i128_compat")]
+        balance: i128,
+    },
 }
 
 impl SimStep {
@@ -395,6 +448,15 @@ impl SimStep {
             SimStep::ExpectLpShares { .. } => "ExpectLpShares",
             SimStep::ExpectPoolTokenBalance { .. } => "ExpectPoolTokenBalance",
             SimStep::ExpectPoolInvariant { .. } => "ExpectPoolInvariant",
+            SimStep::FundRewardsPool { .. } => "FundRewardsPool",
+            SimStep::StartNextRewardsEpoch => "StartNextRewardsEpoch",
+            SimStep::PublishRewardsRoot { .. } => "PublishRewardsRoot",
+            SimStep::ClaimReward { .. } => "ClaimReward",
+            SimStep::ExpectRewardsEpoch { .. } => "ExpectRewardsEpoch",
+            SimStep::ExpectCurrentRewardsEpoch { .. } => "ExpectCurrentRewardsEpoch",
+            SimStep::ExpectAvailableRewardsPool { .. } => "ExpectAvailableRewardsPool",
+            SimStep::ExpectRewardClaimed { .. } => "ExpectRewardClaimed",
+            SimStep::ExpectRewardBalance { .. } => "ExpectRewardBalance",
         }
     }
 }
@@ -416,6 +478,14 @@ pub enum SimProposalState {
     Executed,
     Cancelled,
     Expired,
+}
+
+/// One `(actor, amount)` leaf of a voting-rewards epoch's Merkle tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimRewardAllocation {
+    pub actor: String,
+    #[serde(with = "i128_compat")]
+    pub amount: i128,
 }
 
 /// Which side of the harness's liquidity pool a `Swap` sells into.
@@ -542,7 +612,11 @@ impl Scenario {
                 | SimStep::RemoveLiquidity { actor, .. }
                 | SimStep::Swap { actor, .. }
                 | SimStep::ExpectLpShares { actor, .. }
-                | SimStep::ExpectPoolTokenBalance { actor, .. } => Some(actor.as_str()),
+                | SimStep::ExpectPoolTokenBalance { actor, .. }
+                | SimStep::FundRewardsPool { actor, .. }
+                | SimStep::ClaimReward { actor, .. }
+                | SimStep::ExpectRewardClaimed { actor, .. }
+                | SimStep::ExpectRewardBalance { actor, .. } => Some(actor.as_str()),
                 _ => None,
             };
             if let Some(name) = actor_ref {
@@ -556,6 +630,16 @@ impl Scenario {
                         "step {} delegates to unknown actor '{}'",
                         i, delegatee
                     ));
+                }
+            }
+            if let SimStep::PublishRewardsRoot { allocations, .. } = step {
+                for allocation in allocations {
+                    if !actor_names.contains(allocation.actor.as_str()) {
+                        return Err(format!(
+                            "step {} allocates rewards to unknown actor '{}'",
+                            i, allocation.actor
+                        ));
+                    }
                 }
             }
             if let SimStep::ProposeBondSlash { recipient, .. } = step {
