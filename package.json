@@ -16,6 +16,7 @@
     "dev": "pnpm --filter nebgov-app dev",
     "test:sdk": "pnpm --filter @nebgov/sdk test",
     "test:app": "pnpm --filter nebgov-app test",
+    "test:cli": "pnpm --filter @nebgov/cli test",
     "simulate": "tsx scripts/simulate.ts",
     "simulation:test": "pnpm --filter @nebgov/simulation test"
   },
