@@ -34,8 +34,6 @@ export interface Lock {
 
 export interface VoteEscrowStats {
   total_locked: bigint;
-  avg_lock_duration: number;
-  num_active_locks: number;
 }
 
 export class VoteEscrowClient {
@@ -259,6 +257,18 @@ export class VoteEscrowClient {
     });
   }
 
+  /**
+   * Reads `total_locked` (the only escrow-wide figure the contract actually
+   * exposes) from `get_past_total_supply` at the latest ledger. Returns
+   * `null` on simulation failure, a missing/unparseable retval, or a
+   * reported total of zero (no meaningful data yet).
+   *
+   * `avg_lock_duration` and `num_active_locks` were removed (#1257): the
+   * contract has no entrypoint that can supply either, so this method
+   * previously shipped them as hardcoded zeros — see the related
+   * contract issue tracking `get_total_locked`/`get_admin` getters that
+   * would be needed to compute them for real.
+   */
   async getEscrowStats(): Promise<VoteEscrowStats | null> {
     return this.retry(async () => {
       // Determine a ledger sequence to query the historical total supply at
@@ -303,11 +313,7 @@ export class VoteEscrowClient {
       // If the contract reports zero, treat it as no meaningful data
       if (totalLocked === 0n) return null;
 
-      return {
-        total_locked: totalLocked,
-        avg_lock_duration: 0,
-        num_active_locks: 0,
-      };
+      return { total_locked: totalLocked };
     });
   }
 }
