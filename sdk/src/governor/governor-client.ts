@@ -454,6 +454,13 @@ export class GovernorClient {
     return _hasVoted(this, proposalId, voter);
   }
 
+  async getReceipt(
+    proposalId: bigint,
+    voter: string,
+  ): Promise<{ hasVoted: boolean; support: VoteSupport; weight: bigint; reason: string }> {
+    return _getReceipt(this, proposalId, voter);
+  }
+
   async canPropose(proposer: string): Promise<CanProposeResult> {
     return _canPropose(this, proposer);
   }
