@@ -86,6 +86,8 @@ fn test_initialize() {
             .get(&DataKey::TotalLocked)
             .unwrap_or(0);
         assert_eq!(total_locked, 0);
+        assert_eq!(VoteEscrowContract::get_total_locked(f.env.clone()), 0);
+        assert_eq!(VoteEscrowContract::get_admin(f.env.clone()), f.admin);
     });
 }
 
@@ -131,6 +133,66 @@ fn test_create_lock_updates_total() {
             .get(&DataKey::TotalLocked)
             .unwrap_or(0);
         assert_eq!(total_locked, amount);
+    });
+}
+
+#[test]
+fn test_get_past_total_supply_checkpoint_boundaries() {
+    let f = setup();
+    let checkpoints: Vec<(u32, i128)> =
+        Vec::from_array(&f.env, [(10, 100), (20, 200), (30, 300)]);
+
+    f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .instance()
+            .set(&DataKey::GlobalCheckpoints, &checkpoints);
+
+        assert_eq!(VoteEscrowContract::get_past_total_supply(f.env.clone(), 20), 200);
+        assert_eq!(VoteEscrowContract::get_past_total_supply(f.env.clone(), 25), 200);
+        assert_eq!(VoteEscrowContract::get_past_total_supply(f.env.clone(), 5), 0);
+        assert_eq!(VoteEscrowContract::get_past_total_supply(f.env.clone(), 35), 300);
+    });
+}
+
+#[test]
+fn test_active_lock_survives_persistent_ttl_and_withdraws() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token = sac.address();
+    let contract_id = env.register(VoteEscrowContract, ());
+    token::StellarAssetClient::new(&env, &token).mint(&user, &1_000);
+
+    env.as_contract(&contract_id, || {
+        VoteEscrowContract::initialize(
+            env.clone(),
+            admin,
+            token,
+            MIN_LOCK_DURATION,
+            MAX_LOCK_DURATION,
+            MAX_MULTIPLIER_BPS,
+        );
+        env.storage()
+            .instance()
+            .extend_ttl(MAX_LOCK_DURATION + 1, MAX_LOCK_DURATION + 1);
+    });
+
+    let lock = env.as_contract(&contract_id, || {
+        VoteEscrowContract::create_lock(env.clone(), user.clone(), 1_000, MAX_LOCK_DURATION)
+    });
+    env.ledger().set_sequence_number(lock.start_ledger + 5_000);
+
+    env.as_contract(&contract_id, || {
+        assert!(VoteEscrowContract::get_lock(env.clone(), user.clone()).is_some());
+    });
+
+    env.ledger().set_sequence_number(lock.end_ledger);
+    env.as_contract(&contract_id, || {
+        assert_eq!(VoteEscrowContract::withdraw(env.clone(), user), 1_000);
     });
 }
 

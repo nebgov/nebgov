@@ -149,6 +149,7 @@ impl VoteEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Lock(owner.clone()), &lock);
+        Self::refresh_persistent_ttl(&env, &DataKey::Lock(owner.clone()));
 
         let current_total: i128 = env
             .storage()
@@ -229,6 +230,7 @@ impl VoteEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Lock(owner.clone()), &lock);
+        Self::refresh_persistent_ttl(&env, &DataKey::Lock(owner.clone()));
 
         let current_total: i128 = env
             .storage()
@@ -303,6 +305,7 @@ impl VoteEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Lock(owner.clone()), &lock);
+        Self::refresh_persistent_ttl(&env, &DataKey::Lock(owner.clone()));
 
         let current_ledger = env.ledger().sequence();
         Self::update_global_checkpoint(&env, current_ledger);
@@ -356,6 +359,7 @@ impl VoteEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::LockHistory(owner.clone()), &history);
+        Self::refresh_persistent_ttl(&env, &DataKey::LockHistory(owner.clone()));
 
         env.storage()
             .persistent()
@@ -436,12 +440,7 @@ impl VoteEscrowContract {
             .get(&DataKey::GlobalCheckpoints);
 
         if let Some(checkpoints) = checkpoints_opt {
-            for i in (0..checkpoints.len()).rev() {
-                let (cp_ledger, cp_total) = checkpoints.get(i).unwrap();
-                if cp_ledger <= ledger {
-                    return cp_total;
-                }
-            }
+            return Self::binary_search_checkpoint(&checkpoints, ledger);
         }
 
         0
@@ -451,6 +450,22 @@ impl VoteEscrowContract {
         env.storage()
             .instance()
             .get(&DataKey::LockedToken)
+            .ok_or(VoteEscrowError::NotInitialized)
+            .unwrap()
+    }
+
+    pub fn get_total_locked(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalLocked)
+            .ok_or(VoteEscrowError::NotInitialized)
+            .unwrap()
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
             .ok_or(VoteEscrowError::NotInitialized)
             .unwrap()
     }
@@ -584,6 +599,38 @@ impl VoteEscrowContract {
         lock.amount
             .checked_add(decayed_boost)
             .unwrap_or(lock.amount)
+    }
+
+    fn binary_search_checkpoint(checkpoints: &Vec<(u32, i128)>, target_ledger: u32) -> i128 {
+        let mut low: u32 = 0;
+        let mut high: u32 = checkpoints.len();
+
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let (ledger, _) = checkpoints.get(mid).unwrap();
+            if ledger <= target_ledger {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        if low == 0 {
+            return 0;
+        }
+
+        let (_, total) = checkpoints.get(low - 1).unwrap();
+        total
+    }
+
+    fn refresh_persistent_ttl(env: &Env, key: &DataKey) {
+        let max_duration: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxLockDuration)
+            .unwrap_or(0);
+        let ttl = max_duration.saturating_add(1);
+        env.storage().persistent().extend_ttl(key, ttl, ttl);
     }
 
     fn update_global_checkpoint(env: &Env, ledger: u32) {
