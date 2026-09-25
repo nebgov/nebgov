@@ -19,4 +19,5 @@ pub enum VotingRewardsError {
     EpochOverclaimed = 13,
     EpochOverflow = 14,
     EpochAlreadySwept = 15,
+    ArithmeticOverflow = 16,
 }

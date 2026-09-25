@@ -177,9 +177,12 @@ impl VotingRewardsContract {
         }
 
         let allocated = Self::allocated(&env);
+        let new_allocated = allocated
+            .checked_add(total_reward_amount)
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow));
         env.storage()
             .instance()
-            .set(&DataKey::RewardsPool, &(allocated + total_reward_amount));
+            .set(&DataKey::RewardsPool, &new_allocated);
 
         epoch.merkle_root = Some(merkle_root.clone());
         epoch.total_reward_amount = total_reward_amount;
@@ -232,7 +235,10 @@ impl VotingRewardsContract {
         // few stroops of an epoch unallocated, never overshoot it — but the
         // root is admin-supplied, so refuse to pay past what the epoch was
         // actually allocated instead of trusting that arithmetic.
-        let new_claimed = epoch.claimed_amount + amount;
+        let new_claimed = epoch
+            .claimed_amount
+            .checked_add(amount)
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow));
         if new_claimed > epoch.total_reward_amount {
             env.panic_with_error(VotingRewardsError::EpochOverclaimed);
         }
@@ -250,9 +256,12 @@ impl VotingRewardsContract {
         Self::store_epoch(&env, &epoch);
 
         let allocated = Self::allocated(&env);
+        let new_allocated = allocated
+            .checked_sub(amount)
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow));
         env.storage()
             .instance()
-            .set(&DataKey::RewardsPool, &(allocated - amount));
+            .set(&DataKey::RewardsPool, &new_allocated);
 
         let reward_token = Self::reward_token(&env);
         token::TokenClient::new(&env, &reward_token).transfer(
@@ -475,7 +484,9 @@ impl VotingRewardsContract {
         let reward_token = Self::reward_token(env);
         let balance =
             token::TokenClient::new(env, &reward_token).balance(&env.current_contract_address());
-        balance - Self::allocated(env)
+        balance
+            .checked_sub(Self::allocated(env))
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow))
     }
 }
 
