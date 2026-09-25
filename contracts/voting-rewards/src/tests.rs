@@ -3,7 +3,7 @@ extern crate std;
 use super::*;
 use crate::merkle::{compute_leaf, hash_pair};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, Events as _, Ledger as _},
     token, vec, Env, String as SorobanString,
 };
 
@@ -531,7 +531,7 @@ fn set_admin_emits_admin_set_event() {
     let events = env.events().all();
     let event = events.last().unwrap();
 
-    assert_eq!(event.topics.len(), 1);
+    assert_eq!(event.1.len(), 1);
 }
 
 #[test]
@@ -588,6 +588,37 @@ fn update_epoch_duration_emits_event() {
     let events = env.events().all();
     let event = events.last().unwrap();
 
-    assert_eq!(event.topics.len(), 1);
+    assert_eq!(event.1.len(), 1);
+}
+
+#[test]
+fn available_pool_reflects_a_correctly_negative_result_when_allocated_exceeds_balance() {
+    let env = Env::default();
+    let f = setup(&env);
+
+    // Force RewardsPool above the contract's actual token balance (0) - an
+    // invariant that should never hold in practice. checked_sub doesn't
+    // panic here (balance - allocated still fits in i128), but it does
+    // guarantee the arithmetic itself can no longer silently misbehave on
+    // true overflow; the correctly negative result then flows into
+    // publish_epoch_root's `total_reward_amount > available_pool()` check
+    // and correctly blocks even a zero-amount publish while the pool is in
+    // this state.
+    env.as_contract(&f.contract_id, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardsPool, &1_000i128);
+    });
+
+    assert_eq!(f.client.get_available_pool(), -1_000);
+
+    let root = BytesN::from_array(&env, &[0u8; 32]);
+    let epoch = f.client.get_epoch(&0).unwrap();
+    advance_to(&env, epoch.end_ledger);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        f.client.publish_epoch_root(&f.admin, &0, &root, &0);
+    }));
+    assert!(result.is_err());
 }
 
