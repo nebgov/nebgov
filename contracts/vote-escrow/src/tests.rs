@@ -2,8 +2,8 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    token, Env,
+    testutils::{Address as _, Events as _, Ledger as _},
+    token, Env, Symbol, TryIntoVal,
 };
 
 const MIN_LOCK_DURATION: u32 = 100;
@@ -420,7 +420,7 @@ fn test_withdraw() {
         );
 
         // Advance ledger past lock maturity
-        f.env.ledger().with_sequence(lock.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
         let withdrawn_amount = VoteEscrowContract::withdraw(
             f.env.clone(),
@@ -468,7 +468,7 @@ fn test_withdraw_updates_total_checked() {
             .persistent()
             .get(&DataKey::Lock(f.user.clone()))
             .unwrap();
-        f.env.ledger().with_sequence(lock.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
         VoteEscrowContract::withdraw(
             f.env.clone(),
@@ -525,7 +525,7 @@ fn test_withdraw_already_withdrawn() {
         );
 
         // Advance ledger past lock maturity
-        f.env.ledger().with_sequence(lock.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
         VoteEscrowContract::withdraw(
             f.env.clone(),
@@ -578,7 +578,7 @@ fn test_get_votes_decayed() {
 
         // Advance to midpoint
         let midpoint = lock.start_ledger + (duration / 2);
-        f.env.ledger().with_sequence(midpoint);
+        f.env.ledger().set_sequence_number(midpoint);
 
         let votes = VoteEscrowContract::get_votes(f.env.clone(), f.user.clone());
         assert!(votes < lock.initial_voting_power);
@@ -601,7 +601,7 @@ fn test_get_votes_expired() {
         );
 
         // Advance past maturity
-        f.env.ledger().with_sequence(lock.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
         let votes = VoteEscrowContract::get_votes(f.env.clone(), f.user.clone());
         assert_eq!(votes, amount);
@@ -680,11 +680,11 @@ fn test_get_lock_history() {
         );
 
         // Withdraw first lock
-        f.env.ledger().with_sequence(lock1.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock1.end_ledger + 1);
         VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
 
         // Create second lock
-        f.env.ledger().with_sequence(lock1.end_ledger + 2);
+        f.env.ledger().set_sequence_number(lock1.end_ledger + 2);
         let lock2 = VoteEscrowContract::create_lock(
             f.env.clone(),
             f.user.clone(),
@@ -693,7 +693,7 @@ fn test_get_lock_history() {
         );
 
         // Withdraw second lock
-        f.env.ledger().with_sequence(lock2.end_ledger + 1);
+        f.env.ledger().set_sequence_number(lock2.end_ledger + 1);
         VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
 
         let history = VoteEscrowContract::get_lock_history(
@@ -784,5 +784,133 @@ fn test_update_escrow_config() {
             1_000,
             new_min,
         );
+    });
+}
+
+/// Finds the first event published by `contract_id` whose first topic is
+/// `topic`, and returns its full topic list and payload. Panics if none
+/// matches, so a missing/renamed event fails the test loudly.
+fn find_event(env: &Env, contract_id: &Address, topic: &str) -> (Vec<soroban_sdk::Val>, soroban_sdk::Val) {
+    let topic_symbol = Symbol::new(env, topic);
+    let events = env.events().all();
+    let (_, topics, data) = events
+        .iter()
+        .find(|(addr, topics, _)| {
+            *addr == *contract_id
+                && topics.get(0).map_or(false, |t| {
+                    let first: Result<Symbol, _> = t.try_into_val(env);
+                    first.is_ok() && first.unwrap() == topic_symbol
+                })
+        })
+        .unwrap_or_else(|| panic!("expected a {} event", topic));
+    (topics, data)
+}
+
+#[test]
+fn test_create_lock_emits_lock_created_event() {
+    let f = setup();
+    let amount = 1_000;
+    let duration = 1_000;
+
+    f.env.as_contract(&f.contract_id, || {
+        let lock = VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+
+        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_CREATED_TOPIC);
+        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+        assert_eq!(owner_topic, f.user);
+
+        let decoded: LockCreatedEvent = data.try_into_val(&f.env).unwrap();
+        assert_eq!(decoded.owner, f.user);
+        assert_eq!(decoded.amount, amount);
+        assert_eq!(decoded.end_ledger, lock.end_ledger);
+        assert_eq!(decoded.initial_voting_power, lock.initial_voting_power);
+    });
+}
+
+#[test]
+fn test_increase_lock_amount_emits_lock_increased_event() {
+    let f = setup();
+    let amount = 1_000;
+    let additional_amount = 500;
+    let duration = 1_000;
+
+    f.env.as_contract(&f.contract_id, || {
+        VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+
+        let lock2 = VoteEscrowContract::increase_lock_amount(
+            f.env.clone(),
+            f.user.clone(),
+            additional_amount,
+        );
+
+        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_INCREASED_TOPIC);
+        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+        assert_eq!(owner_topic, f.user);
+
+        let decoded: LockIncreasedEvent = data.try_into_val(&f.env).unwrap();
+        assert_eq!(decoded.owner, f.user);
+        assert_eq!(decoded.added_amount, additional_amount);
+        assert_eq!(decoded.new_voting_power, lock2.initial_voting_power);
+    });
+}
+
+#[test]
+fn test_extend_lock_emits_lock_extended_event() {
+    let f = setup();
+    let amount = 1_000;
+    let duration = 1_000;
+
+    f.env.as_contract(&f.contract_id, || {
+        let lock1 = VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+        let new_end_ledger = lock1.end_ledger.checked_add(1_000).unwrap();
+
+        VoteEscrowContract::extend_lock(f.env.clone(), f.user.clone(), new_end_ledger);
+
+        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_EXTENDED_TOPIC);
+        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+        assert_eq!(owner_topic, f.user);
+
+        let decoded: LockExtendedEvent = data.try_into_val(&f.env).unwrap();
+        assert_eq!(decoded.owner, f.user);
+        assert_eq!(decoded.old_end_ledger, lock1.end_ledger);
+        assert_eq!(decoded.new_end_ledger, new_end_ledger);
+    });
+}
+
+#[test]
+fn test_withdraw_emits_lock_withdrawn_event() {
+    let f = setup();
+    let amount = 1_000;
+    let duration = 100;
+
+    f.env.as_contract(&f.contract_id, || {
+        let lock = VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+
+        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+
+        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_WITHDRAWN_TOPIC);
+        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+        assert_eq!(owner_topic, f.user);
+
+        let decoded: LockWithdrawnEvent = data.try_into_val(&f.env).unwrap();
+        assert_eq!(decoded.owner, f.user);
+        assert_eq!(decoded.amount, amount);
+    });
+}
+
+#[test]
+fn test_create_lock_overflowing_boost_computation_panics() {
+    let f = setup();
+    // Chosen so `amount * MAX_MULTIPLIER_BPS` overflows i128 inside
+    // compute_initial_voting_power's boost calculation.
+    let amount = i128::MAX / (MAX_MULTIPLIER_BPS as i128) + 1;
+    let duration = MAX_LOCK_DURATION;
+
+    f.env.as_contract(&f.contract_id, || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+        }));
+        assert!(result.is_err());
     });
 }

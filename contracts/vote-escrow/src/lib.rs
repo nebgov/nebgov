@@ -521,29 +521,35 @@ impl VoteEscrowContract {
 
         let duration_range = max_duration.saturating_sub(min_duration) as i128;
         if duration_range == 0 {
+            let boost = amount
+                .checked_mul(max_multiplier_bps as i128)
+                .ok_or(VoteEscrowError::ArithmeticOverflow)
+                .unwrap()
+                .checked_div(10000)
+                .ok_or(VoteEscrowError::ArithmeticOverflow)
+                .unwrap();
             return amount
-                .checked_add(
-                    amount
-                        .checked_mul(max_multiplier_bps as i128)
-                        .unwrap_or(0)
-                        .checked_div(10000)
-                        .unwrap_or(0),
-                )
-                .unwrap_or(0);
+                .checked_add(boost)
+                .ok_or(VoteEscrowError::ArithmeticOverflow)
+                .unwrap();
         }
 
         let applicable_duration = (duration_ledgers.saturating_sub(min_duration)) as i128;
-        let applicable_bps =
-            (applicable_duration.checked_mul(max_multiplier_bps as i128).unwrap_or(0))
-                .checked_div(duration_range)
-                .unwrap_or(0);
+        let applicable_bps = applicable_duration
+            .checked_mul(max_multiplier_bps as i128)
+            .ok_or(VoteEscrowError::ArithmeticOverflow)
+            .unwrap()
+            .checked_div(duration_range)
+            .ok_or(VoteEscrowError::ArithmeticOverflow)
+            .unwrap();
 
         let boost = amount
             .checked_mul(applicable_bps)
             .ok_or(VoteEscrowError::ArithmeticOverflow)
             .unwrap()
             .checked_div(10000)
-            .unwrap_or(0);
+            .ok_or(VoteEscrowError::ArithmeticOverflow)
+            .unwrap();
 
         amount
             .checked_add(boost)
