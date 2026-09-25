@@ -30,17 +30,19 @@ use sorogov_governor::{
     GovernorContract, GovernorContractClient, GovernorSettings, ProposalState, VoteSupport,
     VoteType,
 };
+use sorogov_liquidity::{LiquidityContract, LiquidityContractClient, Pool};
 use sorogov_proposal_bonds::{BondState, ProposalBondsContract, ProposalBondsContractClient};
 use sorogov_signal_anchor::{SignalAnchorContract, SignalAnchorContractClient};
 use sorogov_timelock::{TimelockContract, TimelockContractClient};
 use sorogov_token_votes::{TokenVotesContract, TokenVotesContractClient};
 use sorogov_treasury::{TreasuryContract, TreasuryContractClient};
 use sorogov_vote_escrow::{VoteEscrowContract, VoteEscrowContractClient};
+use sorogov_voting_rewards::{merkle, VotingRewardsContract, VotingRewardsContractClient};
 
 use crate::report::{SimulationReport, StepResult};
 use crate::scenario::{
-    ActorRole, Scenario, SimBondState, SimGovernorSettings, SimProposalState, SimStep,
-    SimVoteSupport, SimVoteType,
+    ActorRole, Scenario, SimBondState, SimGovernorSettings, SimPoolAsset, SimProposalState,
+    SimStep, SimVoteSupport, SimVoteType,
 };
 
 /// A no-op target contract used to resolve `SimStep::Propose` targets that
@@ -62,6 +64,15 @@ impl SimTargetContract {
 /// `contracts/governor/src/lib.rs`.
 const SECONDS_PER_LEDGER: u64 = 5;
 
+/// Outcome ids of the harness's single liquidity pool: asset A is outcome 0
+/// (the pool's `reserve_a`), asset B is outcome 1 (`reserve_b`).
+const POOL_OUTCOME_A: u32 = 0;
+const POOL_OUTCOME_B: u32 = 1;
+
+/// Voting-rewards epoch length. Epoch 0 opens at genesis (ledger 1), so it
+/// covers ledgers 1..21, epoch 1 covers 21..41, and so on.
+const REWARDS_EPOCH_LEDGERS: u32 = 20;
+
 pub struct SimulationRunner {
     env: Env,
     scenario: Scenario,
@@ -77,6 +88,17 @@ pub struct SimulationRunner {
     proposal_bonds: ProposalBondsContractClient<'static>,
     vote_escrow: VoteEscrowContractClient<'static>,
     signal_anchor: SignalAnchorContractClient<'static>,
+    liquidity: LiquidityContractClient<'static>,
+    pool_token_a: Address,
+    pool_token_b: Address,
+    /// Pool state captured just before the most recent `AddLiquidity`,
+    /// `RemoveLiquidity` or `Swap`, compared against by `ExpectPoolInvariant`.
+    pool_before_last_change: Option<Pool>,
+    voting_rewards: VotingRewardsContractClient<'static>,
+    reward_token: Address,
+    /// Each successfully published epoch's `(claimant, amount)` leaves, in
+    /// tree order, so `ClaimReward` can rebuild a claimant's proof.
+    reward_allocations: HashMap<u64, Vec<(Address, i128)>>,
     token: Address,
     target: Address,
     treasury_addr: Address,
@@ -201,6 +223,25 @@ impl SimulationRunner {
         let signal_anchor = SignalAnchorContractClient::new(&env, &signal_anchor_id);
         signal_anchor.initialize(&admin);
 
+        let liquidity_id = env.register(LiquidityContract, ());
+        let liquidity = LiquidityContractClient::new(&env, &liquidity_id);
+        liquidity.initialize(&governor_id);
+        let pool_token_a = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        let pool_token_b = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+
+        // The governor is the admin, matching the intended deployment where
+        // publishing a root is itself a governance-executed action.
+        let reward_token = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        let voting_rewards_id = env.register(VotingRewardsContract, ());
+        let voting_rewards = VotingRewardsContractClient::new(&env, &voting_rewards_id);
+        voting_rewards.initialize(&governor_id, &reward_token, &REWARDS_EPOCH_LEDGERS);
+
         let target = env.register(SimTargetContract, ());
 
         let sac = token::StellarAssetClient::new(&env, &token);
@@ -231,6 +272,13 @@ impl SimulationRunner {
             proposal_bonds,
             vote_escrow,
             signal_anchor,
+            liquidity,
+            pool_token_a,
+            pool_token_b,
+            pool_before_last_change: None,
+            voting_rewards,
+            reward_token,
+            reward_allocations: HashMap::new(),
             token,
             target,
             treasury_addr: treasury_id,
@@ -877,7 +925,240 @@ impl SimulationRunner {
                     );
                 }
             }
+            SimStep::CreateLiquidityPool { fee_bps } => {
+                let governor = self.governor.address.clone();
+                self.liquidity.create_pool(
+                    &governor,
+                    &POOL_OUTCOME_A,
+                    &POOL_OUTCOME_B,
+                    &self.pool_token_a,
+                    &self.pool_token_b,
+                );
+                self.liquidity
+                    .initialize_pool(&governor, &POOL_OUTCOME_A, &POOL_OUTCOME_B, fee_bps);
+            }
+            SimStep::MintPoolTokens {
+                actor,
+                amount_a,
+                amount_b,
+            } => {
+                let addr = self.get_actor(actor).clone();
+                token::StellarAssetClient::new(&self.env, &self.pool_token_a).mint(&addr, amount_a);
+                token::StellarAssetClient::new(&self.env, &self.pool_token_b).mint(&addr, amount_b);
+            }
+            SimStep::AddLiquidity {
+                actor,
+                amount_a,
+                amount_b,
+                min_lp_tokens_out,
+            } => {
+                let provider = self.get_actor(actor).clone();
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity.add_liquidity(
+                    &provider,
+                    &POOL_OUTCOME_A,
+                    &POOL_OUTCOME_B,
+                    amount_a,
+                    amount_b,
+                    min_lp_tokens_out,
+                );
+            }
+            SimStep::RemoveLiquidity { actor, lp_tokens } => {
+                let provider = self.get_actor(actor).clone();
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity
+                    .remove_liquidity(&provider, &POOL_OUTCOME_A, &POOL_OUTCOME_B, lp_tokens);
+            }
+            SimStep::Swap {
+                actor,
+                asset_in,
+                amount_in,
+                min_amount_out,
+            } => {
+                let trader = self.get_actor(actor).clone();
+                let (outcome_in, outcome_out) = match asset_in {
+                    SimPoolAsset::A => (POOL_OUTCOME_A, POOL_OUTCOME_B),
+                    SimPoolAsset::B => (POOL_OUTCOME_B, POOL_OUTCOME_A),
+                };
+                self.pool_before_last_change = self.current_pool();
+                self.liquidity
+                    .swap(&trader, &outcome_in, &outcome_out, amount_in, min_amount_out);
+            }
+            SimStep::UpdatePoolFee { fee_bps } => {
+                let governor = self.governor.address.clone();
+                self.liquidity
+                    .update_pool_fee(&governor, &POOL_OUTCOME_A, &POOL_OUTCOME_B, fee_bps);
+            }
+            SimStep::ExpectPool {
+                reserve_a,
+                reserve_b,
+                total_lp_supply,
+                fee_bps,
+            } => {
+                let actual = self.liquidity.get_pool(&POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                let expected = Pool {
+                    reserve_a: *reserve_a,
+                    reserve_b: *reserve_b,
+                    total_lp_supply: *total_lp_supply,
+                    fee_bps: *fee_bps,
+                };
+                if actual != expected {
+                    panic!("expected pool {:?}, was {:?}", expected, actual);
+                }
+            }
+            SimStep::ExpectLpShares { actor, lp_tokens } => {
+                let provider = self.get_actor(actor).clone();
+                let actual =
+                    self.liquidity
+                        .get_lp_position(&provider, &POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                if actual != *lp_tokens {
+                    panic!(
+                        "expected '{}' to hold {} LP shares, held {}",
+                        actor, lp_tokens, actual
+                    );
+                }
+            }
+            SimStep::ExpectPoolTokenBalance {
+                actor,
+                balance_a,
+                balance_b,
+            } => {
+                let addr = self.get_actor(actor).clone();
+                let actual_a = token::TokenClient::new(&self.env, &self.pool_token_a).balance(&addr);
+                let actual_b = token::TokenClient::new(&self.env, &self.pool_token_b).balance(&addr);
+                if (actual_a, actual_b) != (*balance_a, *balance_b) {
+                    panic!(
+                        "expected '{}' to hold ({}, {}) of pool assets (A, B), held ({}, {})",
+                        actor, balance_a, balance_b, actual_a, actual_b
+                    );
+                }
+            }
+            SimStep::ExpectPoolInvariant { expect_growth } => {
+                let before = self.pool_before_last_change.clone().unwrap_or_else(|| {
+                    panic!("ExpectPoolInvariant needs a prior AddLiquidity, RemoveLiquidity or Swap")
+                });
+                let after = self.liquidity.get_pool(&POOL_OUTCOME_A, &POOL_OUTCOME_B);
+                check_pool_invariant(&before, &after, *expect_growth);
+            }
+            SimStep::FundRewardsPool { actor, amount } => {
+                let funder = self.get_actor(actor).clone();
+                token::StellarAssetClient::new(&self.env, &self.reward_token).mint(&funder, amount);
+                self.voting_rewards.fund_pool(&funder, amount);
+            }
+            SimStep::StartNextRewardsEpoch => {
+                self.voting_rewards.start_next_epoch();
+            }
+            SimStep::PublishRewardsRoot {
+                epoch_id,
+                total_reward_amount,
+                allocations,
+            } => {
+                let leaves: Vec<(Address, i128)> = allocations
+                    .iter()
+                    .map(|a| (self.get_actor(&a.actor).clone(), a.amount))
+                    .collect();
+                let hashes = reward_leaves(&self.env, *epoch_id, &leaves);
+                let root = merkle_root(&self.env, &hashes);
+                let governor = self.governor.address.clone();
+                self.voting_rewards
+                    .publish_epoch_root(&governor, epoch_id, &root, total_reward_amount);
+                // Only reached if the contract accepted the root, so a
+                // rejected re-publish can't replace the stored allocation.
+                self.reward_allocations.insert(*epoch_id, leaves);
+            }
+            SimStep::ClaimReward {
+                actor,
+                epoch_id,
+                amount,
+            } => {
+                let claimant = self.get_actor(actor).clone();
+                let mut proof = SorobanVec::new(&self.env);
+                if let Some(leaves) = self.reward_allocations.get(epoch_id) {
+                    if let Some(index) = leaves.iter().position(|(addr, _)| *addr == claimant) {
+                        let hashes = reward_leaves(&self.env, *epoch_id, leaves);
+                        proof = merkle_proof(&self.env, &hashes, index);
+                    }
+                }
+                self.voting_rewards.claim(&claimant, epoch_id, amount, &proof);
+            }
+            SimStep::ExpectRewardsEpoch {
+                epoch_id,
+                start_ledger,
+                end_ledger,
+                total_reward_amount,
+                claimed_amount,
+                finalized,
+            } => {
+                let epoch = self
+                    .voting_rewards
+                    .get_epoch(epoch_id)
+                    .unwrap_or_else(|| panic!("no rewards epoch {}", epoch_id));
+                let actual = (
+                    epoch.start_ledger,
+                    epoch.end_ledger,
+                    epoch.total_reward_amount,
+                    epoch.claimed_amount,
+                    epoch.finalized,
+                    epoch.merkle_root.is_some(),
+                );
+                let expected = (
+                    *start_ledger,
+                    *end_ledger,
+                    *total_reward_amount,
+                    *claimed_amount,
+                    *finalized,
+                    *finalized,
+                );
+                if actual != expected {
+                    panic!(
+                        "expected rewards epoch {} (start, end, total, claimed, finalized, has_root) = {:?}, was {:?}",
+                        epoch_id, expected, actual
+                    );
+                }
+            }
+            SimStep::ExpectCurrentRewardsEpoch { epoch_id } => {
+                let actual = self.voting_rewards.get_current_epoch_id();
+                if actual != *epoch_id {
+                    panic!("expected current rewards epoch {}, was {}", epoch_id, actual);
+                }
+            }
+            SimStep::ExpectAvailableRewardsPool { amount } => {
+                let actual = self.voting_rewards.get_available_pool();
+                if actual != *amount {
+                    panic!("expected available rewards pool {}, was {}", amount, actual);
+                }
+            }
+            SimStep::ExpectRewardClaimed {
+                actor,
+                epoch_id,
+                claimed,
+            } => {
+                let claimant = self.get_actor(actor).clone();
+                let actual = self.voting_rewards.has_claimed(epoch_id, &claimant);
+                if actual != *claimed {
+                    panic!(
+                        "expected has_claimed('{}', epoch {}) to be {}, was {}",
+                        actor, epoch_id, claimed, actual
+                    );
+                }
+            }
+            SimStep::ExpectRewardBalance { actor, balance } => {
+                let addr = self.get_actor(actor).clone();
+                let actual = token::TokenClient::new(&self.env, &self.reward_token).balance(&addr);
+                if actual != *balance {
+                    panic!(
+                        "expected '{}' to hold {} of the reward asset, held {}",
+                        actor, balance, actual
+                    );
+                }
+            }
         }
+    }
+
+    /// The pool's current state, or `None` before `CreateLiquidityPool`.
+    fn current_pool(&self) -> Option<Pool> {
+        self.liquidity
+            .get_pool_safe(&POOL_OUTCOME_A, &POOL_OUTCOME_B)
     }
 
     /// Post-process `ExpectError` steps against already-recorded results —
@@ -986,13 +1267,115 @@ fn from_proposal_state(s: ProposalState) -> SimProposalState {
     }
 }
 
-fn from_optimistic_state(s: OptimisticProposalState) -> SimOptimisticProposalState {
-    match s {
-        OptimisticProposalState::ChallengeWindow => SimOptimisticProposalState::ChallengeWindow,
-        OptimisticProposalState::Objected => SimOptimisticProposalState::Objected,
-        OptimisticProposalState::Passed => SimOptimisticProposalState::Passed,
-        OptimisticProposalState::Executed => SimOptimisticProposalState::Executed,
-        OptimisticProposalState::Cancelled => SimOptimisticProposalState::Cancelled,
+fn reward_leaves(env: &Env, epoch_id: u64, leaves: &[(Address, i128)]) -> Vec<BytesN<32>> {
+    leaves
+        .iter()
+        .map(|(addr, amount)| merkle::compute_leaf(env, addr, epoch_id, *amount))
+        .collect()
+}
+
+/// `sha256(min(a, b) || max(a, b))` — mirrors the crate-private
+/// `merkle::hash_pair` in `contracts/voting-rewards`. A mismatch would make
+/// every valid `ClaimReward` fail with `InvalidProof`.
+fn merkle_hash_pair(env: &Env, a: &BytesN<32>, b: &BytesN<32>) -> BytesN<32> {
+    let (first, second) = if a.to_array() <= b.to_array() {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let mut buf = Bytes::from_array(env, &first.to_array());
+    buf.append(&Bytes::from_array(env, &second.to_array()));
+    env.crypto().sha256(&buf).into()
+}
+
+/// One tree level up: hash adjacent pairs, promoting an odd trailing node
+/// unchanged (the same rule as `backend/src/voting-rewards/merkle.ts` and
+/// the contract's own reference tree in `tests.rs`).
+fn merkle_parent_level(env: &Env, level: &[BytesN<32>]) -> Vec<BytesN<32>> {
+    level
+        .chunks(2)
+        .map(|pair| match pair {
+            [a, b] => merkle_hash_pair(env, a, b),
+            [a] => a.clone(),
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
+fn merkle_root(env: &Env, leaves: &[BytesN<32>]) -> BytesN<32> {
+    if leaves.is_empty() {
+        // No leaves: publish an all-zero root nothing can prove against.
+        return BytesN::from_array(env, &[0; 32]);
+    }
+    let mut level = leaves.to_vec();
+    while level.len() > 1 {
+        level = merkle_parent_level(env, &level);
+    }
+    level.remove(0)
+}
+
+fn merkle_proof(env: &Env, leaves: &[BytesN<32>], mut index: usize) -> SorobanVec<BytesN<32>> {
+    let mut proof = SorobanVec::new(env);
+    let mut level = leaves.to_vec();
+    while level.len() > 1 {
+        if let Some(sibling) = level.get(index ^ 1) {
+            proof.push_back(sibling.clone());
+        }
+        level = merkle_parent_level(env, &level);
+        index /= 2;
+    }
+    proof
+}
+
+/// Panics unless `reserve_a * reserve_b / total_lp_supply^2` is no lower
+/// after the change than before it (strictly higher if `expect_growth`).
+/// Cross-multiplied to stay in integers: `k_after * S_before^2` vs
+/// `k_before * S_after^2`.
+fn check_pool_invariant(before: &Pool, after: &Pool, expect_growth: bool) {
+    if after.total_lp_supply == 0 {
+        // A fully withdrawn pool must not strand reserves with no LP claim.
+        if after.reserve_a != 0 || after.reserve_b != 0 {
+            panic!(
+                "pool has no LP supply but still holds reserves: {:?}",
+                after
+            );
+        }
+        return;
+    }
+    if before.total_lp_supply == 0 {
+        // First deposit: nothing to compare against, only that it is funded.
+        if after.reserve_a <= 0 || after.reserve_b <= 0 {
+            panic!("first deposit left an unfunded pool: {:?}", after);
+        }
+        return;
+    }
+
+    let mul = |a: i128, b: i128| {
+        a.checked_mul(b).unwrap_or_else(|| {
+            panic!(
+                "overflow checking pool invariant: {:?} -> {:?}",
+                before, after
+            )
+        })
+    };
+    let k_before = mul(before.reserve_a, before.reserve_b);
+    let k_after = mul(after.reserve_a, after.reserve_b);
+    let lhs = mul(k_after, mul(before.total_lp_supply, before.total_lp_supply));
+    let rhs = mul(k_before, mul(after.total_lp_supply, after.total_lp_supply));
+
+    if lhs < rhs || (expect_growth && lhs == rhs) {
+        panic!(
+            "pool product per LP share {} (k {} -> {}, LP supply {} -> {})",
+            if lhs < rhs {
+                "decreased"
+            } else {
+                "did not grow"
+            },
+            k_before,
+            k_after,
+            before.total_lp_supply,
+            after.total_lp_supply
+        );
     }
 }
 

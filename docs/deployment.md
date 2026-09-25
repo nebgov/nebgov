@@ -113,6 +113,33 @@ stellar contract invoke \
 
 Use governance parameters that match your intended risk profile and review them carefully before activation.
 
+## 3.6 Upgrade a deployed contract
+
+Use `scripts/upgrade-contract.sh` to submit a governance-driven WASM upgrade proposal for any of the following contracts:
+
+- `sorogov_governor`
+- `sorogov_timelock`
+- `sorogov_token_votes`
+- `sorogov_treasury`
+- `sorogov_governor_factory`
+- `sorogov_proposal_bonds`
+- `sorogov_optimistic_governor`
+- `sorogov_conviction_voting`
+- `sorogov_treasury_strategies`
+- `sorogov_signal_anchor`
+- `sorogov_vote_escrow`
+- `sorogov_voting_rewards`
+
+`sorogov_vote_escrow` and `sorogov_voting_rewards` hold user funds (locked tokens and an unclaimed reward pool respectively), so rehearsing the upgrade path against testnet before a mainnet upgrade is strongly recommended.
+
+```bash
+GOVERNOR_ADDRESS=<GOVERNOR_CONTRACT_ID> \
+DEPLOYER_ADDR=<YOUR_ADDRESS> \
+  ./scripts/upgrade-contract.sh sorogov_vote_escrow
+```
+
+The script builds the WASM, installs it on-chain, and submits an `upgrade(wasm_hash)` governance proposal. Follow the printed next-steps to vote, queue, and execute the proposal.
+
 ## 4. Deploy the backend
 
 ### 4.1 Prepare the database

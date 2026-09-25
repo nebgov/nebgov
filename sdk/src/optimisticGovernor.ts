@@ -175,7 +175,7 @@ export class OptimisticGovernorClient {
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
     const sent = await this.server.sendTransaction(prepared);
-    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent);
+    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent as any);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -183,7 +183,7 @@ export class OptimisticGovernorClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw parseOptimisticGovernorError(status);
+        throw parseOptimisticGovernorError(status as any);
       }
     }
     throw parseOptimisticGovernorError("Transaction confirmation timed out");
@@ -210,7 +210,7 @@ export class OptimisticGovernorClient {
     const signedXdr = await signUnsignedXdr(prepared.toXDR());
     const signed = TransactionBuilder.fromXDR(signedXdr, this.passphrase);
     const sent = await this.server.sendTransaction(signed);
-    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent);
+    if (sent.status === "ERROR") throw parseOptimisticGovernorError(sent as any);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -218,7 +218,7 @@ export class OptimisticGovernorClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw parseOptimisticGovernorError(status);
+        throw parseOptimisticGovernorError(status as any);
       }
     }
     throw parseOptimisticGovernorError("Transaction confirmation timed out");
@@ -318,7 +318,7 @@ export class OptimisticGovernorClient {
     }).addOperation(this.contract.call(fn, ...args)).setTimeout(30).build();
     const result = await this.server.simulateTransaction(tx);
     if (SorobanRpc.Api.isSimulationError(result) || !result.result?.retval) {
-      throw parseOptimisticGovernorError(result);
+      throw parseOptimisticGovernorError(result as any);
     }
     return scValToNative(result.result.retval);
   }

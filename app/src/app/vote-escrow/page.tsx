@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "../../lib/wallet-context";
 import { useVoteEscrow } from "../../hooks/useVoteEscrow";
+import { useGovernorConfig } from "../../hooks/useGovernorConfig";
 import { LockCard } from "../../components/LockCard";
 
 type PreviewLock = {
@@ -335,27 +336,15 @@ export default function VoteEscrowPage() {
       </div>
 
       {stats && (
-        <div className="grid gap-6 md:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Locked</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-50">
-              {(stats.total_locked || 0n).toString()}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Active Locks</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-50">
-              {stats.num_active_locks}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Avg Duration</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-50">
-              {stats.avg_lock_duration} ledgers
-            </p>
-          </div>
+        // Only total_locked is rendered here — the contract has no
+        // entrypoint that can supply an active-lock count or average
+        // duration, so those tiles were removed rather than ship fixed
+        // zeros (#1257).
+        <div className="max-w-xs rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
+          <p className="text-sm text-gray-600 dark:text-gray-400">Total Locked</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-50">
+            {(stats.total_locked || 0n).toString()}
+          </p>
         </div>
       )}
       </>

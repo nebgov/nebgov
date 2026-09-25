@@ -22,8 +22,6 @@ const hookState = {
   votingPower: 1400n,
   stats: {
     total_locked: 1000n,
-    avg_lock_duration: 100,
-    num_active_locks: 1,
   },
   loading: false,
   error: null as string | null,

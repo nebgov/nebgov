@@ -188,7 +188,7 @@ export class ConvictionVotingClient {
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
     const sent = await this.server.sendTransaction(prepared);
-    if (sent.status === "ERROR") throw parseConvictionVotingError(sent);
+    if (sent.status === "ERROR") throw parseConvictionVotingError(sent as any);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -196,7 +196,7 @@ export class ConvictionVotingClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw parseConvictionVotingError(status);
+        throw parseConvictionVotingError(status as any);
       }
     }
     throw parseConvictionVotingError("Transaction confirmation timed out");
@@ -217,7 +217,7 @@ export class ConvictionVotingClient {
     const signedXdr = await signUnsignedXdr(prepared.toXDR());
     const signed = TransactionBuilder.fromXDR(signedXdr, this.passphrase);
     const sent = await this.server.sendTransaction(signed);
-    if (sent.status === "ERROR") throw parseConvictionVotingError(sent);
+    if (sent.status === "ERROR") throw parseConvictionVotingError(sent as any);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const status = await this.server.getTransaction(sent.hash);
@@ -225,7 +225,7 @@ export class ConvictionVotingClient {
         return { hash: sent.hash, ...status };
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw parseConvictionVotingError(status);
+        throw parseConvictionVotingError(status as any);
       }
     }
     throw parseConvictionVotingError("Transaction confirmation timed out");
@@ -240,7 +240,7 @@ export class ConvictionVotingClient {
     }).addOperation(this.contract.call(fn, ...args)).setTimeout(30).build();
     const result = await this.server.simulateTransaction(tx);
     if (SorobanRpc.Api.isSimulationError(result) || !result.result?.retval) {
-      throw parseConvictionVotingError(result);
+      throw parseConvictionVotingError(result as any);
     }
     return scValToNative(result.result.retval);
   }

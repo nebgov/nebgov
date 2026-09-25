@@ -105,8 +105,6 @@ export async function processEvents(
     if (config.timelockAddress) contractIds.push(config.timelockAddress);
     if (config.convictionVotingAddress) contractIds.push(config.convictionVotingAddress);
     if (config.signalAnchorAddress) contractIds.push(config.signalAnchorAddress);
-    if (config.treasuryStrategiesAddress)
-      contractIds.push(config.treasuryStrategiesAddress);
     if (config.optimisticGovernorAddress)
       contractIds.push(config.optimisticGovernorAddress);
     if (config.voteEscrowAddress) contractIds.push(config.voteEscrowAddress);
@@ -2382,6 +2380,129 @@ async function handlePoolFeeUpdated(
       outcome_b: outcomeB,
       old_fee_bps: oldFeeBps,
       new_fee_bps: newFeeBps,
+      ledger: event.ledger,
+    },
+  });
+}
+
+async function handleLockCreated(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const owner = (topics[1] as string) ?? "";
+  const raw = scValToNative(event.value) as Record<string, unknown>;
+  const amount = String(raw.amount as bigint | number | string);
+  const endLedger = Number(raw.end_ledger);
+  const initialVotingPower = String(
+    raw.initial_voting_power as bigint | number | string,
+  );
+
+  const existing = await pool.query(
+    "SELECT id FROM vote_escrow_locks WHERE owner_address = $1 AND start_ledger = $2",
+    [owner, event.ledger],
+  );
+  if (existing.rows.length > 0) return;
+
+  await pool.query(
+    `INSERT INTO vote_escrow_locks
+       (owner_address, amount, start_ledger, end_ledger, initial_voting_power, withdrawn)
+     VALUES ($1, $2, $3, $4, $5, FALSE)`,
+    [owner, amount, event.ledger, endLedger, initialVotingPower],
+  );
+  invalidatePattern("vote_escrow:");
+  broadcast({
+    type: "vote_escrow_lock_created",
+    data: {
+      owner,
+      amount,
+      start_ledger: event.ledger,
+      end_ledger: endLedger,
+      initial_voting_power: initialVotingPower,
+      ledger: event.ledger,
+    },
+  });
+}
+
+async function handleLockIncreased(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const owner = (topics[1] as string) ?? "";
+  const raw = scValToNative(event.value) as Record<string, unknown>;
+  const addedAmount = String(raw.added_amount as bigint | number | string);
+  const newVotingPower = String(
+    raw.new_voting_power as bigint | number | string,
+  );
+
+  await pool.query(
+    `UPDATE vote_escrow_locks
+     SET amount = amount + $2,
+         initial_voting_power = $3,
+         updated_at = NOW()
+     WHERE owner_address = $1 AND withdrawn = FALSE`,
+    [owner, addedAmount, newVotingPower],
+  );
+  invalidatePattern("vote_escrow:");
+  broadcast({
+    type: "vote_escrow_lock_increased",
+    data: {
+      owner,
+      added_amount: addedAmount,
+      new_voting_power: newVotingPower,
+      ledger: event.ledger,
+    },
+  });
+}
+
+async function handleLockExtended(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const owner = (topics[1] as string) ?? "";
+  const raw = scValToNative(event.value) as Record<string, unknown>;
+  const oldEndLedger = Number(raw.old_end_ledger);
+  const newEndLedger = Number(raw.new_end_ledger);
+
+  await pool.query(
+    `UPDATE vote_escrow_locks
+     SET end_ledger = $2,
+         updated_at = NOW()
+     WHERE owner_address = $1 AND withdrawn = FALSE`,
+    [owner, newEndLedger],
+  );
+  invalidatePattern("vote_escrow:");
+  broadcast({
+    type: "vote_escrow_lock_extended",
+    data: {
+      owner,
+      old_end_ledger: oldEndLedger,
+      new_end_ledger: newEndLedger,
+      ledger: event.ledger,
+    },
+  });
+}
+
+async function handleLockWithdrawn(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const owner = (topics[1] as string) ?? "";
+  const raw = scValToNative(event.value) as Record<string, unknown>;
+  const amount = String(raw.amount as bigint | number | string);
+
+  await pool.query(
+    `UPDATE vote_escrow_locks
+     SET withdrawn = TRUE,
+         updated_at = NOW()
+     WHERE owner_address = $1 AND withdrawn = FALSE`,
+    [owner],
+  );
+  invalidatePattern("vote_escrow:");
+  broadcast({
+    type: "vote_escrow_lock_withdrawn",
+    data: {
+      owner,
+      amount,
       ledger: event.ledger,
     },
   });
