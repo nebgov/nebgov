@@ -15,6 +15,8 @@ graph TB
         SW[Wrapper Contract]
         ST[Treasury Contract]
         SL[Liquidity Contract]
+        VE[Vote-Escrow Contract]
+        VR[Voting-Rewards Contract]
     end
     
     subgraph "Off-chain Services"
@@ -46,6 +48,10 @@ graph TB
     SW -->|Emits Events| RPC
     ST -->|Emits Events| RPC
     SL -->|Emits Events| RPC
+    VE -->|Emits Events| RPC
+    VR -->|Emits Events| RPC
+    SG -.->|Reads voting weight, if configured as a source| VE
+    SG -.->|Admin of| VR
 ```
 
 ## Components
@@ -102,6 +108,80 @@ Provides liquidity pool functionality:
 - `LiquidityRemoved`: Liquidity removed
 - `Swap`: Token swap executed
 - `PoolFeeUpdated`: Fee updated
+
+#### Vote-Escrow Contract
+A second source of voting weight alongside `token-votes` (`contracts/vote-escrow/`). Users lock the underlying
+token for a chosen number of ledgers and receive voting power boosted by lock length.
+
+- `create_lock`, `increase_lock_amount`, `extend_lock`, `withdraw` manage a single lock per owner
+- Power starts at `amount` plus a boost of up to `max_multiplier_bps` (scaled by lock duration between
+  `min_lock_duration` and `max_lock_duration`) and decays linearly back to `amount` as `end_ledger` approaches
+- `get_votes`, `get_past_votes` and `get_past_total_supply` expose current and snapshot power, so a lock's power at
+  a proposal's snapshot ledger can be recomputed later; `get_lock` and `get_lock_history` expose lock records
+- `update_escrow_config` (admin) changes the duration bounds and the multiplier
+
+**Depends on:** only the locked token (a SEP-41 token contract). It does not call the governor or `token-votes`.
+
+**Read by:** any contract or client that calls its `get_past_votes` / `get_past_total_supply`. The governor does
+this when the contract is configured as a voting-weight source (see
+[Voting-weight sources](#voting-weight-sources)); the SDK's `VoteEscrowClient`, the CLI's `vote-escrow` command and
+the frontend lock views read it directly.
+
+**Key Events:**
+- `LockCreated`: New lock created
+- `LockIncreased`: Lock amount increased
+- `LockExtended`: Lock end ledger extended
+- `LockWithdrawn`: Locked tokens withdrawn
+
+#### Voting-Rewards Contract
+Pays voters for participating (`contracts/voting-rewards/`). A funded token pool is split per epoch across the
+addresses that voted, in proportion to the voting power they cast.
+
+Eligibility is computed off-chain and only a Merkle root goes on-chain, so the governor is untouched and no
+unbounded per-epoch voter list is stored:
+
+1. The backend job (`backend/src/jobs/voting-rewards-epoch.ts`) reads the indexer's `votes` table for an ended epoch,
+   builds `(address, amount)` leaves and a Merkle tree.
+2. The root is published with `publish_epoch_root`, which is admin-only. The admin is intended to be the governor's
+   own address, so publishing a root is a governance-executed action rather than a trusted operator key.
+3. Each voter calls `claim` with a Merkle proof for their leaf; a claim marker prevents double claims.
+
+- `initialize(admin, reward_token, epoch_duration_ledgers)` opens epoch 0; `start_next_epoch` is permissionless once
+  the current epoch has ended
+- `fund_pool` adds reward tokens; `get_available_pool` is the balance not yet allocated to a published epoch
+- `sweep_epoch` (admin) returns an epoch's unclaimed rewards to the available pool
+- `set_admin` and `update_epoch_duration` (admin) rotate the admin and change the duration of future epochs
+
+**Depends on:** only the reward token (a SEP-41 token contract). Its admin should be set to the governor, so it must
+be deployed and initialized after the governor (`scripts/deploy-testnet.sh` does this).
+
+**Read by:** the backend epoch job, the SDK's `VotingRewardsClient`, the CLI's `voting-rewards` command and the
+frontend `/rewards` route.
+
+**Key Events:**
+- `EpochStarted`: New epoch opened
+- `EpochRootPublished`: Merkle root published and rewards allocated
+- `RewardClaimed`: Voter claimed a reward
+- `PoolFunded`: Tokens added to the pool
+- `EpochSwept`: Unclaimed rewards returned to the pool
+
+### Voting-weight sources
+
+The governor reads voting weight through a three-method interface on the contract it is pointed at:
+`get_votes`, `get_past_votes` and `get_past_total_supply` (plus `token`). It has no vote-escrow-specific code.
+`token-votes` and `vote-escrow` both implement that interface, which is what makes vote-escrow usable as a source.
+The governor's `VotingStrategy` decides how sources are combined:
+
+| Strategy | Behavior |
+|---|---|
+| `Single` (default) | Weight and quorum supply come from the one `votes_token` address set at `initialize`. Point it at `token-votes` for token-balance voting. |
+| `MultiToken(Vec<WeightedToken>)` | Weight is the sum over up to 5 sources of `get_past_votes(source) * weight_bps / 10000`, and quorum supply is summed the same way. List `token-votes` and `vote-escrow` together to compose them. |
+
+So the two sources can either **compose** (`MultiToken` with both listed and a weight for each) or **replace** each
+other (a `Single` strategy pointing at one of them). Voting weight is always read at the proposal's snapshot ledger,
+which is why vote-escrow keeps lock history and global checkpoints. Changing the strategy is done with
+`set_voting_strategy`, which requires the governor's own authorization, so it goes through a governance proposal.
+Under `MultiToken`, a source that errors is counted as zero rather than failing the vote.
 
 ### Indexer Service
 
