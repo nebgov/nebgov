@@ -109,7 +109,7 @@ cargo build --release --target wasm32v1-none --manifest-path "$ROOT_DIR/Cargo.to
 ok "WASM build complete"
 
 # Verify expected artefacts exist
-for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity sorogov_signal_anchor; do
+for wasm in sorogov_token_votes sorogov_timelock sorogov_governor sorogov_treasury sorogov_governor_factory sorogov_liquidity sorogov_signal_anchor sorogov_voting_rewards; do
   [[ -f "$WASM_DIR/${wasm}.wasm" ]] || fail "Expected WASM not found: $WASM_DIR/${wasm}.wasm"
 done
 
@@ -179,6 +179,9 @@ deploy_contract "$WASM_DIR/sorogov_liquidity.wasm" "LIQUIDITY_ADDRESS"
 
 # 7. Signal-Anchor
 deploy_contract "$WASM_DIR/sorogov_signal_anchor.wasm" "SIGNAL_ANCHOR_CONTRACT_ID"
+
+# 8. Voting-Rewards (initialized below, after the governor, with the governor as admin)
+deploy_contract "$WASM_DIR/sorogov_voting_rewards.wasm" "VOTING_REWARDS_ADDRESS"
 
 # ====================================================================
 # Initialize contracts (idempotent — each checks storage internally)
@@ -316,6 +319,42 @@ stellar contract invoke \
   2>/dev/null && ok "signal-anchor initialized" \
   || warn "signal-anchor already initialized (or init failed — check manually)"
 
+# -- Initialize voting-rewards ----------------------------------------
+# The admin must end up as the governor's address so that publishing an epoch
+# root is a governance-executed action. initialize() calls admin.require_auth(),
+# which a contract address cannot satisfy from a CLI invocation, so initialize
+# with the deployer and then hand the admin role to the governor via set_admin.
+# This step therefore runs after the governor has been deployed.
+VOTING_REWARDS_EPOCH_DURATION="${VOTING_REWARDS_EPOCH_DURATION:-17280}"
+VOTING_REWARDS_TOKEN="${VOTING_REWARDS_TOKEN:-$SEP41_TOKEN}"
+
+info "Initializing voting-rewards ..."
+stellar contract invoke \
+  --id "$VOTING_REWARDS_ADDRESS" \
+  --source "$IDENTITY" \
+  --network "$NETWORK" \
+  -- initialize \
+  --admin "$DEPLOYER_ADDR" \
+  --reward_token "$VOTING_REWARDS_TOKEN" \
+  --epoch_duration_ledgers "$VOTING_REWARDS_EPOCH_DURATION" \
+  2>/dev/null && ok "voting-rewards initialized" \
+  || warn "voting-rewards already initialized (or init failed — check manually)"
+
+info "Setting voting-rewards admin to governor ..."
+stellar contract invoke \
+  --id "$VOTING_REWARDS_ADDRESS" \
+  --source "$IDENTITY" \
+  --network "$NETWORK" \
+  -- set_admin \
+  --admin "$DEPLOYER_ADDR" \
+  --new_admin "$GOVERNOR_ADDRESS" \
+  2>/dev/null && ok "voting-rewards admin set to governor" \
+  || warn "voting-rewards admin already rotated (or set_admin failed — run verify-deployment.sh)"
+
+# Persist voting-rewards parameters
+persist "VOTING_REWARDS_EPOCH_DURATION" "$VOTING_REWARDS_EPOCH_DURATION"
+persist "VOTING_REWARDS_TOKEN" "$VOTING_REWARDS_TOKEN"
+
 # ====================================================================
 # Summary
 # ====================================================================
@@ -334,6 +373,8 @@ info "  Treasury ............. $TREASURY_ADDRESS"
 info "  Factory .............. $FACTORY_ADDRESS"
 info "  Liquidity ............ $LIQUIDITY_ADDRESS"
 info "  Signal-Anchor ........ $SIGNAL_ANCHOR_CONTRACT_ID"
+info "  Voting-Rewards ....... $VOTING_REWARDS_ADDRESS"
+info "  Voting-Rewards Epoch . $VOTING_REWARDS_EPOCH_DURATION ledgers"
 info "  Env file ............. $ENV_FILE"
 info "============================================================"
 printf '\n'

@@ -202,6 +202,16 @@ info "GovernorFactory (${FACTORY_ADDRESS:-<not set>})"
 check_initialized "  governor_factory.admin" \
   "$(query "${FACTORY_ADDRESS:-}" admin)"
 
+# ---- VotingRewards -------------------------------------------------------
+info "VotingRewards (${VOTING_REWARDS_ADDRESS:-<not set>})"
+VOTING_REWARDS_ADMIN="$(query "${VOTING_REWARDS_ADDRESS:-}" get_admin)"
+check_initialized "  voting_rewards.get_admin" "$VOTING_REWARDS_ADMIN"
+if [[ "$VOTING_REWARDS_ADMIN" != "ERROR" ]]; then
+  check "  voting_rewards.admin" \
+    "$VOTING_REWARDS_ADMIN" \
+    "\"${GOVERNOR_ADDRESS:-}\""
+fi
+
 printf '\n'
 if [[ "$FAILURES" -gt 0 ]]; then
   printf "${RED}%d check(s) failed.${NC}\n" "$FAILURES" >&2
