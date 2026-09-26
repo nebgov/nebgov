@@ -27,10 +27,23 @@ pub enum DataKey {
     MaxLockDuration,
     MaxMultiplierBps,
     Lock(Address),
-    LockHistory(Address),
+    /// Monotonic count of historical lock records ever appended for this owner.
+    /// The number of *retained* records is `min(count, MAX_LOCK_HISTORY_ENTRIES)`.
+    LockHistoryCount(Address),
+    /// One slot of the per-owner history ring buffer. Slot `n % MAX_LOCK_HISTORY_ENTRIES`
+    /// holds the `n`-th appended (withdrawn) lock record.
+    LockHistoryEntry(Address, u32),
     TotalLocked,
     GlobalCheckpoints,
 }
+
+/// Maximum number of withdrawn lock records retained per owner.
+///
+/// `withdraw` appends to a fixed-size ring buffer instead of reading, pushing
+/// and rewriting an unbounded `Vec<Lock>`, so storage per owner and work per
+/// withdrawal are both bounded. Older records are evicted once the buffer is
+/// full; `LockHistoryCount` still tracks the monotonic append position.
+pub const MAX_LOCK_HISTORY_ENTRIES: u32 = 32;
 
 #[contract]
 pub struct VoteEscrowContract;
@@ -347,15 +360,7 @@ impl VoteEscrowContract {
 
         lock.withdrawn = true;
 
-        let mut history: Vec<Lock> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::LockHistory(owner.clone()))
-            .unwrap_or_else(|| Vec::new(&env));
-        history.push_back(lock.clone());
-        env.storage()
-            .persistent()
-            .set(&DataKey::LockHistory(owner.clone()), &history);
+        Self::append_lock_history(&env, &owner, &lock);
 
         env.storage()
             .persistent()
@@ -413,13 +418,11 @@ impl VoteEscrowContract {
             }
         }
 
-        let history_opt: Option<Vec<Lock>> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::LockHistory(account));
-
-        if let Some(history) = history_opt {
-            for historical_lock in history.iter() {
+        // Scan only the bounded history window. The previous implementation
+        // walked an unbounded `Vec<Lock>` on every historical query.
+        let retained = Self::retained_history_len(&env, &account);
+        for index in 0..retained {
+            if let Some(historical_lock) = Self::read_lock_history_entry(&env, &account, index) {
                 if ledger >= historical_lock.start_ledger && ledger < historical_lock.end_ledger {
                     return Self::compute_decayed_power(&historical_lock, ledger);
                 }
@@ -462,29 +465,20 @@ impl VoteEscrowContract {
     }
 
     pub fn get_lock_history(env: Env, owner: Address, offset: u32, limit: u32) -> Vec<Lock> {
-        let history_opt: Option<Vec<Lock>> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::LockHistory(owner));
+        let retained = Self::retained_history_len(&env, &owner);
+        let mut result = Vec::new(&env);
 
-        if let Some(history) = history_opt {
-            let start = offset;
-            let end = offset.saturating_add(limit);
-            let history_len = history.len();
-
-            if start >= history_len {
-                return Vec::new(&env);
-            }
-
-            let actual_end = end.min(history_len);
-            let mut result = Vec::new(&env);
-            for i in start..actual_end {
-                result.push_back(history.get(i).unwrap());
-            }
-            result
-        } else {
-            Vec::new(&env)
+        if offset >= retained || limit == 0 {
+            return result;
         }
+
+        let end = offset.saturating_add(limit).min(retained);
+        for index in offset..end {
+            if let Some(entry) = Self::read_lock_history_entry(&env, &owner, index) {
+                result.push_back(entry);
+            }
+        }
+        result
     }
 
     pub fn update_escrow_config(
@@ -584,6 +578,61 @@ impl VoteEscrowContract {
         lock.amount
             .checked_add(decayed_boost)
             .unwrap_or(lock.amount)
+    }
+
+    /// Number of history records currently retained for `owner`.
+    ///
+    /// Capped at [`MAX_LOCK_HISTORY_ENTRIES`] so history reads stay bounded no
+    /// matter how many lock/withdraw cycles the owner has performed.
+    fn retained_history_len(env: &Env, owner: &Address) -> u32 {
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LockHistoryCount(owner.clone()))
+            .unwrap_or(0);
+        count.min(MAX_LOCK_HISTORY_ENTRIES)
+    }
+
+    /// Append one withdrawn lock to `owner`'s bounded history ring buffer.
+    ///
+    /// A constant number of storage writes per withdrawal, regardless of how
+    /// long the history is — the previous implementation read the whole
+    /// unbounded entry, pushed, and wrote it all back.
+    fn append_lock_history(env: &Env, owner: &Address, lock: &Lock) {
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LockHistoryCount(owner.clone()))
+            .unwrap_or(0);
+        let slot = count % MAX_LOCK_HISTORY_ENTRIES;
+        env.storage()
+            .persistent()
+            .set(&DataKey::LockHistoryEntry(owner.clone(), slot), lock);
+        env.storage().persistent().set(
+            &DataKey::LockHistoryCount(owner.clone()),
+            &count.saturating_add(1),
+        );
+    }
+
+    /// Read the `index`-th retained history record, oldest first.
+    ///
+    /// Returns `None` when `index` falls outside the retained window.
+    fn read_lock_history_entry(env: &Env, owner: &Address, index: u32) -> Option<Lock> {
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LockHistoryCount(owner.clone()))
+            .unwrap_or(0);
+        let retained = count.min(MAX_LOCK_HISTORY_ENTRIES);
+        if index >= retained {
+            return None;
+        }
+        // Map the retained logical index through the ring buffer to a slot.
+        let logical = count.saturating_sub(retained).saturating_add(index);
+        let slot = logical % MAX_LOCK_HISTORY_ENTRIES;
+        env.storage()
+            .persistent()
+            .get(&DataKey::LockHistoryEntry(owner.clone(), slot))
     }
 
     fn update_global_checkpoint(env: &Env, ledger: u32) {

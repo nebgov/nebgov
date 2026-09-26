@@ -914,3 +914,85 @@ fn test_create_lock_overflowing_boost_computation_panics() {
         assert!(result.is_err());
     });
 }
+
+#[test]
+fn test_lock_history_is_bounded_across_many_cycles() {
+    let f = setup();
+    let amount = 100;
+    let duration = MIN_LOCK_DURATION;
+    let cycles = MAX_LOCK_HISTORY_ENTRIES + 8;
+
+    f.env.as_contract(&f.contract_id, || {
+        let mut ledger = 10;
+        for _ in 0..cycles {
+            f.env.ledger().set_sequence_number(ledger);
+            let lock = VoteEscrowContract::create_lock(
+                f.env.clone(),
+                f.user.clone(),
+                amount,
+                duration,
+            );
+            f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+            VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+            ledger = lock.end_ledger + 2;
+        }
+
+        // The append counter is monotonic, but only a bounded window is retained.
+        let count: u32 = f
+            .env
+            .storage()
+            .persistent()
+            .get(&DataKey::LockHistoryCount(f.user.clone()))
+            .unwrap_or(0);
+        assert_eq!(count, cycles);
+
+        let all =
+            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), 0, 1_000);
+        assert_eq!(all.len(), MAX_LOCK_HISTORY_ENTRIES);
+
+        // Pagination is clamped to the retained window instead of walking history.
+        let first_page =
+            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), 0, 5);
+        assert_eq!(first_page.len(), 5);
+        let past_end =
+            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), cycles, 5);
+        assert_eq!(past_end.len(), 0);
+
+        // Historical queries still resolve from the bounded window: the most
+        // recent withdrawn record covers the ledger we advance past below.
+        let last = all.get(all.len() - 1).unwrap();
+        let probe = last.end_ledger.saturating_sub(1);
+        let votes =
+            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), probe);
+        assert!(votes > 0);
+    });
+}
+
+#[test]
+fn test_get_past_votes_reads_bounded_history_after_withdraw() {
+    let f = setup();
+    let amount = 1_000;
+    let duration = 1_000;
+
+    f.env.as_contract(&f.contract_id, || {
+        let lock = VoteEscrowContract::create_lock(
+            f.env.clone(),
+            f.user.clone(),
+            amount,
+            duration,
+        );
+        let probe = lock.start_ledger + 250;
+
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+
+        // The live record is gone; the historical answer must come from the
+        // indexed history entry.
+        assert!(VoteEscrowContract::get_lock(f.env.clone(), f.user.clone()).is_none());
+
+        let votes =
+            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), probe);
+        assert!(votes > 0);
+        assert!(votes <= lock.initial_voting_power);
+    });
+}
