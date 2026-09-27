@@ -3,6 +3,7 @@ import { logger } from "../logger";
 import { notificationEngine, type StoredNotificationChannel } from "../notifications/engine";
 import { renderNotification } from "../notifications/templates";
 import { rowToRule, type IndexerEvent } from "../notifications/rules";
+import { jobHealthTracker } from "./health-tracker";
 
 const RETRY_BATCH_SIZE = 50;
 
@@ -14,6 +15,7 @@ export class DeliveryRetryService {
   start() {
     const intervalMs = Number(process.env.DELIVERY_RETRY_INTERVAL_MS ?? "15000");
     logger.info({ intervalMs }, "Starting delivery retry job");
+    jobHealthTracker.registerJob("delivery-retry", intervalMs);
     this.interval = setInterval(() => this.tick(), intervalMs);
     this.tick();
   }
@@ -28,10 +30,14 @@ export class DeliveryRetryService {
   private async tick() {
     if (this.isProcessing) return;
     this.isProcessing = true;
+    jobHealthTracker.markJobStart("delivery-retry");
     try {
       await this.processDueRetries();
+      jobHealthTracker.markJobSuccess("delivery-retry");
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ err: error }, "Delivery retry tick failed");
+      jobHealthTracker.markJobError("delivery-retry", errorMessage);
     } finally {
       this.isProcessing = false;
     }

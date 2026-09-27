@@ -13,6 +13,7 @@ import { logger } from "../logger";
 import { invalidate } from "../cache";
 import { computeWeightedTally, type PollResults } from "../signaling/tally";
 import { resultsCacheKey } from "../routes/signaling";
+import { jobHealthTracker } from "./health-tracker";
 
 const MAX_ANCHOR_ATTEMPTS = 5;
 
@@ -102,6 +103,7 @@ export class SignalAnchorService {
   start() {
     const intervalMs = Number(process.env.SIGNAL_ANCHOR_INTERVAL_MS ?? "30000");
     logger.info({ intervalMs }, "Starting signal anchor service");
+    jobHealthTracker.registerJob("signal-anchor", intervalMs);
     this.interval = setInterval(() => this.tick(), intervalMs);
     this.tick();
   }
@@ -116,10 +118,14 @@ export class SignalAnchorService {
   private async tick() {
     if (this.isProcessing) return;
     this.isProcessing = true;
+    jobHealthTracker.markJobStart("signal-anchor");
     try {
       await this.finalizeEndedPolls();
+      jobHealthTracker.markJobSuccess("signal-anchor");
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ err: error }, "Signal anchor tick failed");
+      jobHealthTracker.markJobError("signal-anchor", errorMessage);
     } finally {
       this.isProcessing = false;
     }

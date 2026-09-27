@@ -20,6 +20,7 @@ import { deliveryRetry } from "./jobs/delivery-retry";
 import { signalAnchorService } from "./jobs/signal-anchor";
 import { governanceTuningAnalyzer } from "./jobs/governance-tuning-analyzer";
 import { votingRewardsEpochService } from "./jobs/voting-rewards-epoch";
+import { jobHealthTracker } from "./jobs/health-tracker";
 import { runBackendMigrations } from "./db/migrationRunner";
 import pino from "pino";
 import pinoHttp from "pino-http";
@@ -100,7 +101,15 @@ if (process.env.NODE_ENV !== "production") {
 
 // Health check — exempt from rate limiting
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  const jobHealth = jobHealthTracker.getHealthReport();
+  const systemReady = jobHealthTracker.isSystemReady();
+  
+  res.json({ 
+    status: systemReady ? "ok" : "degraded", 
+    timestamp: new Date().toISOString(),
+    jobs: jobHealth,
+    ready: systemReady
+  });
 });
 
 // Apply global limiter to all routes below

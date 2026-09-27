@@ -2,6 +2,7 @@ import pool from "../db/pool";
 import { logger } from "../logger";
 import { notificationEngine } from "../notifications/engine";
 import type { IndexerEvent } from "../notifications/rules";
+import { jobHealthTracker } from "./health-tracker";
 
 const EVENT_BATCH_SIZE = 200;
 
@@ -19,6 +20,7 @@ export class NotificationProcessorService {
   start() {
     const intervalMs = Number(process.env.NOTIFICATION_PROCESSOR_INTERVAL_MS ?? "10000");
     logger.info({ intervalMs }, "Starting notification processor");
+    jobHealthTracker.registerJob("notification-processor", intervalMs);
     this.interval = setInterval(() => this.tick(), intervalMs);
     this.tick();
   }
@@ -33,11 +35,15 @@ export class NotificationProcessorService {
   private async tick() {
     if (this.isProcessing) return;
     this.isProcessing = true;
+    jobHealthTracker.markJobStart("notification-processor");
     try {
       await this.processNewEvents();
       await this.checkProposalTimers();
+      jobHealthTracker.markJobSuccess("notification-processor");
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ err: error }, "Notification processor tick failed");
+      jobHealthTracker.markJobError("notification-processor", errorMessage);
     } finally {
       this.isProcessing = false;
     }

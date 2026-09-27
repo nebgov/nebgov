@@ -1,5 +1,6 @@
 import pool from "../db/pool";
 import { logger } from "../logger";
+import { jobHealthTracker } from "./health-tracker";
 
 const SNAPSHOT_RETENTION_DAYS = Number(process.env.SNAPSHOT_RETENTION_DAYS ?? "90");
 const SNAPSHOT_MIN_DELTA = Number(process.env.SNAPSHOT_MIN_DELTA ?? "0");
@@ -9,6 +10,7 @@ const SNAPSHOT_MIN_DELTA = Number(process.env.SNAPSHOT_MIN_DELTA ?? "0");
  * Should be run via cron at midnight UTC
  */
 export async function takeLeaderboardSnapshot() {
+  jobHealthTracker.markJobStart("leaderboard-snapshot");
   const client = await pool.connect();
 
   try {
@@ -65,9 +67,12 @@ export async function takeLeaderboardSnapshot() {
 
     await client.query("COMMIT");
     logger.info({ snapshotDate: today.toISOString() }, "Leaderboard snapshot taken");
+    jobHealthTracker.markJobSuccess("leaderboard-snapshot");
   } catch (error) {
     await client.query("ROLLBACK");
+    const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error({ err: error }, "Failed to take leaderboard snapshot");
+    jobHealthTracker.markJobError("leaderboard-snapshot", errorMessage);
     throw error;
   } finally {
     client.release();

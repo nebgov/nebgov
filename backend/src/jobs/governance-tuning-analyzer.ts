@@ -9,6 +9,7 @@ import {
   pruneUnchangedRecommendations,
 } from "../governance-tuning/recommendation-store";
 import { findUnresolvedAutoProposal, maybeAutoPropose } from "../governance-tuning/auto-propose";
+import { jobHealthTracker } from "./health-tracker";
 
 const GOVERNANCE_TUNING_LOCK_KEY = "governance_tuning_analyzer_cycle";
 
@@ -33,6 +34,7 @@ export class GovernanceTuningAnalyzerService {
     config
       .then((c) => {
         logger.info({ intervalMs: c.intervalMs }, "Starting governance tuning analyzer");
+        jobHealthTracker.registerJob("governance-tuning-analyzer", c.intervalMs);
         this.schedule(c.intervalMs);
       })
       .catch((err) => {
@@ -63,10 +65,14 @@ export class GovernanceTuningAnalyzerService {
   private async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    jobHealthTracker.markJobStart("governance-tuning-analyzer");
     try {
       await this.runCycleWithLock();
+      jobHealthTracker.markJobSuccess("governance-tuning-analyzer");
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error({ err }, "Governance tuning analyzer cycle failed");
+      jobHealthTracker.markJobError("governance-tuning-analyzer", errorMessage);
     } finally {
       this.running = false;
     }

@@ -15,6 +15,7 @@ import {
   saveComputedEpoch,
   type StoredEpoch,
 } from "../voting-rewards/store";
+import { jobHealthTracker } from "./health-tracker";
 
 const DEFAULT_INTERVAL_MS = 3_600_000;
 
@@ -74,6 +75,7 @@ export class VotingRewardsEpochService {
 
     const intervalMs = getIntervalMs();
     logger.info({ intervalMs }, "Starting voting rewards epoch service");
+    jobHealthTracker.registerJob("voting-rewards-epoch", intervalMs);
     this.schedule(intervalMs);
     // Kick off an immediate first cycle rather than waiting a full interval.
     void this.tick();
@@ -97,10 +99,14 @@ export class VotingRewardsEpochService {
   private async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    jobHealthTracker.markJobStart("voting-rewards-epoch");
     try {
       await this.runCycle();
+      jobHealthTracker.markJobSuccess("voting-rewards-epoch");
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error({ err }, "Voting rewards epoch cycle failed");
+      jobHealthTracker.markJobError("voting-rewards-epoch", errorMessage);
     } finally {
       this.running = false;
     }
