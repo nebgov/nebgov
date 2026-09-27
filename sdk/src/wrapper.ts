@@ -2,24 +2,12 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   nativeToScVal,
 } from "@stellar/stellar-sdk";
-import { Network } from "./types";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import type { Network } from "./types";
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export interface WrapperConfig {
   wrapperAddress: string;
@@ -41,10 +29,10 @@ export class WrapperClient {
 
   constructor(config: WrapperConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.wrapperAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
   }
 
   /**

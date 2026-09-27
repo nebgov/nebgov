@@ -1,19 +1,8 @@
-import { Contract, Keypair, SorobanRpc, TransactionBuilder, Networks, BASE_FEE, nativeToScVal, scValToNative } from "@stellar/stellar-sdk";
-import { DeploySettings, GovernorEntry, FactoryConfig, Network, VoteType } from "./types";
+import { Contract, Keypair, SorobanRpc, TransactionBuilder, BASE_FEE, nativeToScVal, scValToNative } from "@stellar/stellar-sdk";
+import { DeploySettings, GovernorEntry, FactoryConfig, VoteType } from "./types";
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export type { GovernorEntry, DeploySettings } from "./types";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
 
 export class FactoryClient {
   private readonly server: SorobanRpc.Server;
@@ -21,10 +10,10 @@ export class FactoryClient {
   private readonly networkPassphrase: string;
 
   constructor(config: FactoryConfig) {
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.factoryAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
   }
 
   async getGovernorCount(): Promise<bigint> {

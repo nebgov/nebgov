@@ -812,6 +812,60 @@ export interface LiquidityConfig {
   retry?: RetryOptions;
 }
 
+/** Configuration for {@link VoteEscrowClient}. */
+export interface VoteEscrowConfig {
+  /** Contract address of the vote-escrow contract */
+  voteEscrowAddress: string;
+  /** Stellar network to connect to */
+  network: Network;
+  /** RPC URL override (optional — defaults to public horizon) */
+  rpcUrl?: string;
+  /** Optional funded classic account used for read-only simulation calls. */
+  simulationAccount?: string;
+  /** Maximum retry attempts for failed operations (default: 3) */
+  maxAttempts?: number;
+  /** Base delay between retries in milliseconds (default: 1000) */
+  baseDelayMs?: number;
+  /** Retry policy for all operations made by this client. */
+  retry?: RetryOptions;
+}
+
+/** Configuration for {@link ConvictionVotingClient}. */
+export interface ConvictionVotingConfig {
+  /** Contract address of the conviction-voting contract */
+  convictionVotingAddress: string;
+  /** Stellar network to connect to */
+  network: Network;
+  /** RPC URL override (optional — defaults to public horizon) */
+  rpcUrl?: string;
+  /** Optional funded classic account used for read-only simulation calls. */
+  simulationAccount?: string;
+  /** Maximum retry attempts for failed operations (default: 3) */
+  maxAttempts?: number;
+  /** Base delay between retries in milliseconds (default: 1000) */
+  baseDelayMs?: number;
+  /** Retry policy for all operations made by this client. */
+  retry?: RetryOptions;
+}
+
+/** Configuration for {@link OptimisticGovernorClient}. */
+export interface OptimisticGovernorConfig {
+  /** Contract address of the optimistic-governor contract */
+  optimisticGovernorAddress: string;
+  /** Stellar network to connect to */
+  network: Network;
+  /** RPC URL override (optional — defaults to public horizon) */
+  rpcUrl?: string;
+  /** Optional funded classic account used for read-only simulation calls. */
+  simulationAccount?: string;
+  /** Maximum retry attempts for failed operations (default: 3) */
+  maxAttempts?: number;
+  /** Base delay between retries in milliseconds (default: 1000) */
+  baseDelayMs?: number;
+  /** Retry policy for all operations made by this client. */
+  retry?: RetryOptions;
+}
+
 /** On-chain state of a single two-asset liquidity pool. */
 export interface Pool {
   reserveA: bigint;

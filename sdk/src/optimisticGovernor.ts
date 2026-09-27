@@ -2,7 +2,6 @@ import {
   BASE_FEE,
   Contract,
   Keypair,
-  Networks,
   SorobanRpc,
   TransactionBuilder,
   nativeToScVal,
@@ -10,8 +9,7 @@ import {
   type xdr,
 } from "@stellar/stellar-sdk";
 import type {
-  GovernorConfig,
-  Network,
+  OptimisticGovernorConfig,
   OptimisticGovernorSettings,
   OptimisticObjection,
   OptimisticProposal,
@@ -19,31 +17,17 @@ import type {
 } from "./types";
 import { hexToBytes32 } from "./utils";
 import { parseOptimisticGovernorError } from "./errors";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export class OptimisticGovernorClient {
   private readonly server: SorobanRpc.Server;
   private readonly contract: Contract;
   private readonly passphrase: string;
 
-  constructor(private readonly config: GovernorConfig) {
-    if (!config.optimisticGovernorAddress) {
-      throw new Error("OptimisticGovernorClient requires optimisticGovernorAddress");
-    }
-    this.server = new SorobanRpc.Server(config.rpcUrl ?? RPC_URLS[config.network]);
+  constructor(private readonly config: OptimisticGovernorConfig) {
+    this.server = new SorobanRpc.Server(getRpcUrl(config.network, config.rpcUrl));
     this.contract = new Contract(config.optimisticGovernorAddress);
-    this.passphrase = PASSPHRASES[config.network];
+    this.passphrase = getNetworkPassphrase(config.network);
   }
 
   /** Schedules `target.fnName(calldata)` for execution by default, subject to the challenge window. */

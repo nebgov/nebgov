@@ -2,7 +2,6 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   nativeToScVal,
@@ -15,7 +14,6 @@ import {
   BatchTransferRecipient,
   BatchTransferEvent,
   StreamEvent,
-  Network,
   SpendingCap,
   BudgetStream,
   StreamSpend,
@@ -26,18 +24,7 @@ import {
 } from "./types";
 import { TreasuryError, TreasuryErrorCode, parseTreasuryError } from "./errors";
 import { createRetry, isNetworkError, type RetryFunction } from "./utils";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 /**
  * Encode a {@link BatchTransferRecipient} as an XDR ScVal map matching the
@@ -83,10 +70,10 @@ export class TreasuryClient {
 
   constructor(config: TreasuryConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.treasuryAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, { retryOn: isNetworkError });
   }
 

@@ -17,7 +17,7 @@ export type { MetadataUploadOptions } from "./governor";
 export { VotesClient } from "./votes";
 export type { TopDelegatesOptions, TopDelegatesResult } from "./votes";
 export { VoteEscrowClient } from "./voteEscrow";
-export type { Lock as VoteEscrowLock, VoteEscrowStats } from "./voteEscrow";
+export type { Lock as VoteEscrowLock, VoteEscrowStats, VoteEscrowConfig } from "./types";
 export { DelegationSigClient } from "./delegation-sig";
 export type { DelegationSigConfig, DelegationTxResult } from "./delegation-sig";
 export { FactoryClient } from "./factory";
@@ -40,6 +40,7 @@ export { VotingRewardsClient } from "./votingRewards";
 export type { VotingRewardsConfig } from "./votingRewards";
 export { TreasuryStrategiesClient } from "./treasuryStrategies";
 export type { TreasuryStrategiesConfig } from "./treasuryStrategies";
+export { validateNetwork, getRpcUrl, getNetworkPassphrase, RPC_URLS, NETWORK_PASSPHRASES } from "./network";
 export {
   GovernorError,
   GovernorErrorCode,

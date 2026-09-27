@@ -2,7 +2,6 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   nativeToScVal,
@@ -15,7 +14,6 @@ import {
   GovernorSettingsValidationLimits,
   VoteSupport,
   VoteType,
-  Network,
   Proposal,
   ProposalState,
   ProposalVotes,
@@ -28,6 +26,7 @@ import {
 
 import { GovernorError, GovernorErrorCode, parseGovernorError } from "../errors";
 import { createRetry, hexToBytes32, type RetryFunction } from "../utils";
+import { getRpcUrl, getNetworkPassphrase } from "../network";
 
 // Import standalone functions for method delegation
 import {
@@ -85,18 +84,6 @@ import {
   getCommitRevealStatus as _getCommitRevealStatus,
 } from "./commitReveal";
 
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
-
 const DEFAULT_MAX_VOTING_DELAY = 1_209_600;
 const DEFAULT_MIN_VOTING_PERIOD = 1;
 
@@ -152,10 +139,10 @@ export class GovernorClient {
 
   constructor(config: GovernorConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.governorAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, {
       onRetry: (attempt, error) => {
         console.debug(`[GovernorClient] Retry attempt ${attempt} due to error:`, error);

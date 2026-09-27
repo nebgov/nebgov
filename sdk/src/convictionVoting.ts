@@ -2,7 +2,6 @@ import {
   BASE_FEE,
   Contract,
   Keypair,
-  Networks,
   SorobanRpc,
   TransactionBuilder,
   nativeToScVal,
@@ -12,35 +11,20 @@ import {
 import type {
   ConvictionProposal,
   ConvictionSnapshot,
-  GovernorConfig,
-  Network,
+  ConvictionVotingConfig,
 } from "./types";
 import { parseConvictionVotingError } from "./errors";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export class ConvictionVotingClient {
   private readonly server: SorobanRpc.Server;
   private readonly contract: Contract;
   private readonly passphrase: string;
 
-  constructor(private readonly config: GovernorConfig) {
-    if (!config.convictionVotingAddress) {
-      throw new Error("ConvictionVotingClient requires convictionVotingAddress");
-    }
-    this.server = new SorobanRpc.Server(config.rpcUrl ?? RPC_URLS[config.network]);
+  constructor(private readonly config: ConvictionVotingConfig) {
+    this.server = new SorobanRpc.Server(getRpcUrl(config.network, config.rpcUrl));
     this.contract = new Contract(config.convictionVotingAddress);
-    this.passphrase = PASSPHRASES[config.network];
+    this.passphrase = getNetworkPassphrase(config.network);
   }
 
   async createProposal(

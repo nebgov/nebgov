@@ -8,21 +8,10 @@ import {
   scValToNative,
   xdr,
 } from "@stellar/stellar-sdk";
-import { GovernorConfig } from "./types";
+import { VoteEscrowConfig } from "./types";
 import { createRetry, type RetryFunction } from "./utils";
 import { parseVoteEscrowError } from "./errors";
-
-const RPC_URLS: Record<string, string> = {
-  futurenet: "https://soroban-futurenet.stellar.org",
-  testnet: "https://soroban-testnet.stellar.org",
-  public: "https://soroban-mainnet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<string, string> = {
-  futurenet: "Test SDF Future Network ; October 2022",
-  testnet: "Test SDF Network ; September 2015",
-  public: "Public Global Stellar Network ; September 2015",
-};
+import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export interface Lock {
   owner: string;
@@ -54,15 +43,15 @@ export class VoteEscrowClient {
   private readonly server: SorobanRpc.Server;
   private readonly contract: Contract;
   private readonly networkPassphrase: string;
-  private readonly config: GovernorConfig;
+  private readonly config: VoteEscrowConfig;
   private readonly retry: RetryFunction;
 
-  constructor(config: GovernorConfig) {
+  constructor(config: VoteEscrowConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
-    this.contract = new Contract(config.voteEscrowAddress || "");
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.contract = new Contract(config.voteEscrowAddress);
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, { maxAttempts: 5, baseDelayMs: 1000 });
   }
 
