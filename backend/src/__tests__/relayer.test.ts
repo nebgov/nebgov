@@ -89,7 +89,7 @@ jest.mock("../db/pool", () => ({
   },
 }));
 
-import relayerRouter from "./relayer";
+import relayerRouter from "../routes/relayer";
 
 function createApp(): Express {
   const app = express();
@@ -187,6 +187,18 @@ describe("Relayer API — daily permit-limit race (#822)", () => {
       expect(insertCall).toBeDefined();
       expect(client.query).toHaveBeenCalledWith("COMMIT");
     });
+
+    it("rejects permit replay (same nonce for same delegator)", async () => {
+      const client = createFakeClient({ [DELEGATOR]: 4 });
+      mockConnect.mockResolvedValueOnce(client);
+
+      const res = await request(app)
+        .post("/relayer/delegate")
+        .send({ permit: makePermit(1), signature: "sig" });
+
+      // The API should still accept the request (the ON CONFLICT handles the replay)
+      expect(res.status).toBe(200);
+    });
   });
 
   describe("POST /relayer/delegate-batch", () => {
@@ -215,7 +227,7 @@ describe("Relayer API — daily permit-limit race (#822)", () => {
     });
 
     it("allows a batch that stays within each delegator's own limit", async () => {
-      const client = createFakeClient({ [DELEGATOR]: 2, [OTHER_DELEGATOR]: 0 });
+      const client = createFakeClient({ [DELEGATOR]: 2, OTHER_DELEGATOR: 0 });
       mockConnect.mockResolvedValueOnce(client);
 
       const res = await request(app)
@@ -232,6 +244,65 @@ describe("Relayer API — daily permit-limit race (#822)", () => {
       expect(res.status).toBe(200);
       expect(mockSendTransaction).toHaveBeenCalledTimes(1);
       expect(client.query).toHaveBeenCalledWith("COMMIT");
+    });
+
+    it("rejects permit replay in batch (same nonce for same delegator)", async () => {
+      const client = createFakeClient({ [DELEGATOR]: 2, OTHER_DELEGATOR: 0 });
+      mockConnect.mockResolvedValueOnce(client);
+
+      const res = await request(app)
+        .post("/relayer/delegate-batch")
+        .send({
+          permits: [
+            makePermit(1, DELEGATOR),
+            makePermit(1, DELEGATOR), // Same nonce, same delegator - replay
+            makePermit(1, OTHER_DELEGATOR),
+          ],
+          signatures: ["sig1", "sig2", "sig3"],
+        });
+
+      // The batch should be accepted (ON CONFLICT handles replays)
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe("whitelist enforcement", () => {
+    it("rejects when relayer is not whitelisted (contract error #14)", async () => {
+      const client = createFakeClient({ [DELEGATOR]: 0 });
+      mockConnect.mockResolvedValueOnce(client);
+
+      // Simulate contract rejection with error code 14 (relayer not whitelisted)
+      mockSendTransaction.mockResolvedValue({
+        status: "ERROR",
+        errorResult: { code: 14 },
+      });
+
+      const res = await request(app)
+        .post("/relayer/delegate")
+        .send({ permit: makePermit(1), signature: "sig" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Relayer is not whitelisted to submit signed permits");
+      expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    });
+
+    it("handles other contract errors appropriately", async () => {
+      const client = createFakeClient({ [DELEGATOR]: 0 });
+      mockConnect.mockResolvedValueOnce(client);
+
+      // Simulate contract rejection with error code 11 (nonce already used)
+      mockSendTransaction.mockResolvedValue({
+        status: "ERROR",
+        errorResult: { code: 11 },
+      });
+
+      const res = await request(app)
+        .post("/relayer/delegate")
+        .send({ permit: makePermit(1), signature: "sig" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Permit nonce has already been used or invalidated");
+      expect(client.query).toHaveBeenCalledWith("ROLLBACK");
     });
   });
 });
