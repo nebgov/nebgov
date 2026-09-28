@@ -29,7 +29,6 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   Operation,
@@ -47,18 +46,7 @@ import {
   type RetryFunction,
   type RetryOptions,
 } from "./utils";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import { getNetworkPassphrase, getRpcUrl } from "./network";
 
 const SINGLE_FN = "delegate_by_sig";
 const BATCH_FN = "delegate_batch_by_sig";
@@ -91,10 +79,10 @@ export class DelegationSigClient {
   private readonly retry: RetryFunction;
 
   constructor(private readonly config: DelegationSigConfig) {
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.votesAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, { retryOn: isNetworkError });
   }
 

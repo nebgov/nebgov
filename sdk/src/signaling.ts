@@ -2,7 +2,6 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   nativeToScVal,
@@ -10,25 +9,13 @@ import {
 } from "@stellar/stellar-sdk";
 import {
   GovernorConfig,
-  Network,
   SignalAnchorRecord,
   SignalingPoll,
   SignalingPollResults,
 } from "./types";
 import { SignalingError, SignalingErrorCode, parseSignalingError } from "./errors";
 import { createRetry, isNetworkError, type RetryFunction } from "./utils";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
+import { getNetworkPassphrase, getRpcUrl } from "./network";
 
 const DOMAIN_TAG = "nebgov-signal";
 
@@ -179,9 +166,9 @@ export class SignalingClient {
 
   constructor(config: GovernorConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, { retryOn: isNetworkError });
   }
 
