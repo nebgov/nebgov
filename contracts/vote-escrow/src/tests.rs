@@ -107,7 +107,7 @@ fn test_create_lock_basic() {
 
         assert_eq!(lock.owner, f.user);
         assert_eq!(lock.amount, amount);
-        assert_eq!(lock.withdrawn, false);
+        assert!(!lock.withdrawn);
         assert!(lock.initial_voting_power >= amount);
     });
 }
@@ -395,7 +395,7 @@ fn test_extend_lock() {
     let f = setup();
     let amount = 1_000;
     let duration = 1_000;
-    let new_duration = 2_000;
+    let _new_duration = 2_000;
 
     f.env.as_contract(&f.contract_id, || {
         let lock1 = VoteEscrowContract::create_lock(
@@ -859,7 +859,7 @@ fn find_event(env: &Env, contract_id: &Address, topic: &str) -> (Vec<soroban_sdk
         .iter()
         .find(|(addr, topics, _)| {
             *addr == *contract_id
-                && topics.get(0).map_or(false, |t| {
+                && topics.get(0).is_some_and(|t| {
                     let first: Result<Symbol, _> = t.try_into_val(env);
                     first.is_ok() && first.unwrap() == topic_symbol
                 })
@@ -988,7 +988,7 @@ fn test_lock_history_is_bounded_across_many_cycles() {
         let mut ledger = 10;
         for _ in 0..cycles {
             f.env.ledger().set_sequence_number(ledger);
-            let lock = VoteEscrowContract::create_lock(
+let _lock = VoteEscrowContract::create_lock(
                 f.env.clone(),
                 f.user.clone(),
                 amount,
