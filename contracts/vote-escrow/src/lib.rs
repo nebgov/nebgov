@@ -668,6 +668,30 @@ impl VoteEscrowContract {
             .instance()
             .set(&DataKey::GlobalCheckpoints, &checkpoints);
     }
+
+    fn refresh_persistent_ttl(env: &Env, key: &DataKey) {
+        env.storage().persistent().extend_ttl(key, 100_000, 100_000);
+    }
+
+    fn binary_search_checkpoint(checkpoints: &Vec<(u32, i128)>, ledger: u32) -> i128 {
+        let mut low = 0;
+        let mut high = checkpoints.len();
+
+        while low < high {
+            let mid = (low + high) / 2;
+            if checkpoints.get(mid).unwrap().0 <= ledger {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        if low == 0 {
+            0
+        } else {
+            checkpoints.get(low - 1).unwrap().1
+        }
+    }
 }
 
 #[cfg(test)]
