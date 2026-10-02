@@ -133,8 +133,6 @@ impl VoteEscrowContract {
             .ok_or(VoteEscrowError::NotInitialized)
             .unwrap();
 
-        token::Client::new(&env, &locked_token).transfer(&owner, &env.current_contract_address(), &amount);
-
         let current_ledger = env.ledger().sequence();
         let end_ledger = current_ledger.checked_add(duration_ledgers)
             .ok_or(VoteEscrowError::ArithmeticOverflow)
@@ -163,6 +161,8 @@ impl VoteEscrowContract {
             .persistent()
             .set(&DataKey::Lock(owner.clone()), &lock);
         Self::refresh_persistent_ttl(&env, &DataKey::Lock(owner.clone()));
+
+        token::Client::new(&env, &locked_token).transfer(&owner, &env.current_contract_address(), &amount);
 
         let current_total: i128 = env
             .storage()
@@ -338,14 +338,14 @@ impl VoteEscrowContract {
             .ok_or(VoteEscrowError::LockNotFound)
             .unwrap();
 
+        if lock.withdrawn {
+            env.panic_with_error(VoteEscrowError::LockAlreadyWithdrawn);
+        }
+
         let current_ledger = env.ledger().sequence();
 
         if current_ledger < lock.end_ledger {
             env.panic_with_error(VoteEscrowError::LockNotMatured);
-        }
-
-        if lock.withdrawn {
-            env.panic_with_error(VoteEscrowError::LockAlreadyWithdrawn);
         }
 
         let locked_token: Address = env
@@ -667,6 +667,30 @@ impl VoteEscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::GlobalCheckpoints, &checkpoints);
+    }
+
+    fn refresh_persistent_ttl(env: &Env, key: &DataKey) {
+        env.storage().persistent().extend_ttl(key, 100_000, 100_000);
+    }
+
+    fn binary_search_checkpoint(checkpoints: &Vec<(u32, i128)>, ledger: u32) -> i128 {
+        let mut low = 0;
+        let mut high = checkpoints.len();
+
+        while low < high {
+            let mid = (low + high) / 2;
+            if checkpoints.get(mid).unwrap().0 <= ledger {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        if low == 0 {
+            0
+        } else {
+            checkpoints.get(low - 1).unwrap().1
+        }
     }
 }
 
