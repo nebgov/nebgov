@@ -12,11 +12,12 @@
  */
 import { Address, nativeToScVal, scValToNative, SorobanDataBuilder, xdr } from "@stellar/stellar-sdk";
 import { LedgerClock } from "../ledger";
-import { cloneStore, MockLedgerStore, ProposalRecord } from "./store";
+import { cloneStore, CoSponsorshipDraftRecord, MockLedgerStore, ProposalRecord } from "./store";
 import { MockContractError } from "./errors";
 import { governorExecutor } from "./governor-executor";
 import { timelockExecutor } from "./timelock-executor";
 import { tokenVotesExecutor } from "./token-votes-executor";
+import { coSponsorshipExecutor } from "./co-sponsorship-executor";
 import {
   encAddress,
   encBool,
@@ -125,7 +126,44 @@ function encodeProposal(proposal: ProposalRecord): xdr.ScVal {
   });
 }
 
-function encodeReturn(contract: "governor" | "timelock" | "votes", fnName: string, value: unknown): xdr.ScVal {
+function encodeCoSponsorshipDraft(draft: CoSponsorshipDraftRecord): xdr.ScVal {
+  return encMap({
+    id: encU64(draft.id),
+    creator: encAddress(draft.creator),
+    description: encString(draft.description),
+    description_hash: encBytes(draft.descriptionHash),
+    metadata_uri: encString(draft.metadataUri),
+    targets: encVec(draft.targets.map(encAddress)),
+    fn_names: encVec(draft.fnNames.map(encSymbol)),
+    calldatas: encVec(draft.calldatas.map(encBytes)),
+    created_ledger: encU32(draft.createdLedger),
+    expiry_ledger: encU32(draft.expiryLedger),
+    co_sponsors: encVec(draft.coSponsors.map(encAddress)),
+    co_sponsor_power: encVec(draft.coSponsorPower.map(encI128)),
+    total_power: encI128(draft.totalPower),
+    finalized: encBool(draft.finalized),
+    cancelled: encBool(draft.cancelled),
+  });
+}
+
+function encodeReturn(
+  contract: "governor" | "timelock" | "votes" | "coSponsorship",
+  fnName: string,
+  value: unknown,
+): xdr.ScVal {
+  if (contract === "coSponsorship") {
+    switch (fnName) {
+      case "create_draft":
+      case "finalize_draft":
+        return encU64(value as bigint);
+      case "co_sponsor":
+        return encVoid();
+      case "get_draft":
+        return encodeCoSponsorshipDraft(value as CoSponsorshipDraftRecord);
+      default:
+        throw new Error(`MockSorobanServer: no encoder for coSponsorship.${fnName}`);
+    }
+  }
   if (contract === "governor") {
     switch (fnName) {
       case "propose":
@@ -212,10 +250,11 @@ export class MockSorobanServer {
     this.results.clear();
   }
 
-  private resolveContract(address: string): "governor" | "timelock" | "votes" {
+  private resolveContract(address: string): "governor" | "timelock" | "votes" | "coSponsorship" {
     if (address === this.store.addresses.governor) return "governor";
     if (address === this.store.addresses.timelock) return "timelock";
     if (address === this.store.addresses.votes) return "votes";
+    if (address === this.store.addresses.coSponsorship) return "coSponsorship";
     throw new Error(`MockSorobanServer: unknown contract address ${address}`);
   }
 
@@ -230,6 +269,11 @@ export class MockSorobanServer {
       const handler = (timelockExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
       if (!handler) throw new Error(`MockSorobanServer: unknown timelock function ${invocation.functionName}`);
       return handler(store.timelock, this.clock, invocation.caller, invocation.args);
+    }
+    if (contract === "coSponsorship") {
+      const handler = (coSponsorshipExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
+      if (!handler) throw new Error(`MockSorobanServer: unknown co-sponsorship function ${invocation.functionName}`);
+      return handler(store, this.clock, invocation.caller, invocation.args);
     }
     const handler = (tokenVotesExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
     if (!handler) throw new Error(`MockSorobanServer: unknown votes function ${invocation.functionName}`);

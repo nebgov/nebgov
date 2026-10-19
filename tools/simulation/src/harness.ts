@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { Address, BASE_FEE, Keypair, nativeToScVal, TransactionBuilder } from "@stellar/stellar-sdk";
-import { GovernorClient, GovernorConfig, Network, TimelockClient, VoteType, VotesClient } from "@nebgov/sdk";
+import {
+  CoSponsorshipClient,
+  GovernorClient,
+  GovernorConfig,
+  Network,
+  TimelockClient,
+  VoteType,
+  VotesClient,
+} from "@nebgov/sdk";
 import { LedgerClock } from "./ledger";
 import { Actor, ActorSet } from "./actors";
 import { GovernorSettingsState, MockLedgerStore } from "./mock/store";
@@ -60,6 +68,7 @@ export interface DeployedContracts {
   governor: string;
   timelock: string;
   votes: string;
+  coSponsorship: string;
 }
 
 interface ClockSnapshot {
@@ -100,6 +109,7 @@ export class SimulationHarness {
   readonly config: SimulationConfig;
 
   governorClient!: GovernorClient;
+  coSponsorshipClient!: CoSponsorshipClient;
   timelockClient!: TimelockClient;
   votesClient!: VotesClient;
 
@@ -169,6 +179,10 @@ export class SimulationHarness {
         checkpoints: new Map(),
         totalSupplyCheckpoints: [],
       },
+      coSponsorship: {
+        drafts: new Map(),
+        draftCount: 0n,
+      },
     };
 
     seedBalances(store.votes, this.config.tokenBalances);
@@ -185,6 +199,7 @@ export class SimulationHarness {
       governor: contractAddress(1),
       timelock: contractAddress(2),
       votes: contractAddress(3),
+      coSponsorship: contractAddress(4),
     };
     this.store = this.buildStore();
 
@@ -192,6 +207,7 @@ export class SimulationHarness {
       governorAddress: this.addresses.governor,
       timelockAddress: this.addresses.timelock,
       votesAddress: this.addresses.votes,
+      coSponsorshipAddress: this.addresses.coSponsorship,
       network: this.config.network ?? "testnet",
       rpcUrl: this.config.mode === "testnet" ? this.config.rpcUrl : "https://mock.invalid",
       simulationAccount: this.config.mode === "mock" ? SIMULATION_ACCOUNT : undefined,
@@ -204,6 +220,7 @@ export class SimulationHarness {
     }
 
     this.governorClient = new GovernorClient(clientConfig);
+    this.coSponsorshipClient = new CoSponsorshipClient(clientConfig);
     this.timelockClient = new TimelockClient(clientConfig);
     this.votesClient = new VotesClient(clientConfig);
 

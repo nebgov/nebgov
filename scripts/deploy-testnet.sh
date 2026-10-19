@@ -25,10 +25,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Colour
 
-info()  { printf "${CYAN}[info]${NC}  %s\n" "$*"; }
-ok()    { printf "${GREEN}[ok]${NC}    %s\n" "$*"; }
-warn()  { printf "${YELLOW}[skip]${NC}  %s\n" "$*"; }
-fail()  { printf "${RED}[error]${NC} %s\n" "$*" >&2; exit 1; }
+info()  { printf '%b[info]%b  %s\n' "$CYAN" "$NC" "$*"; }
+ok()    { printf '%b[ok]%b    %s\n' "$GREEN" "$NC" "$*"; }
+warn()  { printf '%b[skip]%b  %s\n' "$YELLOW" "$NC" "$*"; }
+fail()  { printf '%b[error]%b %s\n' "$RED" "$NC" "$*" >&2; exit 1; }
 
 # ---- Load / bootstrap env file -------------------------------------
 if [[ -f "$ENV_FILE" ]]; then

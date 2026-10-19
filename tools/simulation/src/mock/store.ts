@@ -92,6 +92,30 @@ export interface ContractAddresses {
   governor: string;
   timelock: string;
   votes: string;
+  coSponsorship: string;
+}
+
+export interface CoSponsorshipDraftRecord {
+  id: bigint;
+  creator: string;
+  description: string;
+  descriptionHash: Uint8Array;
+  metadataUri: string;
+  targets: string[];
+  fnNames: string[];
+  calldatas: Uint8Array[];
+  createdLedger: number;
+  expiryLedger: number;
+  coSponsors: string[];
+  coSponsorPower: bigint[];
+  totalPower: bigint;
+  finalized: boolean;
+  cancelled: boolean;
+}
+
+export interface CoSponsorshipState {
+  drafts: Map<bigint, CoSponsorshipDraftRecord>;
+  draftCount: bigint;
 }
 
 export interface MockLedgerStore {
@@ -99,6 +123,7 @@ export interface MockLedgerStore {
   governor: GovernorState;
   timelock: TimelockState;
   votes: TokenVotesState;
+  coSponsorship: CoSponsorshipState;
 }
 
 export function cloneStore(store: MockLedgerStore): MockLedgerStore {
