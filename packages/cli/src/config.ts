@@ -16,6 +16,7 @@ export type NebGovCliConfig = {
   convictionVotingAddress?: string;
   optimisticGovernorAddress?: string;
   treasuryStrategiesAddress?: string;
+  wrapperAddress?: string;
   indexerUrl?: string;
   backendUrl?: string;
   keypairFile?: string;
@@ -35,6 +36,7 @@ export const CONFIG_ENV: Record<keyof NebGovCliConfig, string> = {
   convictionVotingAddress: "NEBGOV_CONVICTION_VOTING_ADDRESS",
   optimisticGovernorAddress: "NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS",
   treasuryStrategiesAddress: "NEBGOV_TREASURY_STRATEGIES_ADDRESS",
+  wrapperAddress: "NEBGOV_WRAPPER_ADDRESS",
   indexerUrl: "NEBGOV_INDEXER_URL",
   backendUrl: "NEBGOV_BACKEND_URL",
   keypairFile: "NEBGOV_KEYPAIR_FILE",

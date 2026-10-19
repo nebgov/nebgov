@@ -224,4 +224,53 @@ describe("WrapperClient", () => {
       );
     });
   });
+
+  describe("getDepositorBalance()", () => {
+    it("returns the deposited balance for an address", async () => {
+      mockSimulationSuccess.mockReturnValue(true);
+      const mockServer = {
+        getAccount: mockGetAccount,
+        simulateTransaction: jest.fn().mockResolvedValue({
+          result: { retval: { value: "2500" } },
+        }),
+      };
+
+      Object.defineProperty(client, "server", { value: mockServer });
+
+      const balance = await client.getDepositorBalance(validGAddr);
+      expect(balance).toBe(2500n);
+      expect(mockGetAccount).toHaveBeenCalledWith(validGAddr);
+      expect(mockNativeToScVal).toHaveBeenCalledWith(validGAddr, {
+        type: "address",
+      });
+    });
+
+    it("returns 0n when simulation has no retval", async () => {
+      mockSimulationSuccess.mockReturnValue(true);
+      const mockServer = {
+        getAccount: mockGetAccount,
+        simulateTransaction: jest.fn().mockResolvedValue({
+          result: { retval: null },
+        }),
+      };
+
+      Object.defineProperty(client, "server", { value: mockServer });
+
+      await expect(client.getDepositorBalance(validGAddr)).resolves.toBe(0n);
+    });
+
+    it("throws when simulation fails", async () => {
+      mockSimulationSuccess.mockReturnValue(false);
+      const mockServer = {
+        getAccount: mockGetAccount,
+        simulateTransaction: jest.fn().mockResolvedValue({}),
+      };
+
+      Object.defineProperty(client, "server", { value: mockServer });
+
+      await expect(client.getDepositorBalance(validGAddr)).rejects.toThrow(
+        "Simulation failed"
+      );
+    });
+  });
 });

@@ -9,6 +9,7 @@ import {
   ConvictionVotingClient,
   TreasuryStrategiesClient,
   SignalingClient,
+  WrapperClient,
   type DeploySettings,
   type GovernorConfig,
   type GovernorEntry,
@@ -76,6 +77,21 @@ function factoryClient(cfg: NebGovCliConfig): FactoryClient {
     factoryAddress: parseContractAddress(required(cfg, "factoryAddress"), "factoryAddress"),
     rpcUrl: cfg.rpcUrl,
   });
+}
+
+function wrapperClient(cfg: NebGovCliConfig): WrapperClient {
+  return new WrapperClient({
+    network: cfg.network,
+    wrapperAddress: parseContractAddress(required(cfg, "wrapperAddress"), "wrapperAddress"),
+    rpcUrl: cfg.rpcUrl,
+  });
+}
+
+/** Token amounts for wrap/unwrap must move something: the contract rejects zero. */
+function parseTokenAmount(value: string, field: string): bigint {
+  const amount = parseAmount(value, field);
+  if (amount === 0n) throw new Error(`${field} must be greater than zero`);
+  return amount;
 }
 
 /**
@@ -302,6 +318,62 @@ export function createProgram(): Command {
             votes.getVotes(delegator),
           ]);
           output({ address: delegator, delegatee, votingPower }, global);
+        }),
+    );
+
+  program
+    .command("wrapper")
+    .description("Token-votes-wrapper commands")
+    .addCommand(
+      new Command("wrap")
+        .argument("<amount>", "underlying token amount in base units")
+        .requiredOption("--keypair <file>", "keypair file path")
+        .action(async (amount: string, options) => {
+          const { global, cfg } = await context();
+          const value = parseTokenAmount(amount, "amount");
+          const wrapper = wrapperClient(cfg);
+          if (global.dryRun) {
+            output({ action: "wrapper.wrap", amount: value }, global);
+            return;
+          }
+
+          const signer = await loadKeypair(options.keypair);
+          const hash = await wrapper.deposit(signer, value);
+          output({ ok: true, amount: value, account: signer.publicKey(), hash }, global);
+        }),
+    )
+    .addCommand(
+      new Command("unwrap")
+        .argument("<amount>", "wrapped token amount in base units")
+        .requiredOption("--keypair <file>", "keypair file path")
+        .action(async (amount: string, options) => {
+          const { global, cfg } = await context();
+          const value = parseTokenAmount(amount, "amount");
+          const wrapper = wrapperClient(cfg);
+          if (global.dryRun) {
+            output({ action: "wrapper.unwrap", amount: value }, global);
+            return;
+          }
+
+          const signer = await loadKeypair(options.keypair);
+          const hash = await wrapper.withdraw(signer, value);
+          output({ ok: true, amount: value, account: signer.publicKey(), hash }, global);
+        }),
+    )
+    .addCommand(
+      new Command("balance")
+        .argument("[address]", "account to inspect (defaults to the configured account)")
+        .action(async (address: string | undefined) => {
+          const { global, cfg } = await context();
+          const account = address ? parseAddress(address, "address") : await defaultAccount(cfg);
+          if (!account) throw new Error("Provide an address or set NEBGOV_DEFAULT_ACCOUNT / keypair");
+
+          const wrapper = wrapperClient(cfg);
+          const [depositorBalance, votingPower] = await Promise.all([
+            wrapper.getDepositorBalance(account),
+            wrapper.getVotes(account),
+          ]);
+          output({ address: account, depositorBalance, votingPower }, global);
         }),
     );
 

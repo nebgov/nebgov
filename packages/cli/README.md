@@ -74,6 +74,7 @@ Example `~/.nebgov/config.json`:
 | `NEBGOV_CONVICTION_VOTING_ADDRESS` | n/a (env only) | `conviction-voting` |
 | `NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS` | n/a (env only) | `optimistic-governor` |
 | `NEBGOV_TREASURY_STRATEGIES_ADDRESS` | n/a (env only) | `treasury-strategies` |
+| `NEBGOV_WRAPPER_ADDRESS` | `wrapperAddress` | `wrapper` (required). |
 | `NEBGOV_SIGNAL_ANCHOR_ADDRESS` | n/a (env only) | `signaling-polls` |
 | `NEBGOV_CO_SPONSORSHIP_ADDRESS` | n/a (env only) | `drafts` |
 | `NEBGOV_INDEXER_URL` | n/a (env only) | `drafts` (indexer endpoint for draft queries). |
@@ -133,6 +134,16 @@ nebgov treasury batch-transfer --token C... --recipients ./payouts.csv --keypair
 ```
 
 `--recipients` is a CSV file with one `address,amount` row per line (amounts in base units). Supports `--dry-run`.
+
+### wrapper
+
+```bash
+nebgov wrapper wrap 1000 --keypair ~/.nebgov/keys/signer.secret
+nebgov wrapper unwrap 250 --keypair ~/.nebgov/keys/signer.secret
+nebgov wrapper balance G...
+```
+
+`wrap` and `unwrap` take amounts in base units and must be greater than zero. `balance` reports the underlying amount deposited and the account's voting power; the address defaults to the configured account. `wrap` and `unwrap` support `--dry-run`.
 
 ### proposal-bonds
 

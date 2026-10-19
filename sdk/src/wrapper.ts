@@ -135,4 +135,31 @@ export class WrapperClient {
     if (!val) return 0n;
     return BigInt((val as any).value ?? 0);
   }
+
+  /**
+   * Get the underlying token balance an address has deposited into the wrapper.
+   * Unlike {@link getVotes}, this is not affected by delegation.
+   */
+  async getDepositorBalance(address: string): Promise<bigint> {
+    const account = await this.server.getAccount(address);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_depositor_balance",
+          nativeToScVal(address, { type: "address" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+    const sim = await this.server.simulateTransaction(tx);
+    if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
+      throw new Error("Simulation failed");
+    }
+    const val = sim.result?.retval;
+    if (!val) return 0n;
+    return BigInt((val as any).value ?? 0);
+  }
 }
