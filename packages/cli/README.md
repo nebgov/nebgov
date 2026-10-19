@@ -75,6 +75,7 @@ Example `~/.nebgov/config.json`:
 | `NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS` | n/a (env only) | `optimistic-governor` |
 | `NEBGOV_TREASURY_STRATEGIES_ADDRESS` | n/a (env only) | `treasury-strategies` |
 | `NEBGOV_WRAPPER_ADDRESS` | `wrapperAddress` | `wrapper` (required). |
+| `NEBGOV_LIQUIDITY_ADDRESS` | `liquidityAddress` | `liquidity` (required). |
 | `NEBGOV_SIGNAL_ANCHOR_ADDRESS` | n/a (env only) | `signaling-polls` |
 | `NEBGOV_CO_SPONSORSHIP_ADDRESS` | n/a (env only) | `drafts` |
 | `NEBGOV_INDEXER_URL` | n/a (env only) | `drafts` (indexer endpoint for draft queries). |
@@ -151,6 +152,29 @@ nebgov wrapper balance G...
 nebgov proposal-bonds list --limit 20
 nebgov proposal-bonds settings
 ```
+
+### reputation
+
+```bash
+nebgov reputation get G...
+nebgov reputation history G... --limit 20 --offset 0
+nebgov reputation threshold G...
+```
+
+`get` and `threshold` read the governor contract on-chain (`NEBGOV_GOVERNOR_ADDRESS`). `threshold` reports the reputation-adjusted proposal threshold that `propose()` actually checks. `history` reads the score timeline from the indexer, so it also needs `NEBGOV_INDEXER_URL`.
+
+### liquidity
+
+```bash
+nebgov liquidity pool 0 1
+nebgov liquidity price 0 1
+nebgov liquidity position 0 1 --provider G...
+nebgov liquidity add 0 1 --amount-a 1000 --amount-b 2000 --min-lp 1 --keypair ~/.nebgov/keys/signer.secret
+nebgov liquidity remove 0 1 --lp-tokens 500 --keypair ~/.nebgov/keys/signer.secret
+nebgov liquidity swap 0 1 --amount-in 100 --min-out 95 --keypair ~/.nebgov/keys/signer.secret
+```
+
+`0 1` are the outcome ids of the pool's pair. Amounts are in base units. Read commands simulate with the configured account (`NEBGOV_DEFAULT_ACCOUNT` or the keypair file), and `pool` prints `null` when the pair has no pool. `add`, `remove` and `swap` support `--dry-run`. Creating a pool is not available yet because the SDK's `LiquidityClient` does not expose it.
 
 ### conviction-voting
 

@@ -10,11 +10,17 @@ import {
   TreasuryStrategiesClient,
   SignalingClient,
   WrapperClient,
+  ReputationClient,
+  LiquidityClient,
+  getNetworkPassphrase,
+  type ConvictionVotingConfig,
   type DeploySettings,
   type GovernorConfig,
   type GovernorEntry,
+  type OptimisticGovernorConfig,
   type OptimisticProposalState,
 } from "@nebgov/sdk";
+import { TransactionBuilder, type Keypair } from "@stellar/stellar-sdk";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
@@ -87,6 +93,24 @@ function wrapperClient(cfg: NebGovCliConfig): WrapperClient {
   });
 }
 
+function liquidityClient(cfg: NebGovCliConfig, simulationAccount?: string): LiquidityClient {
+  return new LiquidityClient({
+    network: cfg.network,
+    liquidityAddress: parseContractAddress(required(cfg, "liquidityAddress"), "liquidityAddress"),
+    rpcUrl: cfg.rpcUrl,
+    simulationAccount,
+  });
+}
+
+/** Signs prepared transaction XDR with a local keypair, in the shape the `*WithSign` SDK methods expect. */
+function xdrSigner(cfg: NebGovCliConfig, signer: Keypair): (xdr: string) => Promise<string> {
+  return async (unsignedXdr) => {
+    const tx = TransactionBuilder.fromXDR(unsignedXdr, getNetworkPassphrase(cfg.network));
+    tx.sign(signer);
+    return tx.toXDR();
+  };
+}
+
 /** Token amounts for wrap/unwrap must move something: the contract rejects zero. */
 function parseTokenAmount(value: string, field: string): bigint {
   const amount = parseAmount(value, field);
@@ -108,6 +132,24 @@ function moduleConfig(cfg: NebGovCliConfig, extra: Partial<GovernorConfig>): Gov
     indexerUrl: cfg.indexerUrl,
     backendUrl: cfg.backendUrl,
     ...extra,
+  };
+}
+
+function convictionVotingConfig(cfg: NebGovCliConfig): ConvictionVotingConfig {
+  return {
+    network: cfg.network,
+    rpcUrl: cfg.rpcUrl,
+    indexerUrl: cfg.indexerUrl,
+    convictionVotingAddress: required(cfg, "convictionVotingAddress"),
+  };
+}
+
+function optimisticGovernorConfig(cfg: NebGovCliConfig): OptimisticGovernorConfig {
+  return {
+    network: cfg.network,
+    rpcUrl: cfg.rpcUrl,
+    indexerUrl: cfg.indexerUrl,
+    optimisticGovernorAddress: required(cfg, "optimisticGovernorAddress"),
   };
 }
 
@@ -597,7 +639,7 @@ export function createProgram(): Command {
           const { global, cfg } = await context();
           const proposalId = parseId(id, "id");
           const client = new ConvictionVotingClient(
-            moduleConfig(cfg, { convictionVotingAddress: required(cfg, "convictionVotingAddress") }),
+            convictionVotingConfig(cfg),
           );
           output(await client.getProposal(proposalId), global);
         }),
@@ -609,7 +651,7 @@ export function createProgram(): Command {
           const { global, cfg } = await context();
           const proposalId = parseId(id, "id");
           const client = new ConvictionVotingClient(
-            moduleConfig(cfg, { convictionVotingAddress: required(cfg, "convictionVotingAddress") }),
+            convictionVotingConfig(cfg),
           );
           output(await client.getConvictionHistory(proposalId), global);
         }),
@@ -625,7 +667,7 @@ export function createProgram(): Command {
           const { global, cfg } = await context();
           const status = options.status ? parseChoice(options.status, "status", OPTIMISTIC_STATES) : undefined;
           const client = new OptimisticGovernorClient(
-            moduleConfig(cfg, { optimisticGovernorAddress: required(cfg, "optimisticGovernorAddress") }),
+            optimisticGovernorConfig(cfg),
           );
           output(await client.listProposals(status), global);
         }),
@@ -637,7 +679,7 @@ export function createProgram(): Command {
           const { global, cfg } = await context();
           const proposalId = parseId(id, "id");
           const client = new OptimisticGovernorClient(
-            moduleConfig(cfg, { optimisticGovernorAddress: required(cfg, "optimisticGovernorAddress") }),
+            optimisticGovernorConfig(cfg),
           );
           output(await client.getProposal(proposalId), global);
         }),
@@ -647,7 +689,7 @@ export function createProgram(): Command {
         .action(async () => {
           const { global, cfg } = await context();
           const client = new OptimisticGovernorClient(
-            moduleConfig(cfg, { optimisticGovernorAddress: required(cfg, "optimisticGovernorAddress") }),
+            optimisticGovernorConfig(cfg),
           );
           output(await client.getConfig(), global);
         }),
@@ -712,6 +754,202 @@ export function createProgram(): Command {
           const pollId = parseId(id, "id");
           const client = new SignalingClient(moduleConfig(cfg, { backendUrl: required(cfg, "backendUrl") }));
           output(await client.getResults(pollId), global);
+        }),
+    );
+
+  program
+    .command("reputation")
+    .description("Proposer reputation commands")
+    .addCommand(
+      new Command("get")
+        .description("Show a proposer's on-chain reputation record")
+        .argument("<address>", "proposer address")
+        .action(async (address: string) => {
+          const { global, cfg } = await context();
+          const proposer = parseAddress(address, "address");
+          const client = new ReputationClient(moduleConfig(cfg, { governorAddress: required(cfg, "governorAddress") }));
+          output(await client.getProposerReputation(proposer), global);
+        }),
+    )
+    .addCommand(
+      new Command("history")
+        .description("Show a proposer's reputation score history (requires the indexer)")
+        .argument("<address>", "proposer address")
+        .option("--limit <number>", "max entries (1-200)", "50")
+        .option("--offset <number>", "number of entries to skip", "0")
+        .action(async (address: string, options) => {
+          const { global, cfg } = await context();
+          const proposer = parseAddress(address, "address");
+          const limit = parsePositiveInt(options.limit, "limit");
+          const offset = parseId(options.offset, "offset");
+          const client = new ReputationClient(moduleConfig(cfg, { governorAddress: required(cfg, "governorAddress") }));
+          output(await client.getScoreHistory(proposer, limit, offset), global);
+        }),
+    )
+    .addCommand(
+      new Command("threshold")
+        .description("Show the reputation-adjusted proposal threshold for a proposer")
+        .argument("<address>", "proposer address")
+        .action(async (address: string) => {
+          const { global, cfg } = await context();
+          const proposer = parseAddress(address, "address");
+          const client = new ReputationClient(moduleConfig(cfg, { governorAddress: required(cfg, "governorAddress") }));
+          output({ proposer, effectiveThreshold: await client.getEffectiveThreshold(proposer) }, global);
+        }),
+    );
+
+  program
+    .command("liquidity")
+    .description("Outcome-pair liquidity pool commands")
+    .addCommand(
+      new Command("pool")
+        .description("Show pool reserves, LP supply and fee (null if the pool does not exist)")
+        .argument("<outcomeA>", "first outcome id")
+        .argument("<outcomeB>", "second outcome id")
+        .action(async (outcomeA: string, outcomeB: string) => {
+          const { global, cfg } = await context();
+          const account = await defaultAccount(cfg);
+          const pool = await liquidityClient(cfg, account).getPoolSafe(
+            parseU32(outcomeA, "outcomeA"),
+            parseU32(outcomeB, "outcomeB"),
+          );
+          output(pool, global);
+        }),
+    )
+    .addCommand(
+      new Command("price")
+        .description("Show the pool price (reserve_b / reserve_a, scaled by 10,000)")
+        .argument("<outcomeA>", "first outcome id")
+        .argument("<outcomeB>", "second outcome id")
+        .action(async (outcomeA: string, outcomeB: string) => {
+          const { global, cfg } = await context();
+          const account = await defaultAccount(cfg);
+          const price = await liquidityClient(cfg, account).getPrice(
+            parseU32(outcomeA, "outcomeA"),
+            parseU32(outcomeB, "outcomeB"),
+          );
+          output({ outcomeA: parseU32(outcomeA, "outcomeA"), outcomeB: parseU32(outcomeB, "outcomeB"), price }, global);
+        }),
+    )
+    .addCommand(
+      new Command("position")
+        .description("Show the LP tokens a provider holds in a pool")
+        .argument("<outcomeA>", "first outcome id")
+        .argument("<outcomeB>", "second outcome id")
+        .option("--provider <address>", "liquidity provider (defaults to the configured account)")
+        .action(async (outcomeA: string, outcomeB: string, options) => {
+          const { global, cfg } = await context();
+          const account = await defaultAccount(cfg);
+          const provider = options.provider ? parseAddress(options.provider, "provider") : account;
+          if (!provider) throw new Error("Missing --provider, NEBGOV_DEFAULT_ACCOUNT or NEBGOV_KEYPAIR_FILE");
+          const lpTokens = await liquidityClient(cfg, account).getLpPosition(
+            provider,
+            parseU32(outcomeA, "outcomeA"),
+            parseU32(outcomeB, "outcomeB"),
+          );
+          output({ provider, lpTokens }, global);
+        }),
+    )
+    .addCommand(
+      new Command("add")
+        .description("Deposit both outcome amounts into a pool and receive LP tokens")
+        .argument("<outcomeA>", "first outcome id")
+        .argument("<outcomeB>", "second outcome id")
+        .requiredOption("--amount-a <amount>", "amount of outcome A in base units")
+        .requiredOption("--amount-b <amount>", "amount of outcome B in base units")
+        .option("--min-lp <amount>", "minimum LP tokens to receive", "0")
+        .requiredOption("--keypair <file>", "keypair file path")
+        .action(async (outcomeA: string, outcomeB: string, options) => {
+          const { global, cfg } = await context();
+          const plan = {
+            outcomeA: parseU32(outcomeA, "outcomeA"),
+            outcomeB: parseU32(outcomeB, "outcomeB"),
+            amountA: parseTokenAmount(options.amountA, "amount-a"),
+            amountB: parseTokenAmount(options.amountB, "amount-b"),
+            minLpTokensOut: parseAmount(options.minLp, "min-lp"),
+          };
+          const client = liquidityClient(cfg);
+          if (global.dryRun) {
+            output({ action: "liquidity.add", ...plan }, global);
+            return;
+          }
+
+          const signer = await loadKeypair(options.keypair);
+          const hash = await client.addLiquidityWithSign(
+            signer.publicKey(),
+            plan.outcomeA,
+            plan.outcomeB,
+            plan.amountA,
+            plan.amountB,
+            plan.minLpTokensOut,
+            xdrSigner(cfg, signer),
+          );
+          output({ ok: true, ...plan, account: signer.publicKey(), hash }, global);
+        }),
+    )
+    .addCommand(
+      new Command("remove")
+        .description("Burn LP tokens and withdraw the underlying reserves")
+        .argument("<outcomeA>", "first outcome id")
+        .argument("<outcomeB>", "second outcome id")
+        .requiredOption("--lp-tokens <amount>", "LP tokens to burn")
+        .requiredOption("--keypair <file>", "keypair file path")
+        .action(async (outcomeA: string, outcomeB: string, options) => {
+          const { global, cfg } = await context();
+          const plan = {
+            outcomeA: parseU32(outcomeA, "outcomeA"),
+            outcomeB: parseU32(outcomeB, "outcomeB"),
+            lpTokens: parseTokenAmount(options.lpTokens, "lp-tokens"),
+          };
+          const client = liquidityClient(cfg);
+          if (global.dryRun) {
+            output({ action: "liquidity.remove", ...plan }, global);
+            return;
+          }
+
+          const signer = await loadKeypair(options.keypair);
+          const hash = await client.removeLiquidityWithSign(
+            signer.publicKey(),
+            plan.outcomeA,
+            plan.outcomeB,
+            plan.lpTokens,
+            xdrSigner(cfg, signer),
+          );
+          output({ ok: true, ...plan, account: signer.publicKey(), hash }, global);
+        }),
+    )
+    .addCommand(
+      new Command("swap")
+        .description("Swap an amount of one outcome for another")
+        .argument("<outcomeIn>", "outcome id to sell")
+        .argument("<outcomeOut>", "outcome id to buy")
+        .requiredOption("--amount-in <amount>", "amount to sell in base units")
+        .option("--min-out <amount>", "minimum amount to receive", "0")
+        .requiredOption("--keypair <file>", "keypair file path")
+        .action(async (outcomeIn: string, outcomeOut: string, options) => {
+          const { global, cfg } = await context();
+          const plan = {
+            outcomeIn: parseU32(outcomeIn, "outcomeIn"),
+            outcomeOut: parseU32(outcomeOut, "outcomeOut"),
+            amountIn: parseTokenAmount(options.amountIn, "amount-in"),
+            minAmountOut: parseAmount(options.minOut, "min-out"),
+          };
+          const client = liquidityClient(cfg);
+          if (global.dryRun) {
+            output({ action: "liquidity.swap", ...plan }, global);
+            return;
+          }
+
+          const signer = await loadKeypair(options.keypair);
+          const hash = await client.swapWithSign(
+            signer.publicKey(),
+            plan.outcomeIn,
+            plan.outcomeOut,
+            plan.amountIn,
+            plan.minAmountOut,
+            xdrSigner(cfg, signer),
+          );
+          output({ ok: true, ...plan, account: signer.publicKey(), hash }, global);
         }),
     );
 

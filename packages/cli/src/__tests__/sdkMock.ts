@@ -16,6 +16,8 @@ export function mockSdk(): Record<string, unknown> {
     TreasuryStrategiesClient: jest.fn(),
     SignalingClient: jest.fn(),
     WrapperClient: jest.fn(),
+    ReputationClient: jest.fn(),
+    LiquidityClient: jest.fn(),
   };
 }
 
