@@ -11,6 +11,7 @@ NebGov is a decentralized governance platform built on Stellar that enables on-c
 ```mermaid
 graph TB
     subgraph "Stellar Network"
+        GF[Governor Factory Contract]
         SG[Governor Contract]
         SW[Wrapper Contract]
         ST[Treasury Contract]
@@ -44,6 +45,8 @@ graph TB
     WEB -->|HTTP Requests| API
     WEB -->|WebSocket| IDX
     
+    GF -->|Deploys & Initializes| SG
+    GF -->|Emits Events| RPC
     SG -->|Emits Events| RPC
     SW -->|Emits Events| RPC
     ST -->|Emits Events| RPC
@@ -57,6 +60,17 @@ graph TB
 ## Components
 
 ### Stellar Smart Contracts
+
+#### Governor Factory Contract
+Permissionless deployer for complete governance stacks (`contracts/governor-factory/`, see [dedicated documentation](./governor-factory.md)):
+- Deploys Token-Votes, Timelock, and Governor contracts in a single atomic transaction
+- Enforces proper initialization order and interconnects contract addresses
+- Generates predictable, deterministic contract addresses from sequential deployment IDs
+- Maintains an on-chain registry of all deployed governor instances with pagination support
+- Validates governance parameter boundaries preflight to prevent misconfigurations
+
+**Key Events:**
+- `GovernorDeployed`: Full governance stack deployed and registered
 
 #### Governor Contract
 The core governance contract that manages:

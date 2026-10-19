@@ -22,7 +22,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | Time-locked voting boost | Lock tokens to gain amplified, linearly-decaying voting power ([docs](./docs/vote-escrow.md)) |
 | Multi-sig treasury     | DAO-controlled treasury with configurable threshold |
 | Treasury yield strategies | Governance-controlled allocation of idle treasury funds to whitelisted yield adapters ([docs](./docs/treasury-strategies.md)) |
-| Permissionless factory | Deploy your own governance instance in one call     |
+| Permissionless factory | Deploy your own governance instance in one call ([docs](./docs/governor-factory.md)) |
 | Conviction voting      | Self-executing voting based on staking duration and amount ([docs](./docs/conviction-voting.md)) |
 | Optimistic governance  | Fast-track proposals that execute unless challenged ([docs](./docs/optimistic-governance.md)) |
 | Proposal bonds         | Refundable proposer bonds with governance-triggered slashing ([docs](./docs/proposal-bonds.md)) |
@@ -39,7 +39,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | `contracts/governor`            | Core governance contract — proposal lifecycle, voting, execution |
 | `contracts/timelock`            | Delayed execution controller                                     |
 | `contracts/token-votes`         | Voting power with checkpointing and delegation                   |
-| `contracts/governor-factory`    | Permissionless governor deployer                                 |
+| `contracts/governor-factory`    | Permissionless governor deployer ([docs](./docs/governor-factory.md)) |
 | `contracts/treasury`            | Multi-sig treasury with budget streams                           |
 | `contracts/token-votes-wrapper` | SEP-41 token wrapper that adds governance voting                 |
 | `contracts/co-sponsorship`      | Pool voting power to meet the proposal threshold                 |
