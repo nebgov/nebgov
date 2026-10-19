@@ -77,6 +77,14 @@ The core governance contract that manages:
 - `ConfigUpdated`: Governance parameters changed
 - `GovernorUpgraded`: Contract upgraded
 
+#### Timelock Contract
+Holds queued governor actions until a mandatory delay has passed:
+- Schedules single operations, atomic batches and DAG-ordered operations
+- Enforces a minimum delay and an execution window
+- Lets the governor or admin cancel pending operations
+
+See [Timelock](./timelock.md) for the entrypoints, events, errors and deployment order.
+
 #### Wrapper Contract
 Token wrapper that enables governance participation:
 - Token deposits and withdrawals
