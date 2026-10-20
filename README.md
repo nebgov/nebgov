@@ -26,6 +26,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | Conviction voting      | Self-executing voting based on staking duration and amount ([docs](./docs/conviction-voting.md)) |
 | Optimistic governance  | Fast-track proposals that execute unless challenged ([docs](./docs/optimistic-governance.md)) |
 | Proposal bonds         | Refundable proposer bonds with governance-triggered slashing ([docs](./docs/proposal-bonds.md)) |
+| Guardian Council       | M-of-N emergency pause and cancellation authority ([docs](./docs/guardian-council.md)) |
 | Gasless signaling      | Off-chain polling with on-chain result anchoring ([docs](./docs/signal-anchor.md)) |
 
 ---
