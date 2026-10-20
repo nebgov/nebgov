@@ -35,3 +35,20 @@ COMMIT;
 Confirm the affected row count before proceeding. A zero-row result means the
 old migration was not recorded and the newly numbered migration should run
 normally.
+
+## Vote Escrow schema reconciliation (migration 025)
+
+Migrations 017 and 025 previously declared the same `vote_escrow_locks` table,
+while 023 declared a distinct legacy schema. Migration 025 now reconciles
+existing layouts without deleting lock records. It widens legacy numeric and
+ledger fields, and backfills the missing `updated_ledger` with 0 (the actual
+historical update ledger is unknown).
+
+The 023 schema permits multiple rows per `owner_address`, while the current
+indexer also uses `ON CONFLICT (owner_address)` upserts. If existing rows
+contain repeated owners, 025 deliberately fails while building its unique
+index instead of automatically losing historical locks. Investigate the
+per-owner projection versus multi-lock policy before retrying the upgrade.
+
+Validate against a fresh database and one migrated through 024, including a
+legacy-023 fixture. Rollback intentionally preserves the shared table.
