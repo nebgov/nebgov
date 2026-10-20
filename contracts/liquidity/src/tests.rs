@@ -1,4 +1,4 @@
-use super::{LiquidityContract, LiquidityContractClient, LiquidityError};
+use super::{DataKey, LiquidityContract, LiquidityContractClient, LiquidityError};
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
     contract, contractimpl, contracttype,
@@ -807,6 +807,47 @@ fn test_liquidity_error_codes_snapshot() {
     assert_eq!(LiquidityError::SlippageExceeded as u32, 11);
     assert_eq!(LiquidityError::NotGovernor as u32, 12);
     assert_eq!(LiquidityError::DepositTooSmall as u32, 13);
+    assert_eq!(LiquidityError::PoolTokensNotFound as u32, 14);
+}
+
+#[test]
+fn test_remove_liquidity_missing_pool_tokens_returns_typed_error() {
+    let (env, contract_id, governor, provider, _, token_a, token_b) = setup_liquidity();
+    let client = LiquidityContractClient::new(&env, &contract_id);
+
+    setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
+    client.add_liquidity(&provider, &0, &1, &10_000, &10_000, &0);
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PoolTokens(0, 1));
+    });
+
+    assert!(matches!(
+        client.try_remove_liquidity(&provider, &0, &1, &10_000),
+        Err(Ok(LiquidityError::PoolTokensNotFound))
+    ));
+}
+
+#[test]
+fn test_swap_missing_pool_tokens_returns_typed_error() {
+    let (env, contract_id, governor, provider, trader, token_a, token_b) = setup_liquidity();
+    let client = LiquidityContractClient::new(&env, &contract_id);
+
+    setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
+    client.add_liquidity(&provider, &0, &1, &10_000, &10_000, &0);
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PoolTokens(0, 1));
+    });
+
+    assert!(matches!(
+        client.try_swap(&trader, &0, &1, &100, &0),
+        Err(Ok(LiquidityError::PoolTokensNotFound))
+    ));
 }
 
 // ============================================================================

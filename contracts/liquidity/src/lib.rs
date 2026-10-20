@@ -91,6 +91,8 @@ pub enum LiquidityError {
     NotGovernor = 12,
     /// Deposit amount is below the minimum required.
     DepositTooSmall = 13,
+    /// Token pair for an existing pool is missing from storage.
+    PoolTokensNotFound = 14,
 }
 
 #[contract]
@@ -354,7 +356,8 @@ impl LiquidityContract {
 
         let tokens_key = DataKey::PoolTokens(lo, hi);
         let stored_tokens: Option<(Address, Address)> = env.storage().persistent().get(&tokens_key);
-        let (token_lo, token_hi) = stored_tokens.expect("pool tokens not found");
+        let (token_lo, token_hi) = stored_tokens
+            .unwrap_or_else(|| env.panic_with_error(LiquidityError::PoolTokensNotFound));
 
         let amount_lo = (lp_tokens * pool.reserve_a) / pool.total_lp_supply;
         let amount_hi = (lp_tokens * pool.reserve_b) / pool.total_lp_supply;
@@ -444,7 +447,8 @@ impl LiquidityContract {
         // PoolTokens(lo, hi) stores (token_lo, token_hi).
         let tokens_key = DataKey::PoolTokens(lo, hi);
         let stored_tokens: Option<(Address, Address)> = env.storage().persistent().get(&tokens_key);
-        let (token_lo, token_hi) = stored_tokens.expect("pool tokens not found");
+        let (token_lo, token_hi) = stored_tokens
+            .unwrap_or_else(|| env.panic_with_error(LiquidityError::PoolTokensNotFound));
 
         // If outcome_in is lo, we sell into reserve_a and receive from reserve_b,
         // and vice versa for the reverse direction.
