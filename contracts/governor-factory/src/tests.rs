@@ -510,3 +510,82 @@ fn test_deploy_rejects_invalid_vote_type() {
         &120_960u32,
     );
 }
+
+#[test]
+fn test_set_native_token_before_initialize_returns_typed_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let native_token = Address::generate(&env);
+
+    let factory_id = env.register(GovernorFactoryContract, ());
+    let factory = GovernorFactoryContractClient::new(&env, &factory_id);
+
+    assert!(matches!(
+        factory.try_set_native_token(&admin, &native_token),
+        Err(Ok(FactoryError::NotInitialized))
+    ));
+}
+
+#[test]
+fn test_get_governor_unknown_id_returns_typed_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[0u8; 32]);
+
+    let factory_id = env.register(GovernorFactoryContract, ());
+    let factory = GovernorFactoryContractClient::new(&env, &factory_id);
+    factory.initialize(&admin, &hash, &hash, &hash);
+
+    assert!(matches!(
+        factory.try_get_governor(&42u64),
+        Err(Ok(FactoryError::GovernorNotFound))
+    ));
+}
+
+#[test]
+fn test_deploy_missing_wasm_returns_typed_error() {
+    let keys = [
+        DataKey::GovernorWasm,
+        DataKey::TimelockWasm,
+        DataKey::TokenVotesWasm,
+    ];
+
+    for key in keys {
+        let env = Env::default();
+        env.mock_all_auths_allowing_non_root_auth();
+
+        let admin = Address::generate(&env);
+        let deployer = Address::generate(&env);
+        let token = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        let factory_id = env.register(GovernorFactoryContract, ());
+        let factory = GovernorFactoryContractClient::new(&env, &factory_id);
+        factory.initialize(&admin, &hash, &hash, &hash);
+
+        env.as_contract(&factory_id, || {
+            env.storage().instance().remove(&key);
+        });
+
+        assert!(matches!(
+            factory.try_deploy(
+                &deployer,
+                &token,
+                &100u32,
+                &1000u32,
+                &50u32,
+                &0i128,
+                &3600u64,
+                &guardian,
+                &1u32,
+                &120_960u32,
+            ),
+            Err(Ok(FactoryError::WasmNotFound))
+        ));
+    }
+}

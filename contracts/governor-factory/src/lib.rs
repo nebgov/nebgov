@@ -23,6 +23,8 @@ pub enum FactoryError {
     InvalidVoteType = 4,
     InsufficientBalance = 5,
     WasmNotFound = 6,
+    NotInitialized = 7,
+    GovernorNotFound = 8,
 }
 
 #[contracttype]
@@ -137,7 +139,7 @@ impl GovernorFactoryContract {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("factory not initialized");
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::NotInitialized));
         if admin != stored_admin {
             panic!("not admin");
         }
@@ -208,19 +210,19 @@ impl GovernorFactoryContract {
             .storage()
             .instance()
             .get(&DataKey::GovernorWasm)
-            .expect("governor wasm not set");
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::WasmNotFound));
         #[allow(unused_variables)]
         let timelock_wasm: BytesN<32> = env
             .storage()
             .instance()
             .get(&DataKey::TimelockWasm)
-            .expect("timelock wasm not set");
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::WasmNotFound));
         #[allow(unused_variables)]
         let token_votes_wasm: BytesN<32> = env
             .storage()
             .instance()
             .get(&DataKey::TokenVotesWasm)
-            .expect("token-votes wasm not set");
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::WasmNotFound));
 
         // Generate deterministic salts for each contract based on the ID.
         // This ensures that for a given factory and ID, the addresses are predictable.
@@ -363,7 +365,7 @@ impl GovernorFactoryContract {
         env.storage()
             .persistent()
             .get(&DataKey::Governor(id))
-            .expect("governor not found")
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::GovernorNotFound))
     }
 
     /// Get a paginated list of all registered governors.
@@ -379,6 +381,7 @@ impl GovernorFactoryContract {
         let mut entries = Vec::new(&env);
         let mut i = start;
         while i < end {
+            // `i < end <= len`, so the index is always in bounds.
             let id = list.get(i).unwrap();
             let entry = Self::get_governor(env.clone(), id);
             entries.push_back(entry);
