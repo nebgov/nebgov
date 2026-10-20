@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "sorogov-fuzz"
 version = "0.0.0"
@@ -10,7 +12,19 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
-soroban-sdk = { workspace = true }
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+
+[dependencies.sorogov-liquidity]
+path = "../contracts/liquidity"
+features = ["testutils"]
+
+[dependencies.sorogov-co-sponsorship]
+path = "../contracts/co-sponsorship"
+features = ["testutils"]
+
+[dependencies.sorogov-conviction-voting]
+path = "../contracts/conviction-voting"
+features = ["testutils"]
 
 [dependencies.sorogov-governor]
 path = "../contracts/governor"
@@ -47,4 +61,19 @@ doc = false
 [[bin]]
 name = "proposal_bonds"
 path = "fuzz_targets/proposal_bonds.rs"
+doc = false
+
+[[bin]]
+name = "liquidity_pool"
+path = "fuzz_targets/liquidity_pool.rs"
+doc = false
+
+[[bin]]
+name = "co_sponsorship_drafts"
+path = "fuzz_targets/co_sponsorship_drafts.rs"
+doc = false
+
+[[bin]]
+name = "conviction_voting"
+path = "fuzz_targets/conviction_voting.rs"
 doc = false
