@@ -85,6 +85,19 @@ Holds queued governor actions until a mandatory delay has passed:
 
 See [Timelock](./timelock.md) for the entrypoints, events, errors and deployment order.
 
+#### Governor Factory Contract
+Permissionless deployer for complete governance stacks (`contracts/governor-factory/`):
+- `deploy` creates and initializes a Token-Votes, Timelock and Governor trio for a token in one call
+- Validates the governor settings before anything is deployed
+- Keeps a registry of every governor it deploys, readable with `get_governor` and `get_all_governors`
+
+See [Governor Factory](./governor-factory.md) for the entrypoints, deploy parameters, events, errors and deployment order.
+
+**Depends on:** the compiled Governor, Timelock and Token-Votes WASM, uploaded before the factory is initialized.
+
+**Key Events:**
+- `GovernorDeployed`: A new governor stack was deployed and registered
+
 #### Wrapper Contract
 Token wrapper that enables governance participation:
 - Token deposits and withdrawals
