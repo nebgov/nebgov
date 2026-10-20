@@ -81,7 +81,7 @@ fn pause_executes_only_after_threshold_and_lands_on_governor() {
 
     // 1 of 2 — not executable yet.
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
-    assert_eq!(err, GuardianCouncilError::ThresholdNotMet);
+    assert_eq!(err, GuardianCouncilError::ThresholdNotMet.into());
 
     s.council.approve_action(&s.m[1], &id);
     s.council.execute_action(&id);
@@ -100,7 +100,7 @@ fn non_member_cannot_propose_or_approve() {
         .try_propose_action(&stranger, &GuardianAction::Pause)
         .unwrap_err()
         .unwrap();
-    assert_eq!(e1, GuardianCouncilError::NotAMember);
+    assert_eq!(e1, GuardianCouncilError::NotAMember.into());
 
     let id = s.council.propose_action(&s.m[0], &GuardianAction::Pause);
     let e2 = s
@@ -108,7 +108,7 @@ fn non_member_cannot_propose_or_approve() {
         .try_approve_action(&stranger, &id)
         .unwrap_err()
         .unwrap();
-    assert_eq!(e2, GuardianCouncilError::NotAMember);
+    assert_eq!(e2, GuardianCouncilError::NotAMember.into());
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn double_approval_does_not_double_count() {
     assert_eq!(s.council.get_action(&id).approvals.len(), 1);
 
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
-    assert_eq!(err, GuardianCouncilError::ThresholdNotMet);
+    assert_eq!(err, GuardianCouncilError::ThresholdNotMet.into());
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn revoke_drops_below_threshold_and_blocks_until_reapproved() {
 
     s.council.revoke_approval(&s.m[1], &id); // back to 1/2
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
-    assert_eq!(err, GuardianCouncilError::ThresholdNotMet);
+    assert_eq!(err, GuardianCouncilError::ThresholdNotMet.into());
 
     s.council.approve_action(&s.m[2], &id); // 2/2 again
     s.council.execute_action(&id);
@@ -147,7 +147,7 @@ fn execution_after_ttl_elapsed_panics() {
     s.env.ledger().with_mut(|l| l.sequence_number += 101);
 
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
-    assert_eq!(err, GuardianCouncilError::ActionExpired);
+    assert_eq!(err, GuardianCouncilError::ActionExpired.into());
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn cannot_execute_twice() {
     let id = s.council.propose_action(&s.m[0], &GuardianAction::Pause);
     s.council.execute_action(&id);
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
-    assert_eq!(err, GuardianCouncilError::AlreadyExecuted);
+    assert_eq!(err, GuardianCouncilError::AlreadyExecuted.into());
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn initialize_rejects_bad_threshold_and_duplicate_members() {
         .try_initialize(&dupes, &1u32, &governor_id, &0u32)
         .unwrap_err()
         .unwrap();
-    assert_eq!(e, GuardianCouncilError::DuplicateMember);
+    assert_eq!(e, GuardianCouncilError::DuplicateMember.into());
 
     let mut one = Vec::new(&env);
     one.push_back(a.clone());
@@ -226,5 +226,84 @@ fn initialize_rejects_bad_threshold_and_duplicate_members() {
         .try_initialize(&one, &5u32, &governor_id, &0u32)
         .unwrap_err()
         .unwrap();
-    assert_eq!(e2, GuardianCouncilError::InvalidThreshold);
+    assert_eq!(e2, GuardianCouncilError::InvalidThreshold.into());
+}
+
+// ── #1380: SetActionTtl action and expiry tests ──────────────────────────────
+
+/// The TTL can be changed via a council action gated by threshold approval.
+/// 0 means no expiry (documented in do_set_action_ttl).
+#[test]
+fn set_action_ttl_updates_via_council_action() {
+    let s = setup(2, 0);
+
+    // Initial TTL is 0 (no expiry).
+    assert_eq!(s.council.get_action_ttl(), 0);
+
+    let id = s.council.propose_action(&s.m[0], &GuardianAction::SetActionTtl(500));
+    // 1 of 2 — threshold not yet met.
+    let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
+    assert_eq!(err, GuardianCouncilError::ThresholdNotMet.into());
+
+    s.council.approve_action(&s.m[1], &id);
+    s.council.execute_action(&id);
+
+    assert_eq!(s.council.get_action_ttl(), 500);
+}
+
+/// Setting TTL to 0 via a council action disables expiry.
+#[test]
+fn set_action_ttl_to_zero_disables_expiry() {
+    // Start with a TTL of 100 ledgers.
+    let s = setup(1, 100);
+    assert_eq!(s.council.get_action_ttl(), 100);
+
+    let id = s.council.propose_action(&s.m[0], &GuardianAction::SetActionTtl(0));
+    s.council.execute_action(&id);
+
+    // TTL is now 0 — no expiry.
+    assert_eq!(s.council.get_action_ttl(), 0);
+
+    // A new action proposed now should NOT expire even after the old TTL
+    // window (100 ledgers) has passed — TTL == 0 means never expires.
+    let id2 = s.council.propose_action(&s.m[0], &GuardianAction::Pause);
+    // Advance just past the old TTL (101) to prove it no longer applies.
+    // Keep the bump small so instance storage does not get archived in tests.
+    s.env.ledger().with_mut(|l| l.sequence_number += 200);
+    // With TTL == 0, execution must succeed (no expiry).
+    s.council.execute_action(&id2);
+    assert!(mock_governor(&s.env, &s.governor_id).is_paused());
+}
+
+/// Propose an action, advance the ledger past its TTL, assert ActionExpired.
+/// This is the core expiry regression test for #1380.
+#[test]
+fn action_expires_after_ttl_ledgers_elapse() {
+    // TTL = 50 ledgers.
+    let s = setup(2, 50);
+
+    let id = s.council.propose_action(&s.m[0], &GuardianAction::Pause);
+    s.council.approve_action(&s.m[1], &id);
+
+    // Advance past the TTL.
+    s.env.ledger().with_mut(|l| l.sequence_number += 51);
+
+    let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
+    assert_eq!(err, GuardianCouncilError::ActionExpired.into());
+}
+
+/// A SetActionTtl action itself expires if it is not executed in time,
+/// just like any other action.
+#[test]
+fn set_action_ttl_action_itself_can_expire() {
+    let s = setup(2, 100);
+
+    let id = s.council.propose_action(&s.m[0], &GuardianAction::SetActionTtl(999));
+    s.council.approve_action(&s.m[1], &id);
+
+    // Advance past the current TTL of 100.
+    s.env.ledger().with_mut(|l| l.sequence_number += 101);
+
+    let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
+    assert_eq!(err, GuardianCouncilError::ActionExpired.into());
 }

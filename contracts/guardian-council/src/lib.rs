@@ -52,6 +52,9 @@ pub enum GuardianAction {
     CancelQueued(u64),
     RotateMember(MemberRotation),
     SetThreshold(u32),
+    /// Update the per-action expiry window (ledgers). A value of `0` disables
+    /// expiry entirely — pending actions will never expire.
+    SetActionTtl(u32),
 }
 
 #[contracttype]
@@ -225,6 +228,7 @@ impl GuardianCouncilContract {
             }
             GuardianAction::RotateMember(r) => Self::do_rotate(&env, &r.old, &r.new),
             GuardianAction::SetThreshold(new_threshold) => Self::do_set_threshold(&env, new_threshold),
+            GuardianAction::SetActionTtl(new_ttl) => Self::do_set_action_ttl(&env, new_ttl),
         }
 
         pending.executed = true;
@@ -250,6 +254,14 @@ impl GuardianCouncilContract {
             .instance()
             .get(&DataKey::Governor)
             .unwrap_or_else(|| env.panic_with_error(GuardianCouncilError::NotInitialized))
+    }
+
+    /// Returns the current action TTL in ledgers. `0` means no expiry.
+    pub fn get_action_ttl(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ActionTtlLedgers)
+            .unwrap_or(0)
     }
 
     // ── Internals ────────────────────────────────────────────────────────
@@ -327,6 +339,21 @@ impl GuardianCouncilContract {
         events::emit_threshold_updated(env, old, new_threshold);
     }
 
+    /// Update the action expiry window through the council's own approval
+    /// threshold — no single member can unilaterally change it.
+    /// `new_ttl == 0` disables expiry: actions will never expire.
+    fn do_set_action_ttl(env: &Env, new_ttl: u32) {
+        let old_ttl: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActionTtlLedgers)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::ActionTtlLedgers, &new_ttl);
+        events::emit_action_ttl_updated(env, old_ttl, new_ttl);
+    }
+
     fn action_kind(env: &Env, action: &GuardianAction) -> Symbol {
         match action {
             GuardianAction::Pause => Symbol::new(env, "Pause"),
@@ -335,6 +362,7 @@ impl GuardianCouncilContract {
             GuardianAction::CancelQueued(_) => Symbol::new(env, "CancelQueued"),
             GuardianAction::RotateMember(_) => Symbol::new(env, "RotateMember"),
             GuardianAction::SetThreshold(_) => Symbol::new(env, "SetThreshold"),
+            GuardianAction::SetActionTtl(_) => Symbol::new(env, "SetActionTtl"),
         }
     }
 }

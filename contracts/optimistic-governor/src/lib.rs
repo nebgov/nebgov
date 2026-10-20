@@ -418,11 +418,15 @@ impl OptimisticGovernorContract {
     fn refund_bond(env: &Env, proposal_id: u64, proposer: &Address) {
         let key = DataKey::Bond(proposal_id);
         if let Some(amount) = env.storage().persistent().get::<_, i128>(&key) {
+            // ProposerBondToken is always set during initialize() before any
+            // bond can be locked, so a missing key here would mean the
+            // contract was never properly initialized — surface that as a
+            // typed error instead of an opaque panic.
             let bond_token: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::ProposerBondToken)
-                .unwrap();
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
             token::TokenClient::new(env, &bond_token).transfer(
                 &env.current_contract_address(),
                 proposer,

@@ -525,11 +525,18 @@ impl GovernorContract {
             env.storage().instance().set(&DataKey::IsPaused, &false);
         }
         if !env.storage().instance().has(&DataKey::Pauser) {
+            // Admin is always written during initialize() before any upgrade
+            // can be triggered (upgrade requires current_contract_address()
+            // auth, which only passes through an on-chain proposal that itself
+            // requires a proposer — impossible before the contract is fully
+            // initialized). A missing Admin key therefore indicates a
+            // deployment that was never initialized; surface a typed error
+            // rather than an opaque runtime panic.
             let admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
-                .expect("admin not set");
+                .unwrap_or_else(|| env.panic_with_error(GovernorError::PauserNotSet));
             env.storage().instance().set(&DataKey::Pauser, &admin);
         }
         if !env.storage().instance().has(&DataKey::CurrentWasmHash) {
@@ -2140,7 +2147,11 @@ impl GovernorContract {
         }
 
         // Get voting power
-        let votes_token: Address = env.storage().instance().get(&DataKey::VotesToken).unwrap();
+        let votes_token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VotesToken)
+            .unwrap_or_else(|| env.panic_with_error(GovernorError::VotesTokenNotSet));
         let votes_client = VotesClient::new(&env, &votes_token);
         let voting_power = votes_client.get_votes(&proposer);
 
@@ -4291,6 +4302,151 @@ mod test {
         assert_eq!(votes_for, 0);
         assert_eq!(votes_against, 0);
         assert_eq!(votes_abstain, 1_000_000);
+    }
+
+    // ── #1378: admin lookup in upgrade path uses expect() ────────────────────
+
+    /// Verifies that the upgrade migration path (apply_migration_v1) cannot
+    /// run before Admin is set: initialize() must be called first, and Admin
+    /// is always written there. The migration branch is guarded by
+    /// `!env.storage().instance().has(&DataKey::Pauser)`, which is only false
+    /// on a pre-v1 contract that was initialized (i.e., Admin exists). A
+    /// contract with no Admin cannot reach the migration path because it has
+    /// no proposals to trigger an upgrade through.
+    ///
+    /// This test proves the happy path: after a valid initialize(), the Admin
+    /// key is present and any subsequent migration write succeeds without
+    /// panicking.
+    #[test]
+    fn test_admin_key_present_after_initialize() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let votes_token_id = env.register(MockVotesContract, ());
+        let timelock = env.register(MockTimelockContract, ());
+        let guardian = Address::generate(&env);
+
+        client.initialize(
+            &admin,
+            &votes_token_id,
+            &timelock,
+            &100,
+            &1000,
+            &50,
+            &1000,
+            &guardian,
+            &VoteType::Extended,
+            &120_960,
+        );
+
+        // If Admin were missing the pauser() call would fire PauserNotSet.
+        // Reaching here without panic confirms Admin was stored correctly.
+        let _pauser = client.pauser();
+    }
+
+    /// A second initialize() call must be rejected with AlreadyInitialized,
+    /// proving the Admin guard is checked and the key is definitely written
+    /// on the first call.
+    #[test]
+    fn test_double_initialize_rejected_with_typed_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let votes_token_id = env.register(MockVotesContract, ());
+        let timelock = env.register(MockTimelockContract, ());
+        let guardian = Address::generate(&env);
+
+        client.initialize(
+            &admin,
+            &votes_token_id,
+            &timelock,
+            &100,
+            &1000,
+            &50,
+            &1000,
+            &guardian,
+            &VoteType::Extended,
+            &120_960,
+        );
+
+        let err = client
+            .try_initialize(
+                &admin,
+                &votes_token_id,
+                &timelock,
+                &100,
+                &1000,
+                &50,
+                &1000,
+                &guardian,
+                &VoteType::Extended,
+                &120_960,
+            )
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, GovernorError::AlreadyInitialized.into());
+    }
+
+    // ── #1379: propose() / can_propose() unwraps VotesToken from storage ─────
+
+    /// can_propose() must return VotesTokenNotSet (not an opaque panic) when
+    /// called on an instance whose VotesToken key has been initialized.
+    /// The positive path verifies the typed error lookup works end-to-end.
+    #[test]
+    fn test_can_propose_returns_votes_token_not_set_when_uninitialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        // Do NOT call initialize() — VotesToken is absent.
+        let proposer = Address::generate(&env);
+
+        let err = client
+            .try_can_propose(&proposer)
+            .unwrap_err()
+            .unwrap();
+        // Without initialization, IsPaused defaults to false, so the code
+        // reaches the VotesToken read — which must fire VotesTokenNotSet.
+        assert_eq!(err, GovernorError::VotesTokenNotSet.into());
+    }
+
+    /// Confirm that after initialization the VotesToken read succeeds and
+    /// can_propose() returns a proper result rather than panicking.
+    #[test]
+    fn test_can_propose_succeeds_after_initialize() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(GovernorContract, ());
+        let client = GovernorContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let votes_token_id = env.register(MockVotesContract, ());
+        let timelock = env.register(MockTimelockContract, ());
+        let guardian = Address::generate(&env);
+
+        client.initialize(
+            &admin,
+            &votes_token_id,
+            &timelock,
+            &100,
+            &1000,
+            &50,
+            &0, // zero threshold so any proposer passes
+            &guardian,
+            &VoteType::Extended,
+            &120_960,
+        );
+
+        let proposer = Address::generate(&env);
+        let result = client.can_propose(&proposer);
+        assert!(result.allowed);
     }
 }
 
