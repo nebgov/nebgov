@@ -1,7 +1,7 @@
 //! Tests for the multi-stream treasury budget allocation module.
 
 use crate::{
-    BudgetStream, StreamBudgetReport, TreasuryBudgetSummary, TreasuryContract,
+    BudgetStream, StreamBudgetReport, StreamDataKey, TreasuryBudgetSummary, TreasuryContract,
     TreasuryContractClient,
 };
 use soroban_sdk::{
@@ -1861,4 +1861,82 @@ fn test_error_code_stream_not_found() {
         &Address::generate(&env), &100i128,
         &String::from_str(&env, "x"),
     );
+}
+
+// ── Typed error codes (#1370) ────────────────────────────────────────────────
+
+/// ArithmeticOverflow = 7  (top-up pushes total_allocated past i128::MAX)
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_error_code_top_up_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (treasury_id, token_addr, governor, stream_owner) = setup(&env);
+    let client = TreasuryContractClient::new(&env, &treasury_id);
+
+    let (name, owner, token, alloc, start, end, max_spend, cooldown, prop_id) =
+        default_stream_params(&env, &token_addr, &stream_owner);
+    let stream_id = client.create_stream(
+        &governor, &name, &owner, &token, &alloc, &start, &end, &max_spend, &cooldown, &prop_id,
+    );
+
+    client.top_up_stream(&governor, &stream_id, &i128::MAX);
+}
+
+/// NotInitialized = 3  (governor-gated stream call before initialize)
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_error_code_create_stream_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let treasury_id = env.register(TreasuryContract, ());
+    let client = TreasuryContractClient::new(&env, &treasury_id);
+    let caller = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    let (name, owner, _token, alloc, start, end, max_spend, cooldown, prop_id) =
+        default_stream_params(&env, &token, &caller);
+    client.create_stream(
+        &caller, &name, &owner, &token, &alloc, &start, &end, &max_spend, &cooldown, &prop_id,
+    );
+}
+
+/// StreamSpendNotFound = 21  (spend count points at a missing record)
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")]
+fn test_error_code_stream_spend_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (treasury_id, _token_addr, _governor, _stream_owner) = setup(&env);
+    let client = TreasuryContractClient::new(&env, &treasury_id);
+
+    env.as_contract(&treasury_id, || {
+        env.storage()
+            .persistent()
+            .set(&StreamDataKey::StreamSpendCount(1), &1u32);
+    });
+
+    client.get_stream_spends(&1u64, &0u32, &10u32);
+}
+
+/// StreamNotFound = 10  (owner index points at a missing stream id)
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_error_code_owner_stream_index_missing() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (treasury_id, _token_addr, _governor, stream_owner) = setup(&env);
+    let client = TreasuryContractClient::new(&env, &treasury_id);
+
+    env.as_contract(&treasury_id, || {
+        env.storage()
+            .persistent()
+            .set(&StreamDataKey::OwnerStreamCount(stream_owner.clone()), &1u64);
+    });
+
+    client.get_streams_by_owner(&stream_owner, &0u64, &10u64);
 }

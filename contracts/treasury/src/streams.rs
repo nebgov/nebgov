@@ -207,7 +207,7 @@ fn get_total_spent_by_token(env: &Env, token: &Address) -> i128 {
 
 fn add_total_spent_by_token(env: &Env, token: &Address, amount: i128) {
     let current = get_total_spent_by_token(env, token);
-    let new_total = current.checked_add(amount).expect("spent overflow");
+    let new_total = current.checked_add(amount).unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     env.storage().persistent().set(
         &StreamDataKey::TotalSpentByToken(token.clone()),
         &new_total,
@@ -238,7 +238,7 @@ fn add_total_streamed_by_token(env: &Env, token: &Address, amount: i128) {
     let current = get_total_streamed_by_token(env, token);
     let new_total = current
         .checked_add(amount)
-        .expect("total streamed overflow");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     env.storage().persistent().set(
         &StreamDataKey::TotalStreamedByToken(token.clone()),
         &new_total,
@@ -251,7 +251,7 @@ fn require_governor(env: &Env, caller: &Address) {
         .storage()
         .instance()
         .get(&DataKey::Governor)
-        .expect("not initialized");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
     assert!(caller == &governor, "not authorized");
 }
 
@@ -320,7 +320,7 @@ fn check_spending_cap(
         .unwrap_or(0i128);
     let new_spent = spent
         .checked_add(amount)
-        .expect("spending accumulator overflow");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     assert!(new_spent <= cap.max_amount, "spending cap exceeded");
 
     (true, period_start, new_spent)
@@ -458,7 +458,7 @@ pub fn stream_spend(
     stream.total_spent = stream
         .total_spent
         .checked_add(amount)
-        .expect("spent overflow");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     stream.last_spend_ledger = current_ledger;
     stream.spend_count += 1;
 
@@ -528,13 +528,12 @@ pub fn stream_batch_spend(
 
     // Validate all amounts
     let mut total: i128 = 0;
-    for i in 0..amounts.len() {
-        let amt = amounts.get(i).unwrap();
+    for amt in amounts.iter() {
         assert!(amt > 0, "amount must be positive");
         if amt > stream.max_single_spend {
             env.panic_with_error(TreasuryError::StreamSpendExceedsMax);
         }
-        total = total.checked_add(amt).expect("batch total overflow");
+        total = total.checked_add(amt).unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     }
 
     let remaining = stream.total_allocated - stream.total_spent;
@@ -556,9 +555,7 @@ pub fn stream_batch_spend(
     // Execute transfers
     let token_client = token::TokenClient::new(&env, &stream.token);
     let treasury = env.current_contract_address();
-    for i in 0..recipients.len() {
-        let r = recipients.get(i).unwrap();
-        let amt = amounts.get(i).unwrap();
+    for (r, amt) in recipients.iter().zip(amounts.iter()) {
         token_client.transfer(&treasury, &r, &amt);
     }
 
@@ -571,15 +568,13 @@ pub fn stream_batch_spend(
     stream.total_spent = stream
         .total_spent
         .checked_add(total)
-        .expect("spent overflow");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
     stream.last_spend_ledger = current_ledger;
     stream.spend_count += recipients.len() as u32;
 
     // Record each spend
     let mut spend_index = get_stream_spend_count(&env, stream_id);
-    for i in 0..recipients.len() {
-        let r = recipients.get(i).unwrap();
-        let amt = amounts.get(i).unwrap();
+    for (r, amt) in recipients.iter().zip(amounts.iter()) {
         let spend = StreamSpend {
             stream_id,
             spend_index,
@@ -670,7 +665,7 @@ pub fn top_up_stream(env: Env, caller: Address, stream_id: u64, additional_amoun
     stream.total_allocated = stream
         .total_allocated
         .checked_add(additional_amount)
-        .expect("allocation overflow");
+        .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
 
     // Reactivate the stream if it was deactivated by exhaustion (not
     // revocation or expiry), so the owner can resume spending the
@@ -722,7 +717,11 @@ pub fn get_streams_by_owner(
     let start = offset.min(count);
     let end = (start + limit).min(count);
     for i in start..end {
-        let id: u64 = env.storage().persistent().get(&StreamDataKey::OwnerStream(owner.clone(), i)).unwrap();
+        let id: u64 = env
+            .storage()
+            .persistent()
+            .get(&StreamDataKey::OwnerStream(owner.clone(), i))
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::StreamNotFound));
         let stream = load_stream(&env, id);
         result.push_back(stream);
     }
@@ -736,7 +735,11 @@ pub fn get_stream_spends(env: Env, stream_id: u64, offset: u32, limit: u32) -> V
     let start = offset.min(count);
     let end = (start + limit).min(count);
     for i in start..end {
-        let spend: StreamSpend = env.storage().persistent().get(&StreamDataKey::StreamSpendRecord(stream_id, i)).unwrap();
+        let spend: StreamSpend = env
+            .storage()
+            .persistent()
+            .get(&StreamDataKey::StreamSpendRecord(stream_id, i))
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::StreamSpendNotFound));
         result.push_back(spend);
     }
     result
@@ -811,8 +814,7 @@ pub fn get_budget_summary(env: Env) -> TreasuryBudgetSummary {
     let mut spent_by_token: Vec<(Address, i128)> = Vec::new(&env);
     let mut remaining_by_token: Vec<(Address, i128)> = Vec::new(&env);
 
-    for i in 0..token_list.len() {
-        let t = token_list.get(i).unwrap();
+    for t in token_list.iter() {
         let alloc = get_total_streamed_by_token(&env, &t);
         let spent = get_total_spent_by_token(&env, &t);
         

@@ -21,6 +21,16 @@ pub enum TreasuryError {
     SingleTransferExceeded = 1,
     /// Proposed transfer would cause daily transfer total to exceed the daily limit.
     DailyLimitExceeded = 2,
+    /// Contract has not been initialized.
+    NotInitialized = 3,
+    /// No pending owner has been proposed.
+    NoPendingOwner = 4,
+    /// Treasury transaction proposal not found.
+    TxNotFound = 5,
+    /// Address is not a treasury owner.
+    NotAnOwner = 6,
+    /// Arithmetic overflow in an amount accumulator.
+    ArithmeticOverflow = 7,
     /// Budget stream not found.
     StreamNotFound = 10,
     /// Budget stream is not active.
@@ -43,6 +53,8 @@ pub enum TreasuryError {
     StreamAlreadyRevoked = 19,
     /// Stream end ledger is before start ledger.
     StreamEndBeforeStart = 20,
+    /// Stream spend record not found.
+    StreamSpendNotFound = 21,
 }
 
 /// A treasury transaction proposal.
@@ -193,7 +205,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         governor.require_auth();
         env.storage()
             .instance()
@@ -209,7 +221,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::PendingOwner)
-            .expect("no pending owner");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NoPendingOwner));
         pending.require_auth();
         env.storage().instance().set(&DataKey::Governor, &pending);
         env.storage().instance().remove(&DataKey::PendingOwner);
@@ -222,7 +234,7 @@ impl TreasuryContract {
         env.storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized")
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized))
     }
 
     /// Configure a per-token spending cap for batch transfers.
@@ -238,7 +250,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         assert!(caller == governor, "not authorized");
         assert!(period_ledgers > 0, "period must be positive");
         assert!(max_amount >= 0, "max amount must be non-negative");
@@ -415,7 +427,7 @@ impl TreasuryContract {
         // Validate: daily cumulative must not exceed max_daily_transfer.
         let new_daily_total = daily_spent
             .checked_add(amount)
-            .expect("daily accumulator overflow");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
         if new_daily_total > settings.max_daily_transfer {
             env.panic_with_error(TreasuryError::DailyLimitExceeded);
         }
@@ -446,7 +458,7 @@ impl TreasuryContract {
             .storage()
             .persistent()
             .get(&DataKey::Tx(tx_id))
-            .expect("tx not found");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::TxNotFound));
         assert!(!tx.executed && !tx.cancelled, "invalid state");
         Self::require_not_expired(&env, &tx);
 
@@ -500,7 +512,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         let is_owner = Self::is_owner(&env, &caller);
         assert!(is_owner || caller == governor, "not authorized");
 
@@ -508,7 +520,7 @@ impl TreasuryContract {
             .storage()
             .persistent()
             .get(&DataKey::Tx(tx_id))
-            .expect("tx not found");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::TxNotFound));
         assert!(!tx.executed && !tx.cancelled, "invalid state");
 
         // If this proposal reserved budget, credit it back to the accumulator.
@@ -575,7 +587,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         assert!(caller == governor, "not authorized");
 
         assert!(!recipients.is_empty(), "empty recipients");
@@ -585,12 +597,11 @@ impl TreasuryContract {
         // ── Phase 1: validate ALL entries before transferring anything ────────
         // This guarantees all-or-nothing semantics: no tokens move unless the
         // entire batch is valid.
-        for i in 0..recipients.len() {
-            let r = recipients.get(i).unwrap();
+        for r in recipients.iter() {
             assert!(r.amount > 0, "amount must be positive");
             total_amount = total_amount
                 .checked_add(r.amount)
-                .expect("batch amount overflow");
+                .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
         }
 
         let cap: Option<SpendingCap> = env
@@ -608,15 +619,14 @@ impl TreasuryContract {
                 .unwrap_or(0i128);
             new_spent = spent
                 .checked_add(total_amount)
-                .expect("spending accumulator overflow");
+                .unwrap_or_else(|| env.panic_with_error(TreasuryError::ArithmeticOverflow));
             assert!(new_spent <= cap.max_amount, "spending cap exceeded");
         }
 
         // ── Phase 2: execute all transfers ───────────────────────────────────
         let token_client = token::TokenClient::new(&env, &token);
         let treasury = env.current_contract_address();
-        for i in 0..recipients.len() {
-            let r = recipients.get(i).unwrap();
+        for r in recipients.iter() {
             token_client.transfer(&treasury, &r.recipient, &r.amount);
         }
 
@@ -625,8 +635,7 @@ impl TreasuryContract {
         // This uniquely identifies the batch for auditability and is safe to
         // use as an idempotency key in off-chain indexers.
         let mut hash_input = Bytes::new(&env);
-        for i in 0..recipients.len() {
-            let r = recipients.get(i).unwrap();
+        for r in recipients.iter() {
             hash_input.append(&r.recipient.to_xdr(&env));
             hash_input.append(&Bytes::from_array(&env, &r.amount.to_be_bytes()));
         }
@@ -676,24 +685,18 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         assert!(caller == governor, "not authorized");
 
         let mut owners: Vec<Address> = env
             .storage()
             .instance()
             .get(&DataKey::Owners)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
 
-        let mut index: Option<u32> = None;
-        for i in 0..owners.len() {
-            if owners.get(i).unwrap() == signer {
-                index = Some(i);
-                break;
-            }
-        }
+        let index = owners.first_index_of(&signer);
 
-        let i = index.expect("not an owner");
+        let i = index.unwrap_or_else(|| env.panic_with_error(TreasuryError::NotAnOwner));
         owners.remove(i);
 
         // Prevent slashing the last owner to avoid invalid state (0 owners, threshold 0)
@@ -743,7 +746,7 @@ impl TreasuryContract {
                 .storage()
                 .persistent()
                 .get(&StreamDataKey::OwnerStream(signer.clone(), i))
-                .unwrap();
+                .unwrap_or_else(|| env.panic_with_error(TreasuryError::StreamNotFound));
             streams::revoke_stream_internal(&env, stream_id, &caller);
         }
 
@@ -760,7 +763,7 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Governor)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
         assert!(caller == governor, "not authorized");
 
         assert!(Self::is_slashed(env.clone(), signer.clone()), "not slashed");
@@ -769,12 +772,10 @@ impl TreasuryContract {
             .storage()
             .instance()
             .get(&DataKey::Owners)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
 
         // Ensure not already an owner (shouldn't be if slashed, but safety first).
-        for i in 0..owners.len() {
-            assert!(owners.get(i).unwrap() != signer, "already an owner");
-        }
+        assert!(!owners.contains(&signer), "already an owner");
 
         owners.push_back(signer.clone());
         env.storage().instance().set(&DataKey::Owners, &owners);
@@ -789,7 +790,7 @@ impl TreasuryContract {
         env.storage()
             .persistent()
             .get(&DataKey::Tx(tx_id))
-            .expect("tx not found")
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::TxNotFound))
     }
 
     pub fn threshold(env: Env) -> u32 {
@@ -862,12 +863,7 @@ impl TreasuryContract {
             .instance()
             .get(&DataKey::Owners)
             .unwrap_or(Vec::new(env));
-        for i in 0..owners.len() {
-            if owners.get(i).unwrap() == *addr {
-                return true;
-            }
-        }
-        false
+        owners.contains(addr)
     }
 
     // ── Budget Stream functions ────────────────────────────────────────────
@@ -1881,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "not an owner")]
+    #[should_panic(expected = "Error(Contract, #6)")]
     fn test_slash_non_owner() {
         let env = Env::default();
         env.mock_all_auths();
@@ -1980,6 +1976,96 @@ mod tests {
         env.ledger()
             .with_mut(|l| l.sequence_number += period_ledgers + 1);
         assert_eq!(client.get_spending_remaining(&token_addr), 500i128);
+    }
+
+    // ── Typed error codes (#1370) ────────────────────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #3)")]
+    fn test_get_owner_uninitialized_returns_not_initialized() {
+        let env = Env::default();
+        let treasury_id = env.register(TreasuryContract, ());
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        client.get_owner();
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #3)")]
+    fn test_propose_owner_uninitialized_returns_not_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let treasury_id = env.register(TreasuryContract, ());
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        client.propose_owner(&Address::generate(&env));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_accept_ownership_without_pending_returns_no_pending_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, _token_addr, _governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        client.accept_ownership();
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #5)")]
+    fn test_get_tx_missing_returns_tx_not_found() {
+        let env = Env::default();
+        let (treasury_id, _token_addr, _governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        client.get_tx(&42u64);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #5)")]
+    fn test_cancel_missing_returns_tx_not_found() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, _token_addr, governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        client.cancel(&governor, &42u64);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #7)")]
+    fn test_batch_transfer_amount_overflow_returns_arithmetic_overflow() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, token_addr, governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+
+        let mut recipients = Vec::new(&env);
+        recipients.push_back(BatchRecipient {
+            recipient: Address::generate(&env),
+            amount: i128::MAX,
+        });
+        recipients.push_back(BatchRecipient {
+            recipient: Address::generate(&env),
+            amount: 1,
+        });
+        client.batch_transfer(&governor, &token_addr, &recipients);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #7)")]
+    fn test_submit_with_limit_overflow_returns_arithmetic_overflow() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let governor = Address::generate(&env);
+        let owner = Address::generate(&env);
+        let treasury_id = env.register(TreasuryContract, ());
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        let mut owners = Vec::new(&env);
+        owners.push_back(owner.clone());
+        client.initialize(&owners, &1u32, &governor);
+
+        let target = Address::generate(&env);
+        let fn_name = Symbol::new(&env, "noop");
+        client.submit_with_limit(&owner, &target, &fn_name, &Bytes::new(&env), &i128::MAX);
+        client.submit_with_limit(&owner, &target, &fn_name, &Bytes::new(&env), &1i128);
     }
 }
 

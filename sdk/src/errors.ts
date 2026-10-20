@@ -520,6 +520,11 @@ export enum TreasuryErrorCode {
   // On-chain contract errors (match contracts/treasury/src/lib.rs)
   SingleTransferExceeded = 1,
   DailyLimitExceeded     = 2,
+  NotInitialized         = 3,
+  NoPendingOwner         = 4,
+  TxNotFound             = 5,
+  NotAnOwner             = 6,
+  ArithmeticOverflow     = 7,
 
   // Stream errors (match on-chain TreasuryError enum)
   StreamNotFound = 10,
@@ -533,6 +538,7 @@ export enum TreasuryErrorCode {
   InsufficientTreasuryBalance = 18,
   StreamAlreadyRevoked = 19,
   StreamEndBeforeStart = 20,
+  StreamSpendNotFound = 21,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -547,6 +553,11 @@ const TREASURY_MESSAGES: Record<TreasuryErrorCode, string> = {
     "Transfer exceeds the maximum allowed single-transfer amount",
   [TreasuryErrorCode.DailyLimitExceeded]:
     "Transfer exceeds the configured daily treasury limit",
+  [TreasuryErrorCode.NotInitialized]: "Treasury contract has not been initialized",
+  [TreasuryErrorCode.NoPendingOwner]: "No pending treasury owner has been proposed",
+  [TreasuryErrorCode.TxNotFound]: "Treasury transaction not found",
+  [TreasuryErrorCode.NotAnOwner]: "Address is not a treasury owner",
+  [TreasuryErrorCode.ArithmeticOverflow]: "Treasury amount calculation overflowed",
   [TreasuryErrorCode.StreamNotFound]: "Budget stream not found",
   [TreasuryErrorCode.StreamNotActive]: "Budget stream is not active",
   [TreasuryErrorCode.StreamExpired]: "Budget stream has expired",
@@ -558,6 +569,7 @@ const TREASURY_MESSAGES: Record<TreasuryErrorCode, string> = {
   [TreasuryErrorCode.InsufficientTreasuryBalance]: "Treasury has insufficient balance for the stream spend",
   [TreasuryErrorCode.StreamAlreadyRevoked]: "Stream has already been revoked",
   [TreasuryErrorCode.StreamEndBeforeStart]: "Stream end ledger is before start ledger",
+  [TreasuryErrorCode.StreamSpendNotFound]: "Stream spend record not found",
   [TreasuryErrorCode.SimulationFailed]: "Simulation failed",
   [TreasuryErrorCode.TransactionFailed]: "Transaction failed",
   [TreasuryErrorCode.TransactionTimeout]: "Transaction timed out",
