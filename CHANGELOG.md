@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Indexer: reconcile duplicate Vote Escrow migration 025 with existing 017/023 tables without dropping lock records (#1383)
+
 - Vote Escrow: reordered withdraw checks to prevent reentrancy, optimized checkpoints, fixed initialization accepting invalid min_lock_duration > max_lock_duration and zero max duration (#1367, #1363, #1362)
 - Vote Escrow: overflow policy corrected, event tests added (#1361, #1356, #1352)
 - Voting Rewards: arithmetic operations converted to checked arithmetic to prevent overflows (#1361, #1355)
