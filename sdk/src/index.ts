@@ -228,3 +228,6 @@ export { streamEvents } from "./streamEvents";
 export type { IndexerEvent, WsEventType, StreamEventsOptions, UnsubscribeFn } from "./streamEvents";
 export { AmendmentsClient } from "./amendments";
 export type { ProposalAmendment, AmendmentInput, JsonMergePatch } from "./amendments";
+
+export { GuardianCouncilClient, encodeGuardianAction, decodeGuardianAction } from "./guardianCouncil";
+export type { GuardianCouncilConfig, GuardianAction, PendingAction } from "./guardianCouncil";

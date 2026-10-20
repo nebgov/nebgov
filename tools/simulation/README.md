@@ -37,7 +37,10 @@ tools/simulation/
 │   │   ├── defeat.ts       # Proposal fails quorum/majority
 │   │   ├── veto.ts         # Guardian veto of queued proposal
 │   │   ├── rate-limit.ts   # Proposer rate-limiting enforcement
-│   │   └── expiry.ts       # Proposal expiration logic
+│   │   ├── expiry.ts       # Proposal expiration logic
+│   │   ├── co_sponsorship_draft.ts # Draft pooling into a governor proposal
+│   │   ├── optimistic_challenge.ts # Optimistic propose→challenge window→execute
+│   │   └── treasury_streams.ts # Treasury stream create→spend→top-up→drain
 │   ├── harness.ts          # SimulationHarness: contract management & lifecycle
 │   ├── actors.ts           # Mock actors with keypairs
 │   ├── ledger.ts           # Ledger clock simulation
@@ -46,6 +49,7 @@ tools/simulation/
 │   │   ├── governor-executor.ts
 │   │   ├── timelock-executor.ts
 │   │   ├── token-votes-executor.ts
+│   │   ├── optimistic-governor-executor.ts
 │   │   └── ...
 │   └── assertions/         # Helper assertions
 └── tests/
@@ -54,6 +58,9 @@ tools/simulation/
     ├── veto.sim.ts         # Guardian veto scenarios
     ├── rate-limit.sim.ts   # Proposer cooldown enforcement
     ├── expiry.sim.ts       # Expiration edge cases
+    ├── co_sponsorship_draft.sim.ts # Co-sponsorship draft pooling
+    ├── optimistic_challenge.sim.ts # Optimistic challenge-window lifecycle
+    ├── treasury_streams.sim.ts # Treasury budget-stream lifecycle
     └── helpers.ts          # Test setup helpers
 ```
 
@@ -135,6 +142,7 @@ interface SimulationResult {
   success: boolean;              // Did the scenario complete successfully?
   proposalId?: bigint;           // Created proposal ID (if applicable)
   finalState?: ProposalState;    // Proposal's terminal state
+  optimisticState?: OptimisticProposalState; // Terminal state on the optimistic track
   ledgersElapsed: number;        // Ledgers advanced during the scenario
   errors: string[];              // Captured errors (e.g., contract reverts)
 }
@@ -267,6 +275,42 @@ it("proposal fails if votes do not reach quorum", async () => {
 });
 ```
 
+## Worked Example: TreasuryStreamsScenario
+
+The `TreasuryStreamsScenario` drives one treasury budget stream end to end — no
+proposal is needed, because `create_stream`/`top_up_stream` are gated directly
+by the harness's `treasuryGovernor` and `stream_spend` by the stream owner:
+
+1. **Create**: governance allocates a budget (`totalAllocated`) with a spend
+   limit, a cooldown between withdrawals, and a ledger window
+2. **Partial spend**: the owner withdraws part of the budget; an immediate
+   second withdrawal is rejected with `StreamCooldownNotElapsed`
+3. **Top-up**: governance raises `totalAllocated` after the cooldown elapses
+4. **Final spend**: the owner withdraws what is left, which marks the stream
+   inactive (spent out, not revoked)
+
+Every step asserts the stream, its spend records, the derived budget
+report/summary, and the recipient/treasury balances on the single token ledger
+the harness models.
+
+```typescript
+const result = await harness.run(TreasuryStreamsScenario, {
+  governor: setup.actors.proposers[0],
+  owner: setup.actors.voters[0],
+  recipient: setup.actors.voters[1],
+  token: addresses.votes,
+});
+
+expect(result.success).toBe(true);
+expect(result.finalStream.totalSpent).toBe(result.finalStream.totalAllocated);
+expect(result.finalStream.isActive).toBe(false);
+```
+
+The mock models stream spends by debiting `addresses.treasury` and crediting
+the recipient on the `token-votes` balance ledger, so tests that run this
+scenario must seed `config.treasuryBalance` with more than the amount the
+stream will move (see `tests/treasury_streams.sim.ts`).
+
 ## Error Handling
 
 Scenarios capture contract errors in the `errors` array. Always assert the specific error code, not just the array length:
@@ -386,6 +430,7 @@ console.log(power); // 1000
 | `GuardianVetoScenario` | Guardian veto of a queued proposal | `veto.sim.ts` |
 | `RateLimitScenario` | Proposer rate-limiting enforcement | `rate-limit.sim.ts` |
 | `ExpiryScenario` | Proposal expiration after grace period | `expiry.sim.ts` |
+| `TreasuryStreamsScenario` | Stream create→spend→top-up→drain | `treasury_streams.sim.ts` |
 
 ## Debugging
 

@@ -15,15 +15,16 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="${E2E_ENV_FILE:-$ROOT_DIR/app/.env.e2e}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()  { printf "${CYAN}[info]${NC}  %s\n" "$*"; }
-ok()    { printf "${GREEN}[ok]${NC}    %s\n" "$*"; }
-warn()  { printf "${YELLOW}[skip]${NC}  %s\n" "$*"; }
-fail()  { printf "${RED}[error]${NC} %s\n" "$*" >&2; exit 1; }
+info()  { printf '%b[info]%b  %s\n' "$CYAN" "$NC" "$*"; }
+ok()    { printf '%b[ok]%b    %s\n' "$GREEN" "$NC" "$*"; }
+warn()  { printf '%b[skip]%b  %s\n' "$YELLOW" "$NC" "$*"; }
+fail()  { printf '%b[error]%b %s\n' "$RED" "$NC" "$*" >&2; exit 1; }
 
 # ---- Load / bootstrap env file -------------------------------------
 if [[ -f "$ENV_FILE" ]]; then
   info "Loading env from $ENV_FILE"
   set -a
+  # shellcheck source=/dev/null
   source "$ENV_FILE"
   set +a
 else

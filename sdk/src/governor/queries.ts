@@ -98,7 +98,7 @@ export async function getSettings(
 
 /**
  * Get the current state of a proposal.
- * TODO issue #17: decode all 7 ProposalState variants.
+ * Decodes every `ProposalState` variant defined by the governor contract.
  */
 export async function getProposalState(
   client: GovernorClient,

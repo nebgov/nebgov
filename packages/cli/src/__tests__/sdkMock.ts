@@ -10,11 +10,15 @@ export function mockSdk(): Record<string, unknown> {
     VotesClient: jest.fn(),
     TreasuryClient: jest.fn(),
     FactoryClient: jest.fn(),
+    GuardianCouncilClient: jest.fn(),
     ProposalBondsClient: jest.fn(),
     OptimisticGovernorClient: jest.fn(),
     ConvictionVotingClient: jest.fn(),
     TreasuryStrategiesClient: jest.fn(),
     SignalingClient: jest.fn(),
+    WrapperClient: jest.fn(),
+    ReputationClient: jest.fn(),
+    LiquidityClient: jest.fn(),
   };
 }
 

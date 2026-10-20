@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
 import { Address, BASE_FEE, Keypair, nativeToScVal, TransactionBuilder } from "@stellar/stellar-sdk";
-import { GovernorClient, GovernorConfig, Network, TimelockClient, VoteType, VotesClient } from "@nebgov/sdk";
+import {
+  CoSponsorshipClient,
+  GovernorClient,
+  GovernorConfig,
+  Network,
+  OptimisticGovernorClient,
+  TimelockClient,
+  TreasuryClient,
+  VoteType,
+  VotesClient,
+} from "@nebgov/sdk";
 import { LedgerClock } from "./ledger";
 import { Actor, ActorSet } from "./actors";
 import { GovernorSettingsState, MockLedgerStore } from "./mock/store";
@@ -39,6 +49,14 @@ export interface GovernorSimulationSettings {
   maxCalldataSize?: number;
   /** Address authorized to pause/unpause the contract. Defaults to the guardian. */
   pauser?: string;
+  /** Optimistic-governor challenge window, in ledgers. Defaults to 17_280 (~1 day). */
+  optimisticChallengeWindowLedgers?: number;
+  /** Objection threshold in basis points of past total supply. Defaults to 1000 (10%). */
+  optimisticObjectionThresholdBps?: number;
+  /** Optimistic proposer bond; the mock models only a disabled (0) bond. Defaults to 0. */
+  optimisticProposerBondAmount?: bigint;
+  /** Optimistic proposer bond token address. Defaults to the votes contract. */
+  optimisticProposerBondToken?: string;
 }
 
 export interface SimulationConfig {
@@ -51,6 +69,18 @@ export interface SimulationConfig {
   delegations: Record<string, string>;
   /** Starting ledger sequence number. Defaults to 1000. */
   initialLedger?: number;
+  /**
+   * Address authorized to sign the treasury contract's governance-gated stream
+   * calls (`create_stream`, `top_up_stream`). Defaults to the governor contract
+   * address, which the SDK's signer-based `TreasuryClient` writes cannot
+   * satisfy — set it to an actor's public key to drive streams directly.
+   */
+  treasuryGovernor?: string;
+  /**
+   * Balance credited to the treasury contract on the single token ledger the
+   * mock models, so stream spends have funds to debit. Defaults to 0.
+   */
+  treasuryBalance?: bigint;
   /** Required when mode === "testnet". */
   rpcUrl?: string;
   network?: Network;
@@ -60,6 +90,9 @@ export interface DeployedContracts {
   governor: string;
   timelock: string;
   votes: string;
+  coSponsorship: string;
+  optimisticGovernor: string;
+  treasury: string;
 }
 
 interface ClockSnapshot {
@@ -78,6 +111,8 @@ const DEFAULT_COOLDOWN = 100;
 const DEFAULT_MAX_PER_PERIOD = 5;
 const DEFAULT_PERIOD_DURATION = 10_000;
 const DEFAULT_MAX_CALLDATA_SIZE = 10_000;
+const DEFAULT_OPTIMISTIC_CHALLENGE_WINDOW = 17_280; // ~1 day at 5s/ledger.
+const DEFAULT_OPTIMISTIC_OBJECTION_THRESHOLD_BPS = 1000; // 10% of past total supply.
 const DEFAULT_GUARDIAN = Keypair.fromRawEd25519Seed(
   createHash("sha256").update("nebgov-simulation-actor:default-guardian").digest(),
 ).publicKey();
@@ -100,12 +135,16 @@ export class SimulationHarness {
   readonly config: SimulationConfig;
 
   governorClient!: GovernorClient;
+  coSponsorshipClient!: CoSponsorshipClient;
   timelockClient!: TimelockClient;
   votesClient!: VotesClient;
+  optimisticGovernorClient!: OptimisticGovernorClient;
+  treasuryClient!: TreasuryClient;
 
   private store!: MockLedgerStore;
   private mockServer?: MockSorobanServer;
-  private addresses!: DeployedContracts;
+  /** Addresses returned by `boot()`, also handy for scenarios that need them mid-run. */
+  addresses!: DeployedContracts;
 
   constructor(config: SimulationConfig) {
     if (config.mode === "testnet" && !config.rpcUrl) {
@@ -169,9 +208,37 @@ export class SimulationHarness {
         checkpoints: new Map(),
         totalSupplyCheckpoints: [],
       },
+      coSponsorship: {
+        drafts: new Map(),
+        draftCount: 0n,
+      },
+      optimisticGovernor: {
+        admin: this.config.settings.guardian ?? DEFAULT_GUARDIAN,
+        votesToken: this.addresses.votes,
+        challengeWindowLedgers:
+          this.config.settings.optimisticChallengeWindowLedgers ?? DEFAULT_OPTIMISTIC_CHALLENGE_WINDOW,
+        objectionThresholdBps:
+          this.config.settings.optimisticObjectionThresholdBps ?? DEFAULT_OPTIMISTIC_OBJECTION_THRESHOLD_BPS,
+        proposerBondAmount: this.config.settings.optimisticProposerBondAmount ?? 0n,
+        proposerBondToken: this.config.settings.optimisticProposerBondToken ?? this.addresses.votes,
+        proposals: new Map(),
+        proposalCount: 0n,
+        objectorVoted: new Set(),
+      },
+      treasury: {
+        governor: this.config.treasuryGovernor ?? this.addresses.governor,
+        streams: new Map(),
+        streamCount: 0n,
+        spends: new Map(),
+        tokenList: [],
+        totalStreamedByToken: new Map(),
+        totalSpentByToken: new Map(),
+      },
     };
 
     seedBalances(store.votes, this.config.tokenBalances);
+    // Stream spends debit this account on the one ledger the mock models.
+    store.votes.balances.set(addresses.treasury, this.config.treasuryBalance ?? 0n);
     for (const [delegator, delegatee] of Object.entries(this.config.delegations)) {
       applyDelegation(store.votes, this.clock, delegator, delegatee);
     }
@@ -185,6 +252,9 @@ export class SimulationHarness {
       governor: contractAddress(1),
       timelock: contractAddress(2),
       votes: contractAddress(3),
+      coSponsorship: contractAddress(4),
+      optimisticGovernor: contractAddress(5),
+      treasury: contractAddress(6),
     };
     this.store = this.buildStore();
 
@@ -192,6 +262,7 @@ export class SimulationHarness {
       governorAddress: this.addresses.governor,
       timelockAddress: this.addresses.timelock,
       votesAddress: this.addresses.votes,
+      coSponsorshipAddress: this.addresses.coSponsorship,
       network: this.config.network ?? "testnet",
       rpcUrl: this.config.mode === "testnet" ? this.config.rpcUrl : "https://mock.invalid",
       simulationAccount: this.config.mode === "mock" ? SIMULATION_ACCOUNT : undefined,
@@ -204,8 +275,23 @@ export class SimulationHarness {
     }
 
     this.governorClient = new GovernorClient(clientConfig);
+    this.coSponsorshipClient = new CoSponsorshipClient(clientConfig);
     this.timelockClient = new TimelockClient(clientConfig);
     this.votesClient = new VotesClient(clientConfig);
+    this.optimisticGovernorClient = new OptimisticGovernorClient({
+      optimisticGovernorAddress: this.addresses.optimisticGovernor,
+      network: clientConfig.network,
+      rpcUrl: clientConfig.rpcUrl,
+      simulationAccount: clientConfig.simulationAccount,
+      maxAttempts: 1,
+    });
+    this.treasuryClient = new TreasuryClient({
+      treasuryAddress: this.addresses.treasury,
+      network: clientConfig.network,
+      rpcUrl: clientConfig.rpcUrl,
+      simulationAccount: clientConfig.simulationAccount,
+      maxAttempts: 1,
+    });
 
     return this.addresses;
   }
@@ -215,13 +301,21 @@ export class SimulationHarness {
     this.clock.advance(n);
   }
 
-  /** Run a scenario against this harness. */
+  /**
+   * Run a scenario against this harness.
+   *
+   * The return type is narrowed to the scenario's own `run()` result, so
+   * scenarios that expose extra fields (e.g. the treasury scenario's
+   * `streamId`) stay typed.
+   */
   async run<T extends BaseScenario, A extends unknown[]>(
     ScenarioClass: new (harness: SimulationHarness, ...args: A) => T,
     ...args: A
-  ): Promise<SimulationResult> {
+  ): Promise<Awaited<ReturnType<T["run"]>>> {
     const scenario = new ScenarioClass(this, ...args);
-    return scenario.run();
+    // `scenario.run()` is exactly `T["run"]`; TS just cannot see that through
+    // the `BaseScenario` constraint on `T`.
+    return scenario.run() as Promise<Awaited<ReturnType<T["run"]>>>;
   }
 
   /**

@@ -230,6 +230,8 @@ docker run --env-file packages/indexer/.env \
 | `SIGNAL_ANCHOR_ADDRESS` | No | - | Stellar contract address of the gasless-signaling result anchor |
 | `TREASURY_STRATEGIES_ADDRESS` | No | - | Stellar contract address of the treasury yield-strategy allocator |
 | `OPTIMISTIC_GOVERNOR_ADDRESS` | No | - | Stellar contract address of the optimistic-governance track |
+| `VOTE_ESCROW_ADDRESS` | No | - | Stellar contract address of the vote-escrow contract (lock create, increase and withdraw events) |
+| `VOTING_REWARDS_ADDRESS` | No | - | Stellar contract address of the voting-rewards contract (not indexed yet; kept in sync with the root `.env.example`) |
 | `STELLAR_NETWORK_PASSPHRASE` | No | Testnet passphrase | Network passphrase used for treasury read simulations |
 | `POLL_INTERVAL_MS` | No | `5000` | Milliseconds between event polling cycles |
 | `PORT` | No | `3001` | HTTP server port |

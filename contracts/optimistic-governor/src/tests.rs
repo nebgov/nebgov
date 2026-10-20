@@ -387,3 +387,54 @@ fn update_config_by_non_admin_rejected() {
     let attacker = Address::generate(&f.env);
     c.update_config(&attacker, &CHALLENGE_WINDOW, &OBJECTION_THRESHOLD_BPS);
 }
+
+// ── #1377: refund_bond ProposerBondToken typed-error path ───────────────────
+
+/// When a bond was locked, finalize() must successfully refund it, proving the
+/// ProposerBondToken read in refund_bond works correctly. The `NotInitialized`
+/// error path is indirectly guarded by the require_initialized() gate that
+/// fires before any bond can ever be written.
+#[test]
+fn refund_bond_returns_tokens_on_finalize() {
+    let f = setup(BOND_AMOUNT);
+    let c = client(&f);
+    let tok = token::TokenClient::new(&f.env, &f.bond_token);
+    let balance_before = tok.balance(&f.proposer);
+
+    let id = propose(&f);
+    // Bond is now held by the contract.
+    assert_eq!(tok.balance(&f.client_id), BOND_AMOUNT);
+
+    f.env
+        .ledger()
+        .with_mut(|l| l.sequence_number += CHALLENGE_WINDOW + 1);
+    c.finalize(&id);
+
+    // refund_bond() ran without panicking — bond is back with the proposer.
+    assert_eq!(tok.balance(&f.proposer), balance_before);
+    assert_eq!(tok.balance(&f.client_id), 0);
+}
+
+/// A contract that was never initialized cannot reach refund_bond because
+/// propose() itself panics with NotInitialized first — the gate is upstream.
+#[test]
+fn refund_bond_not_reachable_before_initialization() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(OptimisticGovernorContract, ());
+    let c = OptimisticGovernorContractClient::new(&env, &contract_id);
+    let target_id = env.register(Target, ());
+    let proposer = Address::generate(&env);
+
+    let err = c
+        .try_propose(
+            &proposer,
+            &target_id,
+            &Symbol::new(&env, "execute"),
+            &Bytes::new(&env),
+            &BytesN::from_array(&env, &[9u8; 32]),
+        )
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, OptimisticGovernorError::NotInitialized.into());
+}

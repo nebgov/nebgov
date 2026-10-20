@@ -267,8 +267,9 @@ Use imperative mood with conventional prefixes:
 2. Make your changes with tests for new features
 3. Ensure all CI checks pass: `make check` (aggregates the Rust contract suite and every TypeScript workspace — see [`test-ts` / `lint-ts` / `build-ts`](./Makefile))
 4. Update docs if you changed any public API
-5. Open a PR referencing the issue: `Closes #<number>`
-6. Wait for maintainer review. Note that reviewers are automatically assigned based on our [CODEOWNERS](.github/CODEOWNERS) configuration. For more details on our branch protection rules, see [Branch Protection](docs/contributing/branch-protection.md).
+5. **Update the changelog**: Add your changes to the `[Unreleased]` section of `CHANGELOG.md` under the appropriate subsection (`Added`, `Changed`, `Fixed`, `Security`, etc.). Breaking changes must be noted with a `**Breaking:**` prefix. Do not create a new version section — maintainers handle that at release time.
+6. Open a PR referencing the issue: `Closes #<number>`
+7. Wait for maintainer review. Note that reviewers are automatically assigned based on our [CODEOWNERS](.github/CODEOWNERS) configuration. For more details on our branch protection rules, see [Branch Protection](docs/contributing/branch-protection.md).
 
 ## Security Issues
 

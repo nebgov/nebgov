@@ -12,11 +12,14 @@
  */
 import { Address, nativeToScVal, scValToNative, SorobanDataBuilder, xdr } from "@stellar/stellar-sdk";
 import { LedgerClock } from "../ledger";
-import { cloneStore, MockLedgerStore, ProposalRecord } from "./store";
+import { cloneStore, BudgetStreamRecord, CoSponsorshipDraftRecord, MockLedgerStore, OptimisticProposalRecord, ProposalRecord, StreamSpendRecord } from "./store";
 import { MockContractError } from "./errors";
 import { governorExecutor } from "./governor-executor";
 import { timelockExecutor } from "./timelock-executor";
 import { tokenVotesExecutor } from "./token-votes-executor";
+import { coSponsorshipExecutor } from "./co-sponsorship-executor";
+import { optimisticGovernorExecutor } from "./optimistic-governor-executor";
+import { treasuryExecutor, StreamBudgetReportRecord, TreasuryBudgetSummaryRecord } from "./treasury-executor";
 import {
   encAddress,
   encBool,
@@ -125,7 +128,177 @@ function encodeProposal(proposal: ProposalRecord): xdr.ScVal {
   });
 }
 
-function encodeReturn(contract: "governor" | "timelock" | "votes", fnName: string, value: unknown): xdr.ScVal {
+function encodeCoSponsorshipDraft(draft: CoSponsorshipDraftRecord): xdr.ScVal {
+  return encMap({
+    id: encU64(draft.id),
+    creator: encAddress(draft.creator),
+    description: encString(draft.description),
+    description_hash: encBytes(draft.descriptionHash),
+    metadata_uri: encString(draft.metadataUri),
+    targets: encVec(draft.targets.map(encAddress)),
+    fn_names: encVec(draft.fnNames.map(encSymbol)),
+    calldatas: encVec(draft.calldatas.map(encBytes)),
+    created_ledger: encU32(draft.createdLedger),
+    expiry_ledger: encU32(draft.expiryLedger),
+    co_sponsors: encVec(draft.coSponsors.map(encAddress)),
+    co_sponsor_power: encVec(draft.coSponsorPower.map(encI128)),
+    total_power: encI128(draft.totalPower),
+    finalized: encBool(draft.finalized),
+    cancelled: encBool(draft.cancelled),
+  });
+}
+
+function encodeOptimisticProposal(proposal: OptimisticProposalRecord): xdr.ScVal {
+  return encMap({
+    id: encU64(proposal.id),
+    proposer: encAddress(proposal.proposer),
+    target: encAddress(proposal.target),
+    fn_name: encSymbol(proposal.fnName),
+    calldata: encBytes(proposal.calldata),
+    description_hash: encBytes(proposal.descriptionHash),
+    created_ledger: encU32(proposal.createdLedger),
+    challenge_end_ledger: encU32(proposal.challengeEndLedger),
+    objection_votes: encI128(proposal.objectionVotes),
+    state: encEnum(proposal.state),
+  });
+}
+
+function encodeBudgetStream(stream: BudgetStreamRecord): xdr.ScVal {
+  return encMap({
+    id: encU64(stream.id),
+    name: encSymbol(stream.name),
+    owner: encAddress(stream.owner),
+    token: encAddress(stream.token),
+    total_allocated: encI128(stream.totalAllocated),
+    total_spent: encI128(stream.totalSpent),
+    start_ledger: encU32(stream.startLedger),
+    end_ledger: encU32(stream.endLedger),
+    is_active: encBool(stream.isActive),
+    is_revoked: encBool(stream.isRevoked),
+    // `Option<u32>`: `None` goes on the wire as `ScvVoid`.
+    revoked_at_ledger: stream.revokedAtLedger != null ? encU32(stream.revokedAtLedger) : encVoid(),
+    max_single_spend: encI128(stream.maxSingleSpend),
+    cooldown_ledgers: encU32(stream.cooldownLedgers),
+    last_spend_ledger: encU32(stream.lastSpendLedger),
+    spend_count: encU32(stream.spendCount),
+    created_by_proposal_id: encU64(stream.createdByProposalId),
+  });
+}
+
+function encodeStreamSpend(spend: StreamSpendRecord): xdr.ScVal {
+  return encMap({
+    stream_id: encU64(spend.streamId),
+    spend_index: encU32(spend.spendIndex),
+    recipient: encAddress(spend.recipient),
+    amount: encI128(spend.amount),
+    memo: encString(spend.memo),
+    executed_at_ledger: encU32(spend.executedAtLedger),
+    executed_by: encAddress(spend.executedBy),
+  });
+}
+
+function encodeStreamBudgetReport(report: StreamBudgetReportRecord): xdr.ScVal {
+  return encMap({
+    stream_id: encU64(report.streamId),
+    name: encSymbol(report.name),
+    total_allocated: encI128(report.totalAllocated),
+    total_spent: encI128(report.totalSpent),
+    remaining: encI128(report.remaining),
+    utilization_bps: encU32(report.utilizationBps),
+    is_active: encBool(report.isActive),
+    days_remaining: encU32(report.daysRemaining),
+    spend_count: encU32(report.spendCount),
+    avg_spend: encI128(report.avgSpend),
+  });
+}
+
+function encodeTokenAmounts(pairs: Array<[string, bigint]>): xdr.ScVal {
+  return encVec(pairs.map(([token, amount]) => encVec([encAddress(token), encI128(amount)])));
+}
+
+function encodeTreasuryBudgetSummary(summary: TreasuryBudgetSummaryRecord): xdr.ScVal {
+  return encMap({
+    total_streams: encU32(summary.totalStreams),
+    active_streams: encU32(summary.activeStreams),
+    total_allocated_by_token: encodeTokenAmounts(summary.totalAllocatedByToken),
+    total_spent_by_token: encodeTokenAmounts(summary.totalSpentByToken),
+    total_remaining_by_token: encodeTokenAmounts(summary.totalRemainingByToken),
+  });
+}
+
+function encodeReturn(
+  contract: "governor" | "timelock" | "votes" | "coSponsorship" | "optimisticGovernor" | "treasury",
+  fnName: string,
+  value: unknown,
+): xdr.ScVal {
+  if (contract === "treasury") {
+    switch (fnName) {
+      case "create_stream":
+        return encU64(value as bigint);
+      case "stream_spend":
+      case "top_up_stream":
+        return encVoid();
+      case "get_stream":
+        return encodeBudgetStream(value as BudgetStreamRecord);
+      case "get_streams":
+        return encVec((value as BudgetStreamRecord[]).map(encodeBudgetStream));
+      case "get_stream_spends":
+        return encVec((value as StreamSpendRecord[]).map(encodeStreamSpend));
+      case "get_stream_report":
+        return encodeStreamBudgetReport(value as StreamBudgetReportRecord);
+      case "get_stream_remaining":
+        return encI128(value as bigint);
+      case "get_budget_summary":
+        return encodeTreasuryBudgetSummary(value as TreasuryBudgetSummaryRecord);
+      default:
+        throw new Error(`MockSorobanServer: no encoder for treasury.${fnName}`);
+    }
+  }
+  if (contract === "optimisticGovernor") {
+    switch (fnName) {
+      case "propose":
+        return encU64(value as bigint);
+      case "object":
+      case "finalize":
+      case "execute":
+      case "cancel":
+      case "update_config":
+        return encVoid();
+      case "get_proposal":
+        return encodeOptimisticProposal(value as OptimisticProposalRecord);
+      case "get_config": {
+        const config = value as {
+          votesToken: string;
+          challengeWindowLedgers: number;
+          objectionThresholdBps: number;
+          proposerBondAmount: bigint;
+          proposerBondToken: string;
+        };
+        return encMap({
+          votes_token: encAddress(config.votesToken),
+          challenge_window_ledgers: encU32(config.challengeWindowLedgers),
+          objection_threshold_bps: encU32(config.objectionThresholdBps),
+          proposer_bond_amount: encI128(config.proposerBondAmount),
+          proposer_bond_token: encAddress(config.proposerBondToken),
+        });
+      }
+      default:
+        throw new Error(`MockSorobanServer: no encoder for optimisticGovernor.${fnName}`);
+    }
+  }
+  if (contract === "coSponsorship") {
+    switch (fnName) {
+      case "create_draft":
+      case "finalize_draft":
+        return encU64(value as bigint);
+      case "co_sponsor":
+        return encVoid();
+      case "get_draft":
+        return encodeCoSponsorshipDraft(value as CoSponsorshipDraftRecord);
+      default:
+        throw new Error(`MockSorobanServer: no encoder for coSponsorship.${fnName}`);
+    }
+  }
   if (contract === "governor") {
     switch (fnName) {
       case "propose":
@@ -212,10 +385,15 @@ export class MockSorobanServer {
     this.results.clear();
   }
 
-  private resolveContract(address: string): "governor" | "timelock" | "votes" {
+  private resolveContract(
+    address: string,
+  ): "governor" | "timelock" | "votes" | "coSponsorship" | "optimisticGovernor" | "treasury" {
     if (address === this.store.addresses.governor) return "governor";
     if (address === this.store.addresses.timelock) return "timelock";
     if (address === this.store.addresses.votes) return "votes";
+    if (address === this.store.addresses.coSponsorship) return "coSponsorship";
+    if (address === this.store.addresses.optimisticGovernor) return "optimisticGovernor";
+    if (address === this.store.addresses.treasury) return "treasury";
     throw new Error(`MockSorobanServer: unknown contract address ${address}`);
   }
 
@@ -230,6 +408,25 @@ export class MockSorobanServer {
       const handler = (timelockExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
       if (!handler) throw new Error(`MockSorobanServer: unknown timelock function ${invocation.functionName}`);
       return handler(store.timelock, this.clock, invocation.caller, invocation.args);
+    }
+    if (contract === "coSponsorship") {
+      const handler = (coSponsorshipExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
+      if (!handler) throw new Error(`MockSorobanServer: unknown co-sponsorship function ${invocation.functionName}`);
+      return handler(store, this.clock, invocation.caller, invocation.args);
+    }
+    if (contract === "optimisticGovernor") {
+      const handler = (optimisticGovernorExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
+      if (!handler) {
+        throw new Error(`MockSorobanServer: unknown optimistic-governor function ${invocation.functionName}`);
+      }
+      return handler(store, this.clock, invocation.caller, invocation.args);
+    }
+    if (contract === "treasury") {
+      const handler = (treasuryExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
+      if (!handler) {
+        throw new Error(`MockSorobanServer: unknown treasury function ${invocation.functionName}`);
+      }
+      return handler(store, this.clock, invocation.caller, invocation.args);
     }
     const handler = (tokenVotesExecutor as Record<string, (...a: unknown[]) => unknown>)[invocation.functionName];
     if (!handler) throw new Error(`MockSorobanServer: unknown votes function ${invocation.functionName}`);

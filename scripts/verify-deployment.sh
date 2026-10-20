@@ -23,18 +23,18 @@ NC='\033[0m'
 
 FAILURES=0
 
-pass()  { printf "${GREEN}[✓]${NC} %s\n" "$*"; }
-fail()  { printf "${RED}[✗]${NC} %s\n" "$*" >&2; FAILURES=$((FAILURES + 1)); }
-info()  { printf "${CYAN}[info]${NC}  %s\n" "$*"; }
+pass()  { printf '%b[✓]%b %s\n' "$GREEN" "$NC" "$*"; }
+fail()  { printf '%b[✗]%b %s\n' "$RED" "$NC" "$*" >&2; FAILURES=$((FAILURES + 1)); }
+info()  { printf '%b[info]%b  %s\n' "$CYAN" "$NC" "$*"; }
 
-[[ -f "$ENV_FILE" ]] || { printf "${RED}[error]${NC} Env file not found: %s\n" "$ENV_FILE" >&2; exit 1; }
+[[ -f "$ENV_FILE" ]] || { printf '%b[error]%b Env file not found: %s\n' "$RED" "$NC" "$ENV_FILE" >&2; exit 1; }
 
 set -a
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 set +a
 
-command -v stellar >/dev/null 2>&1 || { printf "${RED}[error]${NC} stellar-cli not found\n" >&2; exit 1; }
+command -v stellar >/dev/null 2>&1 || { printf '%b[error]%b stellar-cli not found\n' "$RED" "$NC" >&2; exit 1; }
 
 NETWORK="${STELLAR_NETWORK:-testnet}"
 IDENTITY="${STELLAR_IDENTITY:-deployer}"
@@ -214,8 +214,8 @@ fi
 
 printf '\n'
 if [[ "$FAILURES" -gt 0 ]]; then
-  printf "${RED}%d check(s) failed.${NC}\n" "$FAILURES" >&2
+  printf '%b%d check(s) failed.%b\n' "$RED" "$FAILURES" "$NC" >&2
   exit 1
 else
-  printf "${GREEN}All checks passed.${NC}\n"
+  printf '%bAll checks passed.%b\n' "$GREEN" "$NC"
 fi

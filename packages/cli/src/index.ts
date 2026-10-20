@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { registerGuardianCouncil } from "./guardianCouncil.js";
+import { loadConfig as loadCouncilConfig } from "./config.js";
+
 import { Command } from "commander";
 import {
   GovernorClient,
@@ -1230,6 +1233,11 @@ program
         output({ action: "voting-rewards.fund", amount, hash }, global);
       }),
   );
+
+registerGuardianCouncil(program, async () => {
+  const global = program.opts<GlobalOptions>();
+  return { global, cfg: await loadCouncilConfig(global.config) };
+});
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

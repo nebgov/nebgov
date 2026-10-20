@@ -1,12 +1,7 @@
 import { SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { GovernorSettings, Network, VoteType } from "./types";
 import { withRetry } from "./utils";
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
+import { getRpcUrl } from "./network";
 
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
 
@@ -234,7 +229,7 @@ function decodeEvent(raw: SorobanRpc.Api.EventResponse): SorobanEvent | null {
 }
 
 function buildServer(opts: SubscriptionOptions): SorobanRpc.Server {
-  return new SorobanRpc.Server(opts.rpcUrl ?? RPC_URLS[opts.network], {
+  return new SorobanRpc.Server(getRpcUrl(opts.network, opts.rpcUrl), {
     allowHttp: false,
   });
 }

@@ -15,6 +15,15 @@ soroban-sdk = { workspace = true }
 [dependencies.sorogov-governor]
 path = "../contracts/governor"
 
+[dependencies.sorogov-treasury]
+path = "../contracts/treasury"
+
+[dependencies.sorogov-timelock]
+path = "../contracts/timelock"
+
+[dependencies.sorogov-proposal-bonds]
+path = "../contracts/proposal-bonds"
+
 [[bin]]
 name = "governor_state"
 path = "fuzz_targets/governor_state.rs"
@@ -23,4 +32,19 @@ doc = false
 [[bin]]
 name = "multi_action_proposal"
 path = "fuzz_targets/multi_action_proposal.rs"
+doc = false
+
+[[bin]]
+name = "treasury_streams"
+path = "fuzz_targets/treasury_streams.rs"
+doc = false
+
+[[bin]]
+name = "timelock"
+path = "fuzz_targets/timelock.rs"
+doc = false
+
+[[bin]]
+name = "proposal_bonds"
+path = "fuzz_targets/proposal_bonds.rs"
 doc = false

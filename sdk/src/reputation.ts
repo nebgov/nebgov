@@ -2,7 +2,6 @@ import {
   Contract,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Keypair,
   nativeToScVal,
@@ -11,7 +10,6 @@ import {
 } from "@stellar/stellar-sdk";
 import {
   GovernorConfig,
-  Network,
   ProposerReputation,
   ReputationScoreEntry,
   ReputationScoreHistoryPage,
@@ -23,23 +21,12 @@ import {
 } from "./types";
 import { GovernorError, GovernorErrorCode, parseGovernorError } from "./errors";
 import { createRetry, isNetworkError, type RetryFunction } from "./utils";
+import { getNetworkPassphrase, getRpcUrl } from "./network";
 
 interface SubmitResult {
   hash: string;
   confirmed: SorobanRpc.Api.GetSuccessfulTransactionResponse;
 }
-
-const RPC_URLS: Record<Network, string> = {
-  mainnet: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-  testnet: "https://soroban-testnet.stellar.org",
-  futurenet: "https://rpc-futurenet.stellar.org",
-};
-
-const NETWORK_PASSPHRASES: Record<Network, string> = {
-  mainnet: Networks.PUBLIC,
-  testnet: Networks.TESTNET,
-  futurenet: Networks.FUTURENET,
-};
 
 function mapProposerReputation(raw: any): ProposerReputation {
   return {
@@ -143,10 +130,10 @@ export class ReputationClient {
 
   constructor(config: GovernorConfig) {
     this.config = config;
-    const rpcUrl = config.rpcUrl ?? RPC_URLS[config.network];
+    const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
     this.contract = new Contract(config.governorAddress);
-    this.networkPassphrase = NETWORK_PASSPHRASES[config.network];
+    this.networkPassphrase = getNetworkPassphrase(config.network);
     this.retry = createRetry(config, { retryOn: isNetworkError });
   }
 

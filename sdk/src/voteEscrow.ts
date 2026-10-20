@@ -6,11 +6,15 @@ import {
   Keypair,
   nativeToScVal,
   scValToNative,
+  StrKey,
   xdr,
 } from "@stellar/stellar-sdk";
 import { VoteEscrowConfig } from "./types";
 import { createRetry, type RetryFunction } from "./utils";
-import { parseVoteEscrowError } from "./errors";
+import {
+  parseVoteEscrowError,
+  VoteEscrowErrorCode,
+} from "./errors";
 import { getRpcUrl, getNetworkPassphrase } from "./network";
 
 export interface Lock {
@@ -47,6 +51,14 @@ export class VoteEscrowClient {
   private readonly retry: RetryFunction;
 
   constructor(config: VoteEscrowConfig) {
+    if (
+      typeof config.voteEscrowAddress !== "string" ||
+      !StrKey.isValidContract(config.voteEscrowAddress)
+    ) {
+      throw new Error(
+        "VoteEscrowClient requires a valid voteEscrowAddress contract ID"
+      );
+    }
     this.config = config;
     const rpcUrl = getRpcUrl(config.network, config.rpcUrl);
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: false });
@@ -359,13 +371,17 @@ export class VoteEscrowClient {
           .setTimeout(30)
           .build()
       );
-      if (SorobanRpc.Api.isSimulationError(result)) return null;
+      if (SorobanRpc.Api.isSimulationError(result)) {
+        const error = parseVoteEscrowError(result);
+        if (error.code === VoteEscrowErrorCode.LockNotFound) return null;
+        throw error;
+      }
       const raw = (
         result as SorobanRpc.Api.SimulateTransactionSuccessResponse
       ).result?.retval;
-      if (!raw) return null;
+      if (!raw) throw parseVoteEscrowError("Simulation returned no lock result");
       const native = scValToNative(raw) as Record<string, any>;
-      if (!native) return null;
+      if (native === null || native === undefined) return null;
       return {
         owner: native.owner,
         amount: BigInt(native.amount),
@@ -396,11 +412,20 @@ export class VoteEscrowClient {
           .setTimeout(30)
           .build()
       );
-      if (SorobanRpc.Api.isSimulationError(result)) return 0n;
+      if (SorobanRpc.Api.isSimulationError(result)) {
+        const error = parseVoteEscrowError(result);
+        if (error.code === VoteEscrowErrorCode.LockNotFound) return 0n;
+        throw error;
+      }
       const raw = (
         result as SorobanRpc.Api.SimulateTransactionSuccessResponse
       ).result?.retval;
-      return raw ? BigInt(scValToNative(raw)) : 0n;
+      if (!raw) throw parseVoteEscrowError("Simulation returned no voting power result");
+      const native = scValToNative(raw);
+      if (native === null || native === undefined) {
+        throw parseVoteEscrowError("Simulation returned no voting power result");
+      }
+      return BigInt(native);
     });
   }
 

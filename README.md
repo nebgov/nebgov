@@ -16,7 +16,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | Feature                | Description                                         |
 | ---------------------- | --------------------------------------------------- |
 | Proposal lifecycle     | Create, vote, queue, and execute on-chain proposals |
-| Timelock execution     | Mandatory delay between passing and execution       |
+| Timelock execution     | Mandatory delay between passing and execution ([docs](./docs/timelock.md)) |
 | Token-weighted voting  | Snapshot voting power from any SEP-41 token         |
 | Delegation             | Delegate voting power to any address, in full or split by percentage ([docs](./docs/split-delegation.md)) |
 | Time-locked voting boost | Lock tokens to gain amplified, linearly-decaying voting power ([docs](./docs/vote-escrow.md)) |
@@ -26,6 +26,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | Conviction voting      | Self-executing voting based on staking duration and amount ([docs](./docs/conviction-voting.md)) |
 | Optimistic governance  | Fast-track proposals that execute unless challenged ([docs](./docs/optimistic-governance.md)) |
 | Proposal bonds         | Refundable proposer bonds with governance-triggered slashing ([docs](./docs/proposal-bonds.md)) |
+| Guardian Council       | M-of-N emergency pause and cancellation authority ([docs](./docs/guardian-council.md)) |
 | Gasless signaling      | Off-chain polling with on-chain result anchoring ([docs](./docs/signal-anchor.md)) |
 
 ---
@@ -36,8 +37,9 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 
 | Package                         | Description                                                      |
 | ------------------------------- | ---------------------------------------------------------------- |
+| `contracts/guardian-council`    | M-of-N emergency guardian for governor pause and cancellation     |
 | `contracts/governor`            | Core governance contract — proposal lifecycle, voting, execution |
-| `contracts/timelock`            | Delayed execution controller                                     |
+| `contracts/timelock`            | Delayed execution controller ([docs](./docs/timelock.md))        |
 | `contracts/token-votes`         | Voting power with checkpointing and delegation                   |
 | `contracts/governor-factory`    | Permissionless governor deployer                                 |
 | `contracts/treasury`            | Multi-sig treasury with budget streams                           |

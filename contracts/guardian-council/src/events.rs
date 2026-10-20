@@ -6,6 +6,7 @@ pub const APPROVAL_REVOKED_TOPIC: &str = "ApprovalRevoked";
 pub const ACTION_EXECUTED_TOPIC: &str = "ActionExecuted";
 pub const MEMBERSHIP_ROTATED_TOPIC: &str = "MembershipRotated";
 pub const THRESHOLD_UPDATED_TOPIC: &str = "ThresholdUpdated";
+pub const ACTION_TTL_UPDATED_TOPIC: &str = "ActionTtlUpdated";
 
 /// `action` is emitted as its debug-ish discriminant symbol so the indexer can
 /// group without decoding the whole `GuardianAction` from XDR.
@@ -48,5 +49,14 @@ pub fn emit_threshold_updated(env: &Env, old_threshold: u32, new_threshold: u32)
     env.events().publish(
         (Symbol::new(env, THRESHOLD_UPDATED_TOPIC),),
         (old_threshold, new_threshold),
+    );
+}
+
+/// Emitted when the council updates its action TTL via `set_action_ttl`.
+/// `new_ttl == 0` means no expiry (actions never expire).
+pub fn emit_action_ttl_updated(env: &Env, old_ttl: u32, new_ttl: u32) {
+    env.events().publish(
+        (Symbol::new(env, ACTION_TTL_UPDATED_TOPIC),),
+        (old_ttl, new_ttl),
     );
 }

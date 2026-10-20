@@ -79,6 +79,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "commit_phase_fraction"
+                      },
+                      "val": {
+                        "u32": 5000
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "guardian"
                       },
                       "val": {
@@ -160,6 +168,14 @@
                         "symbol": "reflector_oracle"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_commit_reveal"
+                      },
+                      "val": {
+                        "bool": false
+                      }
                     },
                     {
                       "key": {
@@ -385,6 +401,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "CommitPhaseFraction"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 5000
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "CurrentWasmHash"
                             }
                           ]
@@ -565,6 +593,18 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "UseCommitReveal"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       },
                       {

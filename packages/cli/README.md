@@ -70,10 +70,13 @@ Example `~/.nebgov/config.json`:
 | `NEBGOV_BACKEND_URL` | `backendUrl` | `voting-rewards`. Required by `claims`, optional for `epochs`. |
 | `NEBGOV_KEYPAIR_FILE` | `keypairFile` | Default signer for write commands when `--keypair` is omitted. |
 | `NEBGOV_DEFAULT_ACCOUNT` | `defaultAccount` | Default address for read commands that take an account. |
+| `NEBGOV_GUARDIAN_COUNCIL_ADDRESS` | `guardianCouncilAddress` | `guardian-council` (required). |
 | `NEBGOV_PROPOSAL_BONDS_ADDRESS` | n/a (env only) | `proposal-bonds` |
 | `NEBGOV_CONVICTION_VOTING_ADDRESS` | n/a (env only) | `conviction-voting` |
 | `NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS` | n/a (env only) | `optimistic-governor` |
 | `NEBGOV_TREASURY_STRATEGIES_ADDRESS` | n/a (env only) | `treasury-strategies` |
+| `NEBGOV_WRAPPER_ADDRESS` | `wrapperAddress` | `wrapper` (required). |
+| `NEBGOV_LIQUIDITY_ADDRESS` | `liquidityAddress` | `liquidity` (required). |
 | `NEBGOV_SIGNAL_ANCHOR_ADDRESS` | n/a (env only) | `signaling-polls` |
 | `NEBGOV_CO_SPONSORSHIP_ADDRESS` | n/a (env only) | `drafts` |
 | `NEBGOV_INDEXER_URL` | n/a (env only) | `drafts` (indexer endpoint for draft queries). |
@@ -134,12 +137,45 @@ nebgov treasury batch-transfer --token C... --recipients ./payouts.csv --keypair
 
 `--recipients` is a CSV file with one `address,amount` row per line (amounts in base units). Supports `--dry-run`.
 
+### wrapper
+
+```bash
+nebgov wrapper wrap 1000 --keypair ~/.nebgov/keys/signer.secret
+nebgov wrapper unwrap 250 --keypair ~/.nebgov/keys/signer.secret
+nebgov wrapper balance G...
+```
+
+`wrap` and `unwrap` take amounts in base units and must be greater than zero. `balance` reports the underlying amount deposited and the account's voting power; the address defaults to the configured account. `wrap` and `unwrap` support `--dry-run`.
+
 ### proposal-bonds
 
 ```bash
 nebgov proposal-bonds list --limit 20
 nebgov proposal-bonds settings
 ```
+
+### reputation
+
+```bash
+nebgov reputation get G...
+nebgov reputation history G... --limit 20 --offset 0
+nebgov reputation threshold G...
+```
+
+`get` and `threshold` read the governor contract on-chain (`NEBGOV_GOVERNOR_ADDRESS`). `threshold` reports the reputation-adjusted proposal threshold that `propose()` actually checks. `history` reads the score timeline from the indexer, so it also needs `NEBGOV_INDEXER_URL`.
+
+### liquidity
+
+```bash
+nebgov liquidity pool 0 1
+nebgov liquidity price 0 1
+nebgov liquidity position 0 1 --provider G...
+nebgov liquidity add 0 1 --amount-a 1000 --amount-b 2000 --min-lp 1 --keypair ~/.nebgov/keys/signer.secret
+nebgov liquidity remove 0 1 --lp-tokens 500 --keypair ~/.nebgov/keys/signer.secret
+nebgov liquidity swap 0 1 --amount-in 100 --min-out 95 --keypair ~/.nebgov/keys/signer.secret
+```
+
+`0 1` are the outcome ids of the pool's pair. Amounts are in base units. Read commands simulate with the configured account (`NEBGOV_DEFAULT_ACCOUNT` or the keypair file), and `pool` prints `null` when the pair has no pool. `add`, `remove` and `swap` support `--dry-run`. Creating a pool is not available yet because the SDK's `LiquidityClient` does not expose it.
 
 ### conviction-voting
 
@@ -219,3 +255,27 @@ nebgov voting-rewards fund --amount 5000000000 --keypair ~/.nebgov/keys/funder.s
 ```bash
 pnpm --filter @nebgov/cli test
 ```
+
+### guardian-council
+
+Set `NEBGOV_GUARDIAN_COUNCIL_ADDRESS` or `guardianCouncilAddress` in the config
+file. Views require a funded public `defaultAccount` (or `keypairFile`); writes
+use `--keypair` for the transaction signer.
+
+```bash
+nebgov guardian-council propose Pause --keypair member.json
+nebgov guardian-council propose Unpause --keypair member.json
+nebgov guardian-council propose CancelActive --proposal-id 42 --keypair member.json
+nebgov guardian-council propose CancelQueued --proposal-id 42 --keypair member.json
+nebgov guardian-council propose RotateMember --old G... --new G... --keypair member.json
+nebgov guardian-council propose SetThreshold --threshold 2 --keypair member.json
+nebgov guardian-council approve 0 --keypair other-member.json
+nebgov guardian-council revoke 0 --keypair other-member.json
+nebgov guardian-council execute 0 --keypair payer.json
+nebgov guardian-council get 0
+nebgov guardian-council members
+nebgov guardian-council threshold
+```
+
+Proposing includes the proposer's approval. Execution is permissionless once
+the current member threshold is met, within the action's configured lifetime.

@@ -7,6 +7,7 @@ var mockIsSimulationError = jest.fn();
 var mockContractCall = jest.fn();
 
 import { VoteEscrowClient } from "../voteEscrow";
+import { VoteEscrowErrorCode } from "../errors";
 
 jest.mock("@stellar/stellar-sdk", () => {
   const actual = jest.requireActual("@stellar/stellar-sdk");
@@ -53,11 +54,76 @@ describe("VoteEscrowClient", () => {
     mockContractCall.mockReturnValue({});
 
     client = new VoteEscrowClient({
-      governorAddress: validCAddr,
-      timelockAddress: validCAddr,
-      votesAddress: validCAddr,
       voteEscrowAddress: validCAddr,
       network: "testnet",
+      maxAttempts: 1,
+    });
+  });
+
+  describe("constructor", () => {
+    const config = {
+      voteEscrowAddress: validCAddr,
+      network: "testnet" as const,
+    };
+
+    it("rejects a missing or malformed vote escrow contract address", () => {
+      expect(
+        () =>
+          new VoteEscrowClient({
+            ...config,
+            voteEscrowAddress: "" as unknown as string,
+          })
+      ).toThrow("VoteEscrowClient requires a valid voteEscrowAddress contract ID");
+      expect(
+        () =>
+          new VoteEscrowClient({
+            ...config,
+            voteEscrowAddress: undefined as unknown as string,
+          })
+      ).toThrow("VoteEscrowClient requires a valid voteEscrowAddress contract ID");
+      expect(
+        () =>
+          new VoteEscrowClient({
+            ...config,
+            voteEscrowAddress: "not-a-contract",
+          })
+      ).toThrow("VoteEscrowClient requires a valid voteEscrowAddress contract ID");
+    });
+  });
+
+  describe("getLock", () => {
+    it("returns null for the contract's LockNotFound error", async () => {
+      mockIsSimulationError.mockReturnValue(true);
+      mockSimulate.mockResolvedValue({ error: "Error(Contract, #2)" });
+
+      await expect(client.getLock(validGAddr)).resolves.toBeNull();
+    });
+
+    it("throws parsed errors for other simulation failures", async () => {
+      mockIsSimulationError.mockReturnValue(true);
+      mockSimulate.mockResolvedValue({ error: "RPC unavailable" });
+
+      await expect(client.getLock(validGAddr)).rejects.toMatchObject({
+        code: VoteEscrowErrorCode.SimulationFailed,
+      });
+    });
+  });
+
+  describe("getVotingPower", () => {
+    it("returns zero for the contract's LockNotFound error", async () => {
+      mockIsSimulationError.mockReturnValue(true);
+      mockSimulate.mockResolvedValue({ error: "Error(Contract, #2)" });
+
+      await expect(client.getVotingPower(validGAddr)).resolves.toBe(0n);
+    });
+
+    it("throws parsed errors for other simulation failures", async () => {
+      mockIsSimulationError.mockReturnValue(true);
+      mockSimulate.mockResolvedValue({ error: "RPC unavailable" });
+
+      await expect(client.getVotingPower(validGAddr)).rejects.toMatchObject({
+        code: VoteEscrowErrorCode.SimulationFailed,
+      });
     });
   });
 

@@ -5,13 +5,43 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  dependency-audit:
+    name: Cargo dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit Rust dependencies
+        run: cargo audit
+
+  shellcheck:
+    name: Shell script lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Lint deployment scripts
+        run: shellcheck scripts/deploy-e2e-testnet.sh scripts/deploy-testnet.sh scripts/update-deployments.sh scripts/upgrade-contract.sh scripts/verify-deployment.sh
+
   test:
     name: Test
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +118,7 @@ jobs:
 
   clippy:
     name: Clippy
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -153,6 +184,7 @@ jobs:
 
   build:
     name: Build WASM
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

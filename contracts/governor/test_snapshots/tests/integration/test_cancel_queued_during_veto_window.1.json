@@ -1239,6 +1239,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "DomainSeparator"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bytes": "ac250f8b1bf2c9cc9b98a6178e77bfab675e071b79ed6e0c5221c0c927e82ad8"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RelayerWhitelistEnabled"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TimeWeightEnabled"
                             }
                           ]
@@ -1323,7 +1347,7 @@
                   "symbol": "Operation"
                 },
                 {
-                  "bytes": "86e010e5767bce8af24d6368a6dc9a5aed8457ca8a776b32b541dd1c2f99c70b"
+                  "bytes": "24abb3a0de2df413da7ed4e76f8b53090ec41ab010b426daac0628532d64f61d"
                 }
               ]
             },
@@ -1343,7 +1367,7 @@
                       "symbol": "Operation"
                     },
                     {
-                      "bytes": "86e010e5767bce8af24d6368a6dc9a5aed8457ca8a776b32b541dd1c2f99c70b"
+                      "bytes": "24abb3a0de2df413da7ed4e76f8b53090ec41ab010b426daac0628532d64f61d"
                     }
                   ]
                 },
@@ -1775,7 +1799,7 @@
                       "val": {
                         "vec": [
                           {
-                            "bytes": "86e010e5767bce8af24d6368a6dc9a5aed8457ca8a776b32b541dd1c2f99c70b"
+                            "bytes": "24abb3a0de2df413da7ed4e76f8b53090ec41ab010b426daac0628532d64f61d"
                           }
                         ]
                       }
@@ -1950,6 +1974,124 @@
             "ext": "v0"
           },
           11000
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ProposerReputation"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ProposerReputation"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "consecutive_failed"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "consecutive_successful"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "first_proposal_ledger"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "last_proposal_ledger"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "proposer"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "reputation_score"
+                      },
+                      "val": {
+                        "i32": 110
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "threshold_multiplier_bps"
+                      },
+                      "val": {
+                        "u32": 11675
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_participation_bps_sum"
+                      },
+                      "val": {
+                        "u64": 10000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_proposals"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          3110431
         ]
       ],
       [
@@ -2242,6 +2384,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "CommitPhaseFraction"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 5000
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "CurrentWasmHash"
                             }
                           ]
@@ -2407,6 +2561,18 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "UseCommitReveal"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       },
                       {

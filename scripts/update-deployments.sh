@@ -14,6 +14,7 @@ fi
 
 # Load variables (ignoring comments)
 set -a
+# shellcheck source=/dev/null
 source <(grep -v '^#' "$ENV_FILE" | sed -E 's/^(.+)=(.+)$/\1="\2"/')
 set +a
 

@@ -67,6 +67,81 @@ export function computeProposalState(store: MockLedgerStore, clock: LedgerClock,
   return "Defeated";
 }
 
+function createProposal(
+  store: MockLedgerStore,
+  clock: LedgerClock,
+  proposer: string,
+  description: string,
+  descriptionHash: Uint8Array,
+  metadataUri: string,
+  targets: string[],
+  fnNames: string[],
+  calldatas: Uint8Array[],
+  checkThreshold: boolean,
+): bigint {
+  const gov = store.governor;
+  if (gov.settings.isPaused) {
+    throw new MockContractError(GovernorErrorCode.ContractPaused, "propose: contract is paused");
+  }
+  if (targets.length !== fnNames.length || targets.length !== calldatas.length) {
+    throw new MockContractError(GovernorErrorCode.InvalidVectorLengths, "propose: length mismatch");
+  }
+  if (targets.length === 0) {
+    throw new MockContractError(GovernorErrorCode.NoTargets, "propose: no targets");
+  }
+  if (calldatas.some((calldata) => calldata.length > gov.settings.maxCalldataSize)) {
+    throw new MockContractError(GovernorErrorCode.CalldataTooLarge, "propose: calldata exceeds maximum size");
+  }
+  if (calldatas.length > 10) {
+    throw new MockContractError(GovernorErrorCode.TooManyCalldataEntries, "propose: too many calldata entries");
+  }
+  if (
+    checkThreshold &&
+    tokenVotesExecutor.get_votes(store.votes, clock, proposer, [proposer]) < gov.settings.proposalThreshold
+  ) {
+    throw new MockContractError(GovernorErrorCode.ProposalThresholdNotMet, "propose: proposal threshold not met");
+  }
+
+  const current = clock.sequence;
+  const lastProposalLedger = gov.lastProposalLedger.get(proposer);
+  if (lastProposalLedger !== undefined && current < lastProposalLedger + gov.settings.proposalCooldown) {
+    throw new MockContractError(GovernorErrorCode.ProposalRateLimited, "propose: proposer is in cooldown");
+  }
+  const currentPeriod = Math.floor(current / gov.settings.proposalPeriodDuration);
+  const periodKey = `${proposer}:${currentPeriod}`;
+  const proposalsInPeriod = gov.proposalsInPeriod.get(periodKey) ?? 0;
+  if (proposalsInPeriod >= gov.settings.maxProposalsPerPeriod) {
+    throw new MockContractError(GovernorErrorCode.ProposalRateLimited, "propose: max proposals per period reached");
+  }
+
+  const id = gov.proposalCount + 1n;
+  const proposal: ProposalRecord = {
+    id,
+    proposer,
+    description,
+    descriptionHash: Buffer.from(descriptionHash).toString("hex"),
+    metadataUri,
+    targets,
+    fnNames,
+    calldatas,
+    startLedger: current + gov.settings.votingDelay,
+    endLedger: current + gov.settings.votingDelay + gov.settings.votingPeriod,
+    votesFor: 0n,
+    votesAgainst: 0n,
+    votesAbstain: 0n,
+    executed: false,
+    cancelled: false,
+    queued: false,
+    opIds: [],
+    hasVoted: {},
+  };
+  gov.proposals.set(id, proposal);
+  gov.proposalCount = id;
+  gov.lastProposalLedger.set(proposer, current);
+  gov.proposalsInPeriod.set(periodKey, proposalsInPeriod + 1);
+  return id;
+}
+
 function mustGetProposal(store: MockLedgerStore, id: bigint): ProposalRecord {
   const proposal = store.governor.proposals.get(id);
   if (!proposal) throw new MockContractError(GovernorErrorCode.ProposalNotFound, `proposal ${id} not found`);
@@ -87,83 +162,46 @@ export const governorExecutor = {
     if (caller !== proposer) {
       throw new MockContractError(100, "propose: proposer must authorize this call");
     }
-
-    const gov = store.governor;
-
-    // Check if contract is paused (Issue #885)
-    if (gov.settings.isPaused) {
-      throw new MockContractError(GovernorErrorCode.ContractPaused, "propose: contract is paused");
-    }
-
-    // Split vector validation to match real contract behavior (Issue #883)
-    // First check: length mismatch
-    if (targets.length !== fnNames.length || targets.length !== calldatas.length) {
-      throw new MockContractError(GovernorErrorCode.InvalidVectorLengths, "propose: length mismatch");
-    }
-    // Second check: empty targets (must come AFTER length check)
-    if (targets.length === 0) {
-      throw new MockContractError(GovernorErrorCode.NoTargets, "propose: no targets");
-    }
-
-    // Validate calldata size and count (Issue #884)
-    const maxCalldataSize = gov.settings.maxCalldataSize;
-    for (let i = 0; i < calldatas.length; i++) {
-      if (calldatas[i].length > maxCalldataSize) {
-        throw new MockContractError(GovernorErrorCode.CalldataTooLarge, "propose: calldata exceeds maximum size");
-      }
-    }
-
-    const MAX_CALLDATA_COUNT = 10;
-    if (calldatas.length > MAX_CALLDATA_COUNT) {
-      throw new MockContractError(GovernorErrorCode.TooManyCalldataEntries, "propose: too many calldata entries");
-    }
-    const proposerVotes = tokenVotesExecutor.get_votes(store.votes, clock, proposer, [proposer]);
-    if (proposerVotes < gov.settings.proposalThreshold) {
-      throw new MockContractError(GovernorErrorCode.ProposalThresholdNotMet, "propose: proposal threshold not met");
-    }
-
-    const current = clock.sequence;
-    const cooldown = gov.settings.proposalCooldown;
-    const lastProposalLedger = gov.lastProposalLedger.get(proposer);
-    if (lastProposalLedger !== undefined && current < lastProposalLedger + cooldown) {
-      throw new MockContractError(GovernorErrorCode.ProposalRateLimited, "propose: proposer is in cooldown");
-    }
-
-    const periodDuration = gov.settings.proposalPeriodDuration;
-    const maxPerPeriod = gov.settings.maxProposalsPerPeriod;
-    const currentPeriod = Math.floor(current / periodDuration);
-    const periodKey = `${proposer}:${currentPeriod}`;
-    const proposalsInPeriod = gov.proposalsInPeriod.get(periodKey) ?? 0;
-    if (proposalsInPeriod >= maxPerPeriod) {
-      throw new MockContractError(GovernorErrorCode.ProposalRateLimited, "propose: max proposals per period reached");
-    }
-
-    const id = gov.proposalCount + 1n;
-    const proposal: ProposalRecord = {
-      id,
+    return createProposal(
+      store,
+      clock,
       proposer,
       description,
-      descriptionHash: Buffer.from(descriptionHash).toString("hex"),
+      descriptionHash,
       metadataUri,
       targets,
       fnNames,
       calldatas,
-      startLedger: current + gov.settings.votingDelay,
-      endLedger: current + gov.settings.votingDelay + gov.settings.votingPeriod,
-      votesFor: 0n,
-      votesAgainst: 0n,
-      votesAbstain: 0n,
-      executed: false,
-      cancelled: false,
-      queued: false,
-      opIds: [],
-      hasVoted: {},
-    };
-    gov.proposals.set(id, proposal);
-    gov.proposalCount = id;
-    gov.lastProposalLedger.set(proposer, current);
-    gov.proposalsInPeriod.set(periodKey, proposalsInPeriod + 1);
-    return id;
+      true,
+    );
+  },
+
+  propose_via_registry(store: MockLedgerStore, clock: LedgerClock, caller: string, args: unknown[]): bigint {
+    const [registry, proposer, description, descriptionHash, metadataUri, targets, fnNames, calldatas] = args as [
+      string,
+      string,
+      string,
+      Uint8Array,
+      string,
+      string[],
+      string[],
+      Uint8Array[],
+    ];
+    if (caller !== store.addresses.coSponsorship || registry !== caller) {
+      throw new MockContractError(100, "propose_via_registry: unauthorized registry");
+    }
+    return createProposal(
+      store,
+      clock,
+      proposer,
+      description,
+      descriptionHash,
+      metadataUri,
+      targets,
+      fnNames,
+      calldatas,
+      false,
+    );
   },
 
   cast_vote(store: MockLedgerStore, clock: LedgerClock, caller: string, args: unknown[]): null {

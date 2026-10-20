@@ -1,0 +1,25 @@
+[tool.ruff]
+# Target Python 3.10+ (ubuntu-latest default)
+target-version = "py310"
+
+# Line length to match typical Python style
+line-length = 100
+
+[tool.ruff.lint]
+# Enable common rule sets
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+# Ignore specific rules that conflict with project style
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have longer lines for readability
+"scripts/tests/*.py" = ["E501"]

@@ -1,0 +1,19 @@
+# CoinFabrik Scout suppression file
+#
+# This file allows suppressing specific security findings from the Scout scanner
+# when they are confirmed as false positives or intentional design decisions.
+#
+# Format documentation: https://github.com/CoinFabrik/scout
+#
+# Each suppression must include:
+# - detector: the name of the Scout detector that flagged the issue
+# - reason: a clear justification including date and author
+#
+# Example:
+# [[suppressions]]
+# detector = "unprotected-update-current-contract-wasm"
+# reason = "Suppressed: upgrade() is protected by require_auth() — 2026-10-19 — security-team"
+
+[suppressions]
+# No suppressions currently defined.
+# Add entries here when Scout findings are confirmed as false positives.

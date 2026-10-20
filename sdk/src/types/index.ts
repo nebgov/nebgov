@@ -858,6 +858,8 @@ export interface OptimisticGovernorConfig {
   rpcUrl?: string;
   /** Optional funded classic account used for read-only simulation calls. */
   simulationAccount?: string;
+  /** Indexer base URL, required by the indexer-backed methods. */
+  indexerUrl?: string;
   /** Maximum retry attempts for failed operations (default: 3) */
   maxAttempts?: number;
   /** Base delay between retries in milliseconds (default: 1000) */
