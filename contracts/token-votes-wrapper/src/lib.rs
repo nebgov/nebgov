@@ -1,6 +1,13 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol, Vec};
+
+/// Error codes returned by the token-votes wrapper.
+#[contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WrapperError {
+    NotInitialized = 1,
+}
 
 /// A voting power checkpoint at a specific ledger sequence.
 #[contracttype]
@@ -34,6 +41,7 @@ impl TokenVotesWrapperContract {
         let mut hi: u32 = checkpoints.len();
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
+            // `mid < hi <= len`, so the index is always in bounds.
             let cp: Checkpoint = checkpoints.get(mid).unwrap();
             if cp.ledger <= ledger {
                 lo = mid + 1;
@@ -44,6 +52,7 @@ impl TokenVotesWrapperContract {
         if lo == 0 {
             return 0;
         }
+        // `lo` is at least 1 and at most `len`, so `lo - 1` is always in bounds.
         let cp: Checkpoint = checkpoints.get(lo - 1).unwrap();
         cp.votes
     }
@@ -133,7 +142,7 @@ impl TokenVotesWrapperContract {
             .storage()
             .instance()
             .get(&DataKey::UnderlyingToken)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized));
 
         let underlying_client = token::Client::new(env, &underlying);
         underlying_client.transfer(from, &env.current_contract_address(), &amount);
@@ -205,7 +214,7 @@ impl TokenVotesWrapperContract {
             .storage()
             .instance()
             .get(&DataKey::UnderlyingToken)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized));
         let underlying_client = token::Client::new(env, &underlying);
         underlying_client.transfer(&env.current_contract_address(), from, &amount);
 
@@ -313,7 +322,7 @@ impl TokenVotesWrapperContract {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("not initialized");
+            .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized));
         assert_eq!(caller, admin, "only admin can lock withdrawals");
         env.storage()
             .persistent()
@@ -374,7 +383,7 @@ impl TokenVotesWrapperContract {
         env.storage()
             .instance()
             .get(&DataKey::UnderlyingToken)
-            .expect("not initialized")
+            .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized))
     }
 }
 
@@ -631,5 +640,48 @@ mod tests {
 
         // sanity-check: remaining voting power
         assert_eq!(wrapper.get_votes(&user), 200);
+    }
+
+    #[test]
+    fn test_underlying_token_before_initialize_returns_typed_error() {
+        let env = Env::default();
+        let wrapper_id = env.register(TokenVotesWrapperContract, ());
+        let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
+
+        assert!(matches!(
+            wrapper.try_underlying_token(),
+            Err(Ok(WrapperError::NotInitialized))
+        ));
+    }
+
+    #[test]
+    fn test_deposit_before_initialize_returns_typed_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let user = Address::generate(&env);
+        let wrapper_id = env.register(TokenVotesWrapperContract, ());
+        let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
+
+        assert!(matches!(
+            wrapper.try_deposit(&user, &100_i128),
+            Err(Ok(WrapperError::NotInitialized))
+        ));
+    }
+
+    #[test]
+    fn test_lock_withdrawal_before_initialize_returns_typed_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+        let wrapper_id = env.register(TokenVotesWrapperContract, ());
+        let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
+
+        assert!(matches!(
+            wrapper.try_lock_withdrawal(&admin, &user, &1000_u32),
+            Err(Ok(WrapperError::NotInitialized))
+        ));
     }
 }
