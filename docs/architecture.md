@@ -119,7 +119,7 @@ Manages treasury funds and batch transfers:
 - `BatchTransfer`: Batch transfer executed
 
 #### Liquidity Contract
-Provides liquidity pool functionality:
+Provides liquidity pool functionality (see [liquidity.md](./liquidity.md)):
 - Liquidity provision
 - Token swapping
 - Fee management
