@@ -128,7 +128,10 @@ export function scVecBytes(blobs: (Buffer | Uint8Array)[]): xdr.ScVal {
 /**
  * GovernorClient — interact with a deployed NebGov governor contract.
  *
- * TODO issue #14: add full error handling, retry logic, and simulation flow.
+ * Reads and submissions go through `retry` (transient network errors only).
+ * Submissions are simulated before broadcast, and every failure — simulation,
+ * submission, on-chain failure, or confirmation timeout — surfaces as a typed
+ * {@link GovernorError}.
  */
 export class GovernorClient {
   readonly config: GovernorConfig;
@@ -172,19 +175,10 @@ export class GovernorClient {
   }
 
   isRetryableSubmissionError(e: unknown): boolean {
-    if (this.isNetworkError(e)) return true;
-
-    // Do not retry on contract errors (parsed as GovernorError with code < 100)
-    if (e instanceof GovernorError && e.code < 100) {
-      return false;
-    }
-
-    // Do not retry if already in mempool (idempotency check)
-    if (e instanceof Error && e.message.includes("TransactionAlreadyInMempool")) {
-      return false;
-    }
-
-    return false;
+    // Typed errors (contract, simulation, failed or unconfirmed transaction) are
+    // final: retrying would re-broadcast a transaction that already reached a verdict.
+    if (e instanceof GovernorError) return false;
+    return this.isNetworkError(e);
   }
 
   readAccount(sourceAccount?: string): string {
@@ -207,22 +201,35 @@ export class GovernorClient {
         return status as SorobanRpc.Api.GetSuccessfulTransactionResponse;
       }
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error(`Transaction failed: ${hash}`);
+        throw new GovernorError(
+          GovernorErrorCode.TransactionFailed,
+          `Transaction failed: ${hash}`,
+        );
       }
     }
-    throw new Error(`Transaction not confirmed after ${retries} retries`);
+    throw new GovernorError(
+      GovernorErrorCode.TransactionTimeout,
+      `Transaction not confirmed after ${retries} retries`,
+    );
   }
 
-  async execute(signer: Keypair, proposalId: bigint): Promise<void> {
+  /**
+   * Simulates a single contract call, rejects on a simulation error, then
+   * assembles, signs, broadcasts, and waits for confirmation. Retries only
+   * transient network failures.
+   */
+  private async simulateAndSubmit(
+    signer: Keypair,
+    fnName: string,
+    ...args: xdr.ScVal[]
+  ): Promise<void> {
     return this.retry(async () => {
       const account = await this.server.getAccount(signer.publicKey());
       const tx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase: this.networkPassphrase,
       })
-        .addOperation(
-          this.contract.call("execute", nativeToScVal(proposalId, { type: "u64" })),
-        )
+        .addOperation(this.contract.call(fnName, ...args))
         .setTimeout(30)
         .build();
 
@@ -244,6 +251,10 @@ export class GovernorClient {
       }
       await this.pollForConfirmation(result.hash);
     }, (e) => this.isRetryableSubmissionError(e));
+  }
+
+  async execute(signer: Keypair, proposalId: bigint): Promise<void> {
+    return this.simulateAndSubmit(signer, "execute", nativeToScVal(proposalId, { type: "u64" }));
   }
 
   async listProposals(from: number, count: number): Promise<Proposal[]> {
@@ -379,36 +390,7 @@ export class GovernorClient {
   }
 
   async queue(signer: Keypair, proposalId: bigint): Promise<void> {
-    return this.retry(async () => {
-      const account = await this.server.getAccount(signer.publicKey());
-      const tx = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: this.networkPassphrase,
-      })
-        .addOperation(
-          this.contract.call("queue", nativeToScVal(proposalId, { type: "u64" })),
-        )
-        .setTimeout(30)
-        .build();
-
-      const simResult = await this.server.simulateTransaction(tx);
-      if (SorobanRpc.Api.isSimulationError(simResult)) {
-        const errStr = (simResult as SorobanRpc.Api.SimulateTransactionErrorResponse).error ?? "";
-        throw parseGovernorError(errStr);
-      }
-
-      const assembled = SorobanRpc.assembleTransaction(
-        tx,
-        simResult as SorobanRpc.Api.SimulateTransactionSuccessResponse,
-      ).build();
-      assembled.sign(signer);
-
-      const result = await this.server.sendTransaction(assembled);
-      if (result.status === "ERROR") {
-        throw parseGovernorError((result as unknown as { error?: string }).error ?? "");
-      }
-      await this.pollForConfirmation(result.hash);
-    }, (e) => this.isRetryableSubmissionError(e));
+    return this.simulateAndSubmit(signer, "queue", nativeToScVal(proposalId, { type: "u64" }));
   }
 
   // ── Voting methods ────────────────────────────────────────────────────────

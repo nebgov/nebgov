@@ -177,4 +177,90 @@ describe("GovernorClient.execute() — pre-submission simulation (#524)", () => 
 
     expect(mockSendTransaction).toHaveBeenCalledTimes(3);
   }, 10_000);
+  it("queue() shares the simulate-then-submit flow", async () => {
+    await client.queue(mockSigner, 1n);
+
+    expect(mockSimulate).toHaveBeenCalledTimes(1);
+    expect(mockBuiltTx.sign).toHaveBeenCalledWith(mockSigner);
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+    expect(mockGetTransaction).toHaveBeenCalledWith("exec-tx");
+  }, 10_000);
+
+  it("queue() maps a contract simulation error without broadcasting", async () => {
+    mockIsSimulationError.mockReturnValue(true);
+    mockSimulate.mockResolvedValue({ id: "q", latestLedger: 1, events: [], _parsed: true, error: "Error(Contract, #15)" });
+
+    await expect(client.queue(mockSigner, 1n)).rejects.toMatchObject({
+      code: GovernorErrorCode.ProposalNotQueued,
+    });
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("maps a rejected broadcast to a typed GovernorError without retrying", async () => {
+    mockSendTransaction.mockResolvedValue({ status: "ERROR", error: "Error(Contract, #15)" });
+
+    await expect(client.execute(mockSigner, 1n)).rejects.toMatchObject({
+      code: GovernorErrorCode.ProposalNotQueued,
+    });
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws GovernorError(TransactionFailed) and does not rebroadcast when the transaction fails on-chain", async () => {
+    // A hash containing "500" must not be mistaken for an HTTP 500 and retried.
+    mockSendTransaction.mockResolvedValue({ status: "PENDING", hash: "ab500cd" });
+    mockGetTransaction.mockResolvedValue({ status: "FAILED" });
+
+    const error = await client.execute(mockSigner, 1n).catch((e) => e);
+
+    expect(error).toBeInstanceOf(GovernorError);
+    expect(error.code).toBe(GovernorErrorCode.TransactionFailed);
+    expect(error.message).toContain("ab500cd");
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
+  describe("pollForConfirmation()", () => {
+    it("resolves with the successful response", async () => {
+      const response = await client.pollForConfirmation("h", 3, 1);
+
+      expect(response.status).toBe("SUCCESS");
+    });
+
+    it("keeps polling while the transaction is not found", async () => {
+      mockGetTransaction
+        .mockResolvedValueOnce({ status: "NOT_FOUND" })
+        .mockResolvedValueOnce({ status: "SUCCESS", returnValue: xdr.ScVal.scvVoid() });
+
+      await client.pollForConfirmation("h", 3, 1);
+
+      expect(mockGetTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws GovernorError(TransactionTimeout) when never confirmed", async () => {
+      mockGetTransaction.mockResolvedValue({ status: "NOT_FOUND" });
+
+      const error = await client.pollForConfirmation("h", 3, 1).catch((e) => e);
+
+      expect(error).toBeInstanceOf(GovernorError);
+      expect(error.code).toBe(GovernorErrorCode.TransactionTimeout);
+      expect(error.message).toContain("not confirmed after 3 retries");
+      expect(mockGetTransaction).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("isRetryableSubmissionError()", () => {
+    it("retries transient network errors", () => {
+      expect(client.isRetryableSubmissionError(new Error("Service Unavailable 503"))).toBe(true);
+      expect(client.isRetryableSubmissionError(new Error("ECONNREFUSED"))).toBe(true);
+    });
+
+    it("never retries typed GovernorErrors, even if the message looks like a network error", () => {
+      const err = new GovernorError(GovernorErrorCode.TransactionFailed, "Transaction failed: ab500cd");
+      expect(client.isRetryableSubmissionError(err)).toBe(false);
+    });
+
+    it("does not retry unrelated errors", () => {
+      expect(client.isRetryableSubmissionError(new Error("boom"))).toBe(false);
+      expect(client.isRetryableSubmissionError("not an error")).toBe(false);
+    });
+  });
 });
