@@ -44,7 +44,7 @@ NebGov is the canonical governance framework for the Stellar ecosystem — a mod
 | `contracts/token-votes`         | Voting power with checkpointing and delegation                   |
 | `contracts/governor-factory`    | Permissionless governor deployer ([docs](./docs/governor-factory.md)) |
 | `contracts/treasury`            | Multi-sig treasury with budget streams                           |
-| `contracts/token-votes-wrapper` | SEP-41 token wrapper that adds governance voting                 |
+| `contracts/token-votes-wrapper` | SEP-41 token wrapper that adds governance voting ([docs](./docs/token-votes-wrapper.md)) |
 | `contracts/co-sponsorship`      | Pool voting power to meet the proposal threshold ([docs](./docs/co-sponsorship.md)) |
 | `contracts/liquidity`           | Protocol-owned liquidity pools (constant-product AMM) ([docs](./docs/liquidity.md)) |
 | `contracts/proposal-bonds`      | Refundable proposer bonds with governance-triggered slashing     |

@@ -99,7 +99,7 @@ See [Governor Factory](./governor-factory.md) for the entrypoints, deploy parame
 - `GovernorDeployed`: A new governor stack was deployed and registered
 
 #### Wrapper Contract
-Token wrapper that enables governance participation:
+Token wrapper that enables governance participation (see [token-votes-wrapper.md](./token-votes-wrapper.md)):
 - Token deposits and withdrawals
 - Delegation via wrapper
 - Voting power calculation
