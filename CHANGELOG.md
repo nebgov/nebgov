@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Token votes wrapper docs page covering wrapping, voting power, withdrawal locks, entrypoints, events, errors, and deployment order (#1403).
 - Fuzz targets for the liquidity pool, co-sponsorship drafts, and conviction voting, and a standalone `fuzz` workspace so `cargo fuzz build` works (#1387, #1391, #1392).
 - Guardian council page at `/guardian` to view members, the threshold, and pending actions, and to approve, revoke, and execute them; SDK `GuardianCouncilClient` gains wallet-signing variants, `getActionTtl`, `listActions`, and the `SetActionTtl` action (#1397).
 - Guardian Council SDK client with typed action encoding and CLI commands for proposing, approving, revoking, executing, and inspecting actions (#1395, #1396).
