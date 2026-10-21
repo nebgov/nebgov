@@ -76,6 +76,24 @@ The core governance contract that manages:
 - `DelegateChanged`: Voting delegation updated
 - `ConfigUpdated`: Governance parameters changed
 - `GovernorUpgraded`: Contract upgraded
+- `ReputationUpdated`: A proposer's reputation score changed
+- `EffectiveThresholdChanged`: A proposer's reputation-adjusted proposal threshold changed
+
+#### Proposer reputation
+
+The governor keeps a `ProposerReputation` record per proposer address, read with `get_proposer_reputation`. The record adjusts the proposal threshold: `propose()` compares the proposer's voting power against `get_effective_threshold(proposer)`, which is the flat `proposal_threshold` multiplied by the proposer's `threshold_multiplier_bps`. Proposers with no history use 1x.
+
+The score moves at these call sites:
+
+1. **`propose()`** calls `record_proposal_created`, which increments `total_proposals`. It does not change the score.
+2. **`queue()`** records `Succeeded` for a proposal that passed. This is the only outcome that carries participation, measured as total votes divided by quorum-eligible supply at the proposal's start ledger.
+3. **`execute()`** records `Executed`.
+4. **`cancel()`**, **`cancel_by_governance()`**, and **`cancel_queued()`** record `Cancelled`.
+5. **`state()`** records `Defeated` when voting closes without quorum or a majority, and `Expired` when a succeeded proposal is not executed within the grace period. Each is guarded so it is recorded at most once.
+
+Each outcome adds a fixed delta. A passed proposal whose participation is at or above 5,000 bps also gets a bonus. The score is clamped to `[-1000, 1000]`, then mapped linearly to a multiplier between 5,000 bps (0.5x) and 20,000 bps (2x). Until a proposer has `min_proposals_for_discount` (3) proposals, the multiplier cannot drop below 1x, so a new address can be penalized but not discounted. The default values are listed in [parameter-guide.md](./parameter-guide.md#proposer-reputation).
+
+`apply_reputation_decay(proposer)` is permissionless. It moves a nonzero score back toward zero by `decay_rate_per_1000_ledgers` per 1,000 ledgers since the record was last updated. Each change emits `ReputationUpdated`, and `EffectiveThresholdChanged` when the threshold moves. The indexer mirrors these events into the `/reputation/*` endpoints. The scoring constants are compile-time values from `default_config()`, not governance-tunable, and there is no runtime switch to disable the system.
 
 #### Timelock Contract
 Holds queued governor actions until a mandatory delay has passed:
