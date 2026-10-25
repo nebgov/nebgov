@@ -74,7 +74,7 @@ interface UseBondsByProposerResult {
   refetch: () => void;
 }
 
-/** Fetch every bond posted by a given proposer address, most-recent first. */
+/** Fetch every bond posted by a proposer through bounded indexer pages. */
 export function useBondsByProposer(address: string | null): UseBondsByProposerResult {
   const [bonds, setBonds] = useState<ProposalBond[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,8 +98,25 @@ export function useBondsByProposer(address: string | null): UseBondsByProposerRe
       return;
     }
 
-    client
-      .getBondsByProposer(address)
+    async function loadAllPages() {
+      const pageSize = 50;
+      const all: ProposalBond[] = [];
+      let offset = 0;
+      do {
+        const result = await client.getBondsByProposer(address, { limit: pageSize, offset });
+        // Keep compatibility with older SDK clients while deployments roll forward.
+        if (Array.isArray(result)) {
+          all.push(...result);
+          break;
+        }
+        all.push(...result.data);
+        offset += result.pagination.limit;
+        if (!result.pagination.hasMore) break;
+      } while (!cancelled);
+      return all;
+    }
+
+    loadAllPages()
       .then((result) => {
         if (!cancelled) setBonds(result);
       })

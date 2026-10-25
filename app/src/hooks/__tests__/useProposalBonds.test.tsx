@@ -81,7 +81,7 @@ describe("proposal-bond hooks", () => {
 
     rerender({ address: "GANOTHER" });
     await waitFor(() => expect(mockClient.getBondsByProposer).toHaveBeenCalledTimes(2));
-    expect(mockClient.getBondsByProposer).toHaveBeenNthCalledWith(2, "GANOTHER");
+    expect(mockClient.getBondsByProposer).toHaveBeenNthCalledWith(2, "GANOTHER", { limit: 50, offset: 0 });
   });
 
   it("does not query bonds when there are no locked bonds", () => {

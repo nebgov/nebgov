@@ -38,7 +38,7 @@ export default function OptimisticProposalPage() {
   const { currentLedger } = useLedgerClock();
   const [votingPower, setVotingPower] = useState<bigint | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [actionType, setActionType] = useState<"object" | "finalize" | "execute" | null>(null);
+  const [actionType, setActionType] = useState<"object" | "finalize" | "execute" | "cancel" | null>(null);
 
   const hasObjected = !!publicKey && objections.some((o) => o.objector === publicKey);
   const challengeElapsed = !!proposal && currentLedger >= proposal.challengeEndLedger;
@@ -127,6 +127,28 @@ export default function OptimisticProposalPage() {
     }
   }
 
+  async function handleCancel() {
+    if (!publicKey || !signTransaction || !proposal) return;
+    const config = readGovernorConfig();
+    if (!config || !config.optimisticGovernorAddress) {
+      toast.error("Optimistic governance is not configured.");
+      return;
+    }
+    setSubmitting(true);
+    setActionType("cancel");
+    try {
+      const client = new OptimisticGovernorClient(config);
+      await client.cancelWithSign(publicKey, Number(proposal.proposalId), signTransaction);
+      toast.success("Proposal cancelled and bond refund initiated.");
+      refresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Cancellation failed");
+    } finally {
+      setSubmitting(false);
+      setActionType(null);
+    }
+  }
+
   if (loading) {
     return <main className="mx-auto max-w-5xl px-4 py-10">Loading proposal…</main>;
   }
@@ -150,6 +172,11 @@ export default function OptimisticProposalPage() {
   const canExecute =
     !!publicKey &&
     proposal.state === "passed";
+
+  const canCancel =
+    !!publicKey &&
+    publicKey === proposal.proposer &&
+    (proposal.state === "challenge_window" || proposal.state === "objected");
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -200,6 +227,15 @@ export default function OptimisticProposalPage() {
             >
               {submitting && actionType === "finalize" ? "Submitting…" : "Finalize"}
             </button>
+            {canCancel && (
+              <button
+                onClick={handleCancel}
+                disabled={submitting}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200"
+              >
+                {submitting && actionType === "cancel" ? "Cancelling…" : "Cancel proposal"}
+              </button>
+            )}
           </div>
           {!publicKey && (
             <p className="mt-2 text-sm text-slate-500">Connect your wallet to object or finalize.</p>
@@ -217,6 +253,25 @@ export default function OptimisticProposalPage() {
               Challenge window is still open — finalize once it closes.
             </p>
           )}
+        </section>
+      )}
+
+      {proposal.state === "objected" && (
+        <section className="mt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Actions</h2>
+            {!publicKey && <span className="text-sm text-slate-500">Connect your wallet to interact.</span>}
+          </div>
+          {canCancel && (
+            <button
+              onClick={handleCancel}
+              disabled={submitting}
+              className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200"
+            >
+              {submitting && actionType === "cancel" ? "Cancelling…" : "Cancel proposal"}
+            </button>
+          )}
+          {publicKey && !canCancel && <p className="mt-2 text-sm text-slate-500">Only the proposer can cancel this proposal.</p>}
         </section>
       )}
 

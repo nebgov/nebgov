@@ -2009,12 +2009,21 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     "/proposal-bonds/by-proposer/:address",
     async (req: Request, res: Response): Promise<void> => {
       const { address } = req.params;
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 20), 1), 100);
+      const offset = Math.max(Number(req.query.offset ?? 0), 0);
+      const key = `proposal-bonds:proposer:${address}:${limit}:${offset}`;
       try {
-        const result = await pool.query(
-          `SELECT * FROM proposal_bonds WHERE proposer_address = $1 ORDER BY id DESC`,
-          [address],
-        );
-        res.json({ data: result.rows });
+        const data = await cached(key, TTL.proposalBonds, async () => {
+          const result = await pool.query(
+            `SELECT * FROM proposal_bonds WHERE proposer_address = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
+            [address, limit, offset],
+          );
+          return {
+            data: result.rows,
+            pagination: { limit, offset, hasMore: result.rows.length === limit },
+          };
+        });
+        res.json(data);
       } catch {
         res.status(500).json({ error: "Internal server error" });
       }

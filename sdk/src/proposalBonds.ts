@@ -415,12 +415,26 @@ export class ProposalBondsClient {
     };
   }
 
-  /** Return all bonds posted by a specific proposer, most-recent first. */
-  async getBondsByProposer(address: string): Promise<ProposalBond[]> {
-    const raw = await this.indexerRequest<{ data: any[] }>(
-      `/proposal-bonds/by-proposer/${address}`,
-    );
-    return raw.data.map(mapBondFromIndexer);
+  /** Return one bounded page of bonds posted by a specific proposer. */
+  async getBondsByProposer(
+    address: string,
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<{ data: ProposalBond[]; pagination: { limit: number; offset: number; hasMore: boolean } }> {
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+    const offset = Math.max(options.offset ?? 0, 0);
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const raw = await this.indexerRequest<{
+      data: any[];
+      pagination: { limit: number; offset: number; hasMore: boolean };
+    }>(`/proposal-bonds/by-proposer/${address}?${params}`);
+    return {
+      data: raw.data.map(mapBondFromIndexer),
+      pagination: {
+        limit: raw.pagination?.limit ?? limit,
+        offset: raw.pagination?.offset ?? offset,
+        hasMore: raw.pagination?.hasMore ?? raw.data.length === limit,
+      },
+    };
   }
 
   /**

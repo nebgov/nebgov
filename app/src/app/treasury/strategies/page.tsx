@@ -28,6 +28,7 @@ export default function TreasuryStrategiesPage() {
     buildTreasuryStrategiesClient(),
   );
   const [performance, setPerformance] = useState<Record<number, StrategyPerformancePoint[]>>({});
+  const [performanceErrors, setPerformanceErrors] = useState<Record<number, string>>({});
   const [withdrawTarget, setWithdrawTarget] = useState<StrategyRow | null>(null);
   const treasuryAddress = process.env.NEXT_PUBLIC_TREASURY_ADDRESS ?? "";
   const canRequestWithdrawal = Boolean(publicKey && publicKey === treasuryAddress);
@@ -147,13 +148,24 @@ export default function TreasuryStrategiesPage() {
       strategies.map(async (s) => {
         try {
           const points = await client.getPerformanceHistory(s.strategyId, 50);
-          return [s.strategyId, points] as const;
-        } catch {
-          return [s.strategyId, []] as const;
+          return { strategyId: s.strategyId, points, error: null };
+        } catch (e: unknown) {
+          return {
+            strategyId: s.strategyId,
+            points: [],
+            error: e instanceof Error ? e.message : "Could not load performance history.",
+          };
         }
       }),
     ).then((entries) => {
-      if (!cancelled) setPerformance(Object.fromEntries(entries));
+      if (!cancelled) {
+        setPerformance(Object.fromEntries(entries.map((entry) => [entry.strategyId, entry.points])));
+        setPerformanceErrors(
+          Object.fromEntries(
+            entries.filter((entry) => entry.error).map((entry) => [entry.strategyId, entry.error]),
+          ),
+        );
+      }
     });
     return () => {
       cancelled = true;
@@ -390,6 +402,11 @@ export default function TreasuryStrategiesPage() {
                 </div>
 
                 <div className="mt-4">
+                  {performanceErrors[s.strategyId] && (
+                    <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                      Performance history unavailable: {performanceErrors[s.strategyId]}
+                    </p>
+                  )}
                   <StrategyPerformanceChart
                     points={performance[s.strategyId] ?? []}
                     label={`Strategy #${s.strategyId} principal deposited over time`}
