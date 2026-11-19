@@ -7,7 +7,7 @@ pub use error::ConvictionVotingError;
 
 use soroban_sdk::{
     contract, contractclient, contractimpl, contracttype, xdr::FromXdr, Address, Bytes, Env, Map,
-    Symbol, Val, Vec,
+    Symbol, TryIntoVal, Val, Vec,
 };
 
 const BPS: i128 = 10_000;
@@ -58,6 +58,7 @@ pub enum DataKey {
     MaxRatioBps,
     MinThresholdConviction,
     WeightBps,
+    Treasury,
 }
 
 #[contract]
@@ -70,6 +71,7 @@ impl ConvictionVotingContract {
         env: Env,
         admin: Address,
         votes_token: Address,
+        treasury: Address,
         decay_bps: u32,
         max_ratio_bps: u32,
         min_threshold_conviction: i128,
@@ -92,6 +94,7 @@ impl ConvictionVotingContract {
         let storage = env.storage().instance();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::VotesToken, &votes_token);
+        storage.set(&DataKey::Treasury, &treasury);
         storage.set(&DataKey::NextProposalId, &1u64);
         storage.set(&DataKey::DecayBps, &decay_bps);
         storage.set(&DataKey::MaxRatioBps, &max_ratio_bps);
@@ -116,6 +119,7 @@ impl ConvictionVotingContract {
         if !calldata.is_empty() && Vec::<Val>::from_xdr(&env, &calldata).is_err() {
             env.panic_with_error(ConvictionVotingError::InvalidCalldata);
         }
+        Self::validate_funding_action(&env, &target, &fn_name, &calldata, requested_amount);
         let id: u64 = env
             .storage()
             .instance()
@@ -380,6 +384,36 @@ impl ConvictionVotingContract {
     fn require_initialized(env: &Env) {
         if !env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(ConvictionVotingError::NotInitialized);
+        }
+    }
+
+    fn validate_funding_action(
+        env: &Env,
+        target: &Address,
+        fn_name: &Symbol,
+        calldata: &Bytes,
+        requested_amount: i128,
+    ) {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
+        if target != &treasury || fn_name != &Symbol::new(env, "transfer") {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
+        }
+        let args = Vec::<Val>::from_xdr(env, calldata)
+            .unwrap_or_else(|_| env.panic_with_error(ConvictionVotingError::InvalidCalldata));
+        if args.len() != 3 {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
+        }
+        let amount: i128 = args
+            .get(2)
+            .unwrap()
+            .try_into_val(env)
+            .unwrap_or_else(|_| env.panic_with_error(ConvictionVotingError::InvalidFundingAction));
+        if amount != requested_amount {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
         }
     }
 

@@ -115,27 +115,19 @@ Use governance parameters that match your intended risk profile and review them 
 
 ## 3.6 Upgrade a deployed contract
 
-Use `scripts/upgrade-contract.sh` to submit a governance-driven WASM upgrade proposal for any of the following contracts:
+Use `scripts/upgrade-contract.sh` to submit a governance-driven WASM upgrade proposal for the following contracts:
 
 - `sorogov_governor`
 - `sorogov_timelock`
-- `sorogov_token_votes`
 - `sorogov_treasury`
-- `sorogov_governor_factory`
-- `sorogov_proposal_bonds`
-- `sorogov_optimistic_governor`
-- `sorogov_conviction_voting`
-- `sorogov_treasury_strategies`
-- `sorogov_signal_anchor`
-- `sorogov_vote_escrow`
-- `sorogov_voting_rewards`
 
-`sorogov_vote_escrow` and `sorogov_voting_rewards` hold user funds (locked tokens and an unclaimed reward pool respectively), so rehearsing the upgrade path against testnet before a mainnet upgrade is strongly recommended.
+The script rejects contracts without a governance-gated `upgrade(wasm_hash)` entrypoint rather than submitting proposals that would fail during execution.
 
 ```bash
 GOVERNOR_ADDRESS=<GOVERNOR_CONTRACT_ID> \
+TREASURY_ADDRESS=<TREASURY_CONTRACT_ID> \
 DEPLOYER_ADDR=<YOUR_ADDRESS> \
-  ./scripts/upgrade-contract.sh sorogov_vote_escrow
+  ./scripts/upgrade-contract.sh sorogov_treasury
 ```
 
 The script builds the WASM, installs it on-chain, and submits an `upgrade(wasm_hash)` governance proposal. Follow the printed next-steps to vote, queue, and execute the proposal.
@@ -156,7 +148,7 @@ Each contract must be initialized once, right after deployment. `initialize` req
 | --- | --- | --- |
 | Proposal bonds | Governor, bond token (SEP-41) | `admin`, `bond_token`, `bond_amount` (must be > 0), `governor`, `refund_grace_ledgers`, `max_lock_ledgers` |
 | Optimistic governor | Votes token (`sorogov_token_votes`) | `admin`, `votes_token`, `challenge_window_ledgers` (must be > 0), `objection_threshold_bps` (1–10000), `proposer_bond_amount` (≥ 0, `0` disables the bond), `proposer_bond_token` |
-| Conviction voting | Votes token (`sorogov_token_votes`) | `admin`, `votes_token`, `decay_bps` (1–9999), `max_ratio_bps` (1–10000), `min_threshold_conviction` (must be > 0), `weight_bps` (1–10000) |
+| Conviction voting | Votes token (`sorogov_token_votes`), treasury (`sorogov_treasury`) | `admin`, `votes_token`, `treasury`, `decay_bps` (1–9999), `max_ratio_bps` (1–10000), `min_threshold_conviction` (must be > 0), `weight_bps` (1–10000) |
 | Treasury strategies | Treasury (`sorogov_treasury`) | `admin`, `treasury` |
 | Signal anchor | None | `admin` |
 

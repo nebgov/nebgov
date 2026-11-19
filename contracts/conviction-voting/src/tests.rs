@@ -3,7 +3,9 @@ extern crate std;
 use super::*;
 use soroban_sdk::{
     contract, contractimpl, contracttype, testutils::Address as _, testutils::Ledger, Address, Env,
+    IntoVal, Val,
 };
+use soroban_sdk::xdr::ToXdr;
 
 #[contracttype]
 enum VotesKey {
@@ -43,6 +45,11 @@ struct Target;
 
 #[contractimpl]
 impl Target {
+    pub fn transfer(env: Env, _token: Address, _recipient: Address, _amount: i128) {
+        let calls: u32 = env.storage().instance().get(&0u32).unwrap_or(0);
+        env.storage().instance().set(&0u32, &(calls + 1));
+    }
+
     pub fn execute(env: Env) -> u32 {
         let calls: u32 = env.storage().instance().get(&0u32).unwrap_or(0);
         env.storage().instance().set(&0u32, &(calls + 1));
@@ -61,6 +68,7 @@ struct Fixture {
     proposer: Address,
     staker: Address,
     admin: Address,
+    treasury: Address,
 }
 
 fn setup(minimum: i128) -> Fixture {
@@ -73,11 +81,20 @@ fn setup(minimum: i128) -> Fixture {
     let admin = Address::generate(&env);
     let proposer = Address::generate(&env);
     let staker = Address::generate(&env);
+    let treasury = target_id.clone();
     let client = ConvictionVotingContractClient::new(&env, &contract_id);
     let votes = MockVotesClient::new(&env, &votes_id);
     votes.set_supply(&1_000_000);
     votes.set_votes(&staker, &100_000);
-    client.initialize(&admin, &votes_id, &9_000, &2_000, &minimum, &10_000);
+    client.initialize(
+        &admin,
+        &votes_id,
+        &treasury,
+        &9_000,
+        &2_000,
+        &minimum,
+        &10_000,
+    );
     Fixture {
         env,
         contract_id,
@@ -85,15 +102,20 @@ fn setup(minimum: i128) -> Fixture {
         proposer,
         staker,
         admin,
+        treasury,
     }
 }
 
 fn proposal(fixture: &Fixture, requested: i128) -> u64 {
+    let mut args = Vec::<Val>::new(&fixture.env);
+    args.push_back(fixture.treasury.clone().into_val(&fixture.env));
+    args.push_back(fixture.proposer.clone().into_val(&fixture.env));
+    args.push_back(requested.into_val(&fixture.env));
     ConvictionVotingContractClient::new(&fixture.env, &fixture.contract_id).create_proposal(
         &fixture.proposer,
-        &fixture.target_id,
-        &Symbol::new(&fixture.env, "execute"),
-        &Bytes::new(&fixture.env),
+        &fixture.treasury,
+        &Symbol::new(&fixture.env, "transfer"),
+        &args.to_xdr(&fixture.env),
         &requested,
     )
 }
@@ -199,5 +221,22 @@ fn zero_amount_uses_minimum_threshold() {
     assert_eq!(
         ConvictionVotingContractClient::new(&f.env, &f.contract_id).get_required_threshold(&0),
         777
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn requested_amount_must_match_transfer_calldata() {
+    let f = setup(100);
+    let mut args = Vec::<Val>::new(&f.env);
+    args.push_back(f.treasury.clone().into_val(&f.env));
+    args.push_back(f.proposer.clone().into_val(&f.env));
+    args.push_back(1_000i128.into_val(&f.env));
+    ConvictionVotingContractClient::new(&f.env, &f.contract_id).create_proposal(
+        &f.proposer,
+        &f.treasury,
+        &Symbol::new(&f.env, "transfer"),
+        &args.to_xdr(&f.env),
+        &0,
     );
 }

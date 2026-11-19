@@ -6,8 +6,8 @@ use events::*;
 
 use soroban_sdk::xdr::{FromXdr, ToXdr};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
-    Val, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+    Symbol, TryIntoVal, Val, Vec,
 };
 
 /// Timelock error codes.
@@ -134,6 +134,7 @@ pub enum DataKey {
     BatchDependencyGraph(Bytes),
     PartialBatchState(Bytes),
     FailedOpRetryCount(Bytes),
+    CurrentWasmHash,
 }
 
 #[contract]
@@ -156,6 +157,10 @@ impl TimelockContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage().instance().set(&DataKey::MinDelay, &min_delay);
+        env.storage().instance().set(
+            &DataKey::CurrentWasmHash,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
         env.storage()
             .instance()
             .set(&DataKey::ExecutionWindow, &execution_window);
@@ -726,7 +731,18 @@ impl TimelockContract {
             .set(&DataKey::Operation(op_id.clone()), &op);
 
         let args = Self::decode_invocation_args(&env, &op.data);
-        let _: Val = env.invoke_contract(&op.target, &op.fn_name, args);
+        if op.target == env.current_contract_address()
+            && op.fn_name == Symbol::new(&env, "upgrade")
+        {
+            let new_wasm_hash: BytesN<32> = args
+                .get(0)
+                .unwrap()
+                .try_into_val(&env)
+                .expect("invalid upgrade calldata");
+            Self::upgrade_internal(&env, new_wasm_hash);
+        } else {
+            let _: Val = env.invoke_contract(&op.target, &op.fn_name, args);
+        }
 
         env.events().publish((symbol_short!("execute"),), op_id.clone());
         emit_operation_executed(&env, &op_id, &caller);
@@ -894,6 +910,31 @@ impl TimelockContract {
             .instance()
             .get(&DataKey::Governor)
             .expect("not initialized")
+    }
+
+    /// Upgrade the timelock WASM. Scheduled self-calls inherit governor auth
+    /// from the timelock execution entrypoint.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let governor = Self::governor(env.clone());
+        governor.require_auth();
+        Self::upgrade_internal(&env, new_wasm_hash);
+    }
+
+    fn upgrade_internal(env: &Env, new_wasm_hash: BytesN<32>) {
+        let old_wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWasmHash)
+            .unwrap_or(BytesN::from_array(&env, &[0u8; 32]));
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::CurrentWasmHash, &new_wasm_hash);
+        env.events().publish(
+            (Symbol::new(&env, "Upgrade"),),
+            (old_wasm_hash, new_wasm_hash),
+        );
     }
 
     /// Get the configured admin address.

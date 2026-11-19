@@ -22,8 +22,9 @@ use libfuzzer_sys::fuzz_target;
 use soroban_sdk::{
     contract, contractimpl, contracttype,
     testutils::{Address as _, Ledger as _},
-    Address, Bytes, Env, InvokeError, Symbol,
+    Address, Env, IntoVal, InvokeError, Symbol, Val, Vec,
 };
+use soroban_sdk::xdr::ToXdr;
 use sorogov_conviction_voting::{
     ConvictionVotingContract, ConvictionVotingContractClient, ConvictionVotingError,
 };
@@ -70,7 +71,7 @@ pub struct MockTarget;
 
 #[contractimpl]
 impl MockTarget {
-    pub fn ping(_env: Env) {}
+    pub fn transfer(_env: Env, _token: Address, _recipient: Address, _amount: i128) {}
 }
 
 #[derive(Arbitrary, Debug, Clone, Copy)]
@@ -151,6 +152,7 @@ fuzz_target!(|input: Input| {
     client.initialize(
         &admin,
         &votes_id,
+        &target_id,
         &decay_bps,
         &max_ratio_bps,
         &(i128::from(input.min_threshold) + 1),
@@ -177,12 +179,17 @@ fuzz_target!(|input: Input| {
 
         match op {
             Op::CreateProposal { who, requested } => {
+                let requested_amount = requested.value();
+                let mut args = Vec::<Val>::new(&env);
+                args.push_back(target_id.clone().into_val(&env));
+                args.push_back(pick(*who).clone().into_val(&env));
+                args.push_back(requested_amount.into_val(&env));
                 let result = client.try_create_proposal(
                     pick(*who),
                     &target_id,
-                    &Symbol::new(&env, "ping"),
-                    &Bytes::new(&env),
-                    &requested.value(),
+                    &Symbol::new(&env, "transfer"),
+                    &args.to_xdr(&env),
+                    &requested_amount,
                 );
                 if let Some(new_id) = typed("create_proposal", result) {
                     proposals += 1;

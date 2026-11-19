@@ -3,7 +3,7 @@
 use soroban_sdk::xdr::{FromXdr, ToXdr};
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token,
-    Address, Bytes, Env, String, Symbol, Val, Vec,
+    Address, Bytes, BytesN, Env, String, Symbol, Val, Vec,
 };
 
 mod streams;
@@ -136,6 +136,7 @@ pub enum DataKey {
     IsSlashed(Address),
     SlashingHistory(Address),
     PendingOwner,
+    CurrentWasmHash,
 }
 
 /// Storage keys for budget streams.
@@ -195,6 +196,10 @@ impl TreasuryContract {
         env.storage().instance().set(&DataKey::IsExecuting, &false);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage().instance().set(&DataKey::TxCount, &0u64);
+        env.storage().instance().set(
+            &DataKey::CurrentWasmHash,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
 
         // Initialize spending limits to safe defaults (i128::MAX disables limits until set by governance).
         let default_settings = TreasurySettings {
@@ -249,6 +254,30 @@ impl TreasuryContract {
             .instance()
             .get(&DataKey::Governor)
             .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized))
+    }
+
+    /// Upgrade the treasury WASM. Only the configured governor may authorize it.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let governor: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Governor)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
+        governor.require_auth();
+        let old_wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWasmHash)
+            .unwrap_or(BytesN::from_array(&env, &[0u8; 32]));
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::CurrentWasmHash, &new_wasm_hash);
+        env.events().publish(
+            (Symbol::new(&env, "Upgrade"),),
+            (old_wasm_hash, new_wasm_hash),
+        );
     }
 
     /// Configure a per-token spending cap for batch transfers.
@@ -1001,7 +1030,7 @@ mod tests {
     use super::*;
     use soroban_sdk::{
         testutils::{Address as _, Events, Ledger as _},
-        token, Env, Vec,
+        token, Env, TryIntoVal, Vec,
     };
 
     /// Deploy treasury + a fresh SAC token.
@@ -1041,6 +1070,33 @@ mod tests {
             .unwrap_err()
             .unwrap();
         assert_eq!(err, TreasuryError::AlreadyInitialized.into());
+    }
+
+    #[test]
+    fn test_governor_can_upgrade() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, _, _governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        let new_hash = env
+            .deployer()
+            .upload_contract_wasm(Bytes::from_array(
+                &env,
+                &[
+                    0, 97, 115, 109, 1, 0, 0, 0, 0, 30, 17, 99, 111, 110, 116, 114, 97,
+                    99, 116, 101, 110, 118, 109, 101, 116, 97, 118, 48, 0, 0, 0, 0, 0, 0, 0,
+                    22, 0, 0, 0, 0,
+                ],
+            ));
+
+        client.upgrade(&new_hash);
+
+        assert!(env.events().all().iter().any(|(_, topics, _)| {
+            topics
+                .get(0)
+                .and_then(|topic| topic.try_into_val(&env).ok())
+                == Some(Symbol::new(&env, "Upgrade"))
+        }));
     }
 
     // ── batch_transfer tests ─────────────────────────────────────────────────

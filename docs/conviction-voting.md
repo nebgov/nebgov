@@ -101,9 +101,9 @@ const client = new ConvictionVotingClient({
 // Create a proposal
 const result = await client.propose({
   proposer: userAddress,
-  target: treasuryAddress,
+  target: treasuryAddress, // configured treasury target
   functionName: 'transfer',
-  calldata: transferCalldata,
+  calldata: transferCalldata, // [token, recipient, amount]
   requestedAmount: 500n, // Optional: amount being requested
   description: 'Fund developer education program',
 });
@@ -166,6 +166,14 @@ Combine conviction voting with reputation scoring:
 - Newer participants' stakes may count less
 
 ## Security Considerations
+
+### Funding action binding
+
+Conviction proposals are restricted to the configured treasury's `transfer`
+entrypoint. The calldata must decode to exactly three arguments, and its
+amount argument must equal `requestedAmount`. Proposals with
+`requestedAmount: 0` therefore cannot execute a non-zero transfer, and
+arbitrary targets or function names are rejected at creation time.
 
 ### Attack Vectors and Mitigations
 

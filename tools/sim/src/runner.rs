@@ -212,6 +212,7 @@ impl SimulationRunner {
         conviction_voting.initialize(
             &admin,
             &token_votes_id,
+            &treasury_id,
             &5000u32,        // decay_bps: 50%
             &5000u32,        // max_ratio_bps: 50%
             &10_000_000i128, // min_threshold_conviction

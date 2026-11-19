@@ -1241,3 +1241,44 @@ fn test_schedule_with_deps_different_predecessors_do_not_collide() {
     assert!(client.get_operation(&op_id_a).is_some());
     assert!(client.get_operation(&op_id_b).is_some());
 }
+
+#[test]
+fn test_upgrade_executes_through_scheduled_operation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let timelock_id = env.register(TimelockContract, ());
+    let client = TimelockContractClient::new(&env, &timelock_id);
+    let admin = Address::generate(&env);
+    let governor = Address::generate(&env);
+    client.initialize(&admin, &governor, &0, &1_209_600);
+
+    let new_hash = env
+        .deployer()
+        .upload_contract_wasm(Bytes::from_array(
+            &env,
+            &[
+                0, 97, 115, 109, 1, 0, 0, 0, 0, 30, 17, 99, 111, 110, 116, 114, 97, 99, 116,
+                101, 110, 118, 109, 101, 116, 97, 118, 48, 0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0,
+                0,
+            ],
+        ));
+    let mut args = Vec::<Val>::new(&env);
+    args.push_back(new_hash.into_val(&env));
+    let op_id = client.schedule(
+        &governor,
+        &timelock_id,
+        &args.to_xdr(&env),
+        &Symbol::new(&env, "upgrade"),
+        &0,
+        &Bytes::new(&env),
+        &Bytes::from_slice(&env, b"upgrade"),
+    );
+
+    client.execute(&governor, &op_id);
+    assert!(env.events().all().iter().any(|(_, topics, _)| {
+        topics
+            .get(0)
+            .and_then(|topic| topic.try_into_val(&env).ok())
+            == Some(Symbol::new(&env, "Upgrade"))
+    }));
+}
