@@ -15,10 +15,15 @@ enum MockGovKey {
 
 #[contractimpl]
 impl MockGovernorContract {
-    pub fn set_proposal(env: Env, proposal_id: u64, description_hash: BytesN<32>) {
+    pub fn set_proposal(
+        env: Env,
+        proposal_id: u64,
+        description_hash: BytesN<32>,
+        proposer: Address,
+    ) {
         let proposal = Proposal {
             id: proposal_id,
-            proposer: Address::generate(&env),
+            proposer,
             description: String::from_str(&env, "d"),
             description_hash,
             metadata_uri: String::from_str(&env, ""),
@@ -67,7 +72,14 @@ const MAX_LOCK_LEDGERS: u32 = 1_000;
 
 /// Deploy a fresh SAC token, a mock governor, and an initialized
 /// proposal-bonds contract. Returns (client, token, proposer, governor_id).
-fn setup(env: &Env) -> (ProposalBondsContractClient<'static>, Address, Address, Address) {
+fn setup(
+    env: &Env,
+) -> (
+    ProposalBondsContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let admin = Address::generate(env);
     let proposer = Address::generate(env);
 
@@ -107,7 +119,7 @@ fn test_lock_bond_fresh_hash() {
 
     assert_eq!(tok.balance(&proposer), BOND_AMOUNT * 10 - BOND_AMOUNT);
     assert_eq!(tok.balance(&client.address), BOND_AMOUNT);
-    let bond = client.get_bond(&h).unwrap();
+    let bond = client.get_bond(&proposer, &h).unwrap();
     assert_eq!(bond.state, BondState::Locked);
     assert_eq!(bond.amount, BOND_AMOUNT);
     assert_eq!(bond.proposer, proposer);
@@ -126,6 +138,63 @@ fn test_lock_bond_twice_same_hash_panics() {
 }
 
 #[test]
+fn same_hash_different_proposers_do_not_block_each_other() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, token_addr, proposer, gov) = setup(&env);
+    let squatter = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token_addr).mint(&squatter, &BOND_AMOUNT);
+    let h = hash(&env, 1);
+
+    client.lock_bond(&squatter, &h);
+    client.lock_bond(&proposer, &h);
+    assert_eq!(client.get_bond(&squatter, &h).unwrap().proposer, squatter);
+    assert_eq!(client.get_bond(&proposer, &h).unwrap().proposer, proposer);
+
+    let governor = MockGovernorContractClient::new(&env, &gov);
+    governor.set_proposal(&1, &h, &proposer);
+    governor.set_state(&1, &ProposalState::Executed);
+    env.ledger()
+        .with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
+    assert!(client
+        .try_refund_bond(&squatter, &squatter, &h, &1)
+        .is_err());
+    client.refund_bond(&proposer, &proposer, &h, &1);
+    assert_eq!(
+        client.get_bond(&proposer, &h).unwrap().state,
+        BondState::Refunded
+    );
+    assert_eq!(
+        client.get_bond(&squatter, &h).unwrap().state,
+        BondState::Locked
+    );
+}
+
+#[test]
+fn legacy_hash_key_remains_readable_for_original_proposer() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _token, proposer, _gov) = setup(&env);
+    let h = hash(&env, 2);
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::Bond(h.clone()),
+            &Bond {
+                proposer: proposer.clone(),
+                description_hash: h.clone(),
+                amount: BOND_AMOUNT,
+                locked_ledger: env.ledger().sequence(),
+                state: BondState::Locked,
+            },
+        );
+    });
+
+    assert!(client.get_bond(&proposer, &h).is_some());
+    assert!(client.get_bond(&Address::generate(&env), &h).is_none());
+    assert!(client.try_lock_bond(&proposer, &h).is_err());
+}
+
+#[test]
 #[should_panic]
 fn test_refund_before_grace_elapsed_panics() {
     let env = Env::default();
@@ -135,11 +204,11 @@ fn test_refund_before_grace_elapsed_panics() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Executed);
 
     // No ledgers advanced past proposal.end_ledger (0) + grace (100) yet.
-    client.refund_bond(&proposer, &h, &1u64);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 }
 
 #[test]
@@ -152,17 +221,18 @@ fn test_refund_succeeds_after_terminal_state_and_grace() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Executed);
 
     let balance_before_refund = tok.balance(&proposer);
 
-    env.ledger().with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
-    client.refund_bond(&proposer, &h, &1u64);
+    env.ledger()
+        .with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 
     assert_eq!(tok.balance(&proposer), balance_before_refund + BOND_AMOUNT);
     assert_eq!(tok.balance(&client.address), 0);
-    let bond = client.get_bond(&h).unwrap();
+    let bond = client.get_bond(&proposer, &h).unwrap();
     assert_eq!(bond.state, BondState::Refunded);
 }
 
@@ -177,7 +247,7 @@ fn test_slash_by_non_governor_panics() {
 
     let attacker = Address::generate(&env);
     let recipient = Address::generate(&env);
-    client.slash(&attacker, &h, &recipient);
+    client.slash(&attacker, &proposer, &h, &recipient);
 }
 
 #[test]
@@ -191,11 +261,11 @@ fn test_slash_succeeds_with_governor_self_auth() {
 
     let recipient = Address::generate(&env);
 
-    client.slash(&gov, &h, &recipient);
+    client.slash(&gov, &proposer, &h, &recipient);
 
     assert_eq!(tok.balance(&recipient), BOND_AMOUNT);
     assert_eq!(tok.balance(&client.address), 0);
-    let bond = client.get_bond(&h).unwrap();
+    let bond = client.get_bond(&proposer, &h).unwrap();
     assert_eq!(bond.state, BondState::Slashed);
 }
 
@@ -209,14 +279,15 @@ fn test_refund_on_already_slashed_bond_panics() {
     client.lock_bond(&proposer, &h);
 
     let recipient = Address::generate(&env);
-    client.slash(&gov, &h, &recipient);
+    client.slash(&gov, &proposer, &h, &recipient);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Executed);
-    env.ledger().with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
+    env.ledger()
+        .with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
 
-    client.refund_bond(&proposer, &h, &1u64);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 }
 
 #[test]
@@ -229,13 +300,14 @@ fn test_slash_on_already_refunded_bond_panics() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Executed);
-    env.ledger().with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
-    client.refund_bond(&proposer, &h, &1u64);
+    env.ledger()
+        .with_mut(|l| l.sequence_number += GRACE_LEDGERS + 1);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 
     let recipient = Address::generate(&env);
-    client.slash(&gov, &h, &recipient);
+    client.slash(&gov, &proposer, &h, &recipient);
 }
 
 #[test]
@@ -248,10 +320,10 @@ fn test_refund_before_terminal_state_panics() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Active);
 
-    client.refund_bond(&proposer, &h, &1u64);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 }
 
 #[test]
@@ -265,10 +337,10 @@ fn test_refund_with_mismatched_description_hash_panics() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &other_hash);
+    gov_client.set_proposal(&1u64, &other_hash, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Executed);
 
-    client.refund_bond(&proposer, &h, &1u64);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 }
 
 #[test]
@@ -296,7 +368,7 @@ fn test_update_bond_amount_by_admin() {
     token::StellarAssetClient::new(&env, &token_addr).mint(&proposer, &5_000i128);
     let h = hash(&env, 1);
     client.lock_bond(&proposer, &h);
-    assert_eq!(client.get_bond(&h).unwrap().amount, 2_000);
+    assert_eq!(client.get_bond(&proposer, &h).unwrap().amount, 2_000);
 }
 
 #[test]
@@ -350,7 +422,14 @@ fn test_initialize_rejects_zero_bond_amount() {
     let governor_id = env.register(MockGovernorContract, ());
     let contract_id = env.register(ProposalBondsContract, ());
     let client = ProposalBondsContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_addr, &0i128, &governor_id, &GRACE_LEDGERS, &MAX_LOCK_LEDGERS);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &0i128,
+        &governor_id,
+        &GRACE_LEDGERS,
+        &MAX_LOCK_LEDGERS,
+    );
 }
 
 #[test]
@@ -390,16 +469,17 @@ fn test_refund_escape_hatch_after_max_lock_ledgers_even_if_stuck_queued() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Queued);
 
     let balance_before_refund = tok.balance(&proposer);
 
-    env.ledger().with_mut(|l| l.sequence_number += MAX_LOCK_LEDGERS + 1);
-    client.refund_bond(&proposer, &h, &1u64);
+    env.ledger()
+        .with_mut(|l| l.sequence_number += MAX_LOCK_LEDGERS + 1);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 
     assert_eq!(tok.balance(&proposer), balance_before_refund + BOND_AMOUNT);
-    let bond = client.get_bond(&h).unwrap();
+    let bond = client.get_bond(&proposer, &h).unwrap();
     assert_eq!(bond.state, BondState::Refunded);
 }
 
@@ -413,12 +493,12 @@ fn test_refund_stuck_queued_before_max_lock_ledgers_panics() {
     client.lock_bond(&proposer, &h);
 
     let gov_client = MockGovernorContractClient::new(&env, &gov);
-    gov_client.set_proposal(&1u64, &h);
+    gov_client.set_proposal(&1u64, &h, &proposer);
     gov_client.set_state(&1u64, &ProposalState::Queued);
 
     // Still well before MAX_LOCK_LEDGERS — Queued must not be refundable
     // early, since the proposal could still be executed.
-    client.refund_bond(&proposer, &h, &1u64);
+    client.refund_bond(&proposer, &proposer, &h, &1u64);
 }
 
 #[test]

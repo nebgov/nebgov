@@ -56,7 +56,7 @@ interface SubmitResult {
  *
  * await client.lockBond(signer, descriptionHash);
  * // ... submit the correlated proposal via GovernorClient.propose ...
- * await client.refundBond(signer, descriptionHash, proposalId);
+ * await client.refundBond(signer, signer.publicKey(), descriptionHash, proposalId);
  */
 export class ProposalBondsClient {
   private readonly config: ProposalBondsConfig;
@@ -169,7 +169,7 @@ export class ProposalBondsClient {
   }
 
   /**
-   * Lock the configured bond amount from `signer`, keyed by
+   * Lock the configured bond amount from `signer`, keyed by signer and
    * `descriptionHash`. Call this alongside (before or after)
    * `GovernorClient.propose`/`proposeWithSign` using the same
    * `descriptionHash` so the two can be correlated later. Returns the tx hash.
@@ -202,13 +202,14 @@ export class ProposalBondsClient {
 
   /**
    * Refund a locked bond once its correlated governor proposal (`proposalId`,
-   * whose on-chain `descriptionHash` must match this bond's) has reached a
+   * whose on-chain proposer and `descriptionHash` must match this bond's) has reached a
    * terminal state and the post-terminal refund grace window has elapsed.
    * Permissionless — any address may call this — but funds always return to
    * the original proposer. Returns the tx hash.
    */
   async refundBond(
     caller: Keypair,
+    proposer: string,
     descriptionHash: string,
     proposalId: bigint,
   ): Promise<string> {
@@ -216,6 +217,7 @@ export class ProposalBondsClient {
       caller,
       "refund_bond",
       nativeToScVal(caller.publicKey(), { type: "address" }),
+      nativeToScVal(proposer, { type: "address" }),
       nativeToScVal(hexToBytes32(descriptionHash), { type: "bytes" }),
       nativeToScVal(proposalId, { type: "u64" }),
     );
@@ -225,6 +227,7 @@ export class ProposalBondsClient {
   /** Wallet-signing variant of {@link refundBond} */
   async refundBondWithSign(
     callerPublicKey: string,
+    proposer: string,
     descriptionHash: string,
     proposalId: bigint,
     signUnsignedXdr: (xdr: string) => Promise<string>,
@@ -234,6 +237,7 @@ export class ProposalBondsClient {
       signUnsignedXdr,
       "refund_bond",
       nativeToScVal(callerPublicKey, { type: "address" }),
+      nativeToScVal(proposer, { type: "address" }),
       nativeToScVal(hexToBytes32(descriptionHash), { type: "bytes" }),
       nativeToScVal(proposalId, { type: "u64" }),
     );
@@ -250,6 +254,7 @@ export class ProposalBondsClient {
    */
   encodeSlashCalldata(
     governorAddress: string,
+    proposer: string,
     descriptionHash: string,
     recipient: string,
   ): Buffer {
@@ -261,14 +266,15 @@ export class ProposalBondsClient {
     // execution. Mirrors calldataArgRowToScVal in treasury-calldata.ts.
     const args = xdr.ScVal.scvVec([
       nativeToScVal(governorAddress, { type: "address" }),
+      nativeToScVal(proposer, { type: "address" }),
       nativeToScVal(hexToBytes32(descriptionHash), { type: "bytes" }),
       nativeToScVal(recipient, { type: "address" }),
     ]);
     return Buffer.from(args.toXDR());
   }
 
-  /** Get a bond by description hash, or `null` if none has been locked. */
-  async getBond(descriptionHash: string): Promise<ProposalBond | null> {
+  /** Get a proposer's bond by description hash, or `null` if none has been locked. */
+  async getBond(proposer: string, descriptionHash: string): Promise<ProposalBond | null> {
     return this.retry(async () => {
       const result = await this.server.simulateTransaction(
         new TransactionBuilder(
@@ -278,6 +284,7 @@ export class ProposalBondsClient {
           .addOperation(
             this.contract.call(
               "get_bond",
+              nativeToScVal(proposer, { type: "address" }),
               nativeToScVal(hexToBytes32(descriptionHash), { type: "bytes" }),
             ),
           )
@@ -424,12 +431,12 @@ export class ProposalBondsClient {
   }
 
   /**
-   * Resolve the governor proposal id correlated with a given
+   * Resolve the governor proposal id correlated with a proposer and
    * `descriptionHash`, via the indexer — needed to call {@link refundBond},
    * since governor has no on-chain description_hash → id lookup. Returns
    * `null` if no matching proposal has been indexed yet.
    */
-  async getProposalIdForDescriptionHash(descriptionHash: string): Promise<bigint | null> {
+  async getProposalIdForDescriptionHash(proposer: string, descriptionHash: string): Promise<bigint | null> {
     if (!this.config.indexerUrl) {
       throw new ProposalBondsError(
         ProposalBondsErrorCode.SimulationFailed,
@@ -438,7 +445,7 @@ export class ProposalBondsClient {
     }
     return this.retry(async () => {
       const resp = await fetch(
-        `${this.config.indexerUrl}/proposals/by-description-hash/${descriptionHash}`,
+        `${this.config.indexerUrl}/proposals/by-description-hash/${descriptionHash}?proposer=${encodeURIComponent(proposer)}`,
       );
       if (resp.status === 404) return null;
       if (!resp.ok) {

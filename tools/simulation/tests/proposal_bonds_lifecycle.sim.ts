@@ -91,12 +91,12 @@ describe("Proposal bonds lifecycle (mock runtime)", () => {
     await assertTokenBalance(harness.votesClient, addresses.proposalBonds, 0n);
 
     // Bonds are terminal: the refunded and slashed bonds stay put.
-    const refunded = await harness.proposalBondsClient.getBond(result.descriptionHash);
+    const refunded = await harness.proposalBondsClient.getBond(setup.actors.proposers[0].publicKey, result.descriptionHash);
     expect(refunded?.state).toBe("Refunded");
     expect(refunded?.proposer).toBe(setup.actors.proposers[0].publicKey);
     expect(refunded?.amount).toBe(BOND_AMOUNT);
 
-    const slashed = await harness.proposalBondsClient.getBond(result.slashDescriptionHash);
+    const slashed = await harness.proposalBondsClient.getBond(setup.actors.proposers[0].publicKey, result.slashDescriptionHash);
     expect(slashed?.state).toBe("Slashed");
     expect(slashed?.proposer).toBe(setup.actors.proposers[0].publicKey);
   });

@@ -23,4 +23,14 @@ describe("proposal bond event indexing", () => {
     await run([event("BondLocked", [new Uint8Array([1]), 100n], 100), event("BondRefunded", [new Uint8Array([1]), 100n], 101), event("BondRefunded", [new Uint8Array([1]), 100n], 101)]);
     expect((pool.query as jest.Mock).mock.calls.filter(([query]) => String(query).includes("UPDATE proposal_bonds SET state = 'refunded'")).length).toBe(2);
   });
+  it("scopes inserts and terminal updates to the event proposer", async () => {
+    await run([event("BondLocked", [new Uint8Array([1]), 100n], 100), event("BondRefunded", [new Uint8Array([1]), 100n], 101)]);
+    const calls = (pool.query as jest.Mock).mock.calls;
+    const insert = calls.find(([sql]) => String(sql).includes("INSERT INTO proposal_bonds"));
+    const refund = calls.find(([sql]) => String(sql).includes("UPDATE proposal_bonds SET state = 'refunded'"));
+    expect(insert[0]).toContain("ON CONFLICT (proposer_address, description_hash)");
+    expect(insert[1][1]).toBe("GPROPOSER");
+    expect(refund[0]).toContain("AND proposer_address = $3");
+    expect(refund[1][2]).toBe("GPROPOSER");
+  });
 });
