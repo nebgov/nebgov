@@ -109,7 +109,7 @@ export class GuardianCouncilClient {
     this.passphrase = getNetworkPassphrase(config.network);
   }
 
-  /** Initialize once; signer pays fees and is not an on-chain argument. */
+  /** Initialize once; the deployer must authorize the submitted transaction. */
   async initialize(
     signer: Keypair,
     members: string[],
@@ -121,6 +121,7 @@ export class GuardianCouncilClient {
       await this.submit(
         signer,
         "initialize",
+        nativeToScVal(signer.publicKey(), { type: "address" }),
         xdr.ScVal.scvVec(
           members.map((member) => nativeToScVal(member, { type: "address" })),
         ),
