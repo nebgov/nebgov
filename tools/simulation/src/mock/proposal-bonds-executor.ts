@@ -31,6 +31,10 @@ function hashKey(descriptionHash: Uint8Array | string): string {
     : Buffer.from(descriptionHash).toString("hex");
 }
 
+function bondKey(proposer: string, descriptionHash: Uint8Array | string): string {
+  return `${proposer}:${hashKey(descriptionHash)}`;
+}
+
 /** `require_auth()` — the transaction source must be the declared signer. */
 function requireSigner(caller: string, signer: string): void {
   if (caller !== signer) throw new Error("not authorized");
@@ -59,7 +63,7 @@ export const proposalBondsExecutor = {
     const [proposer, descriptionHash] = args as [string, Uint8Array];
     requireSigner(caller, proposer);
 
-    const key = hashKey(descriptionHash);
+    const key = bondKey(proposer, descriptionHash);
     if (store.proposalBonds.bonds.has(key)) {
       throw new MockContractError(
         ProposalBondsErrorCode.BondAlreadyLocked,
@@ -77,7 +81,7 @@ export const proposalBondsExecutor = {
 
     store.proposalBonds.bonds.set(key, {
       proposer,
-      descriptionHash: key,
+      descriptionHash: hashKey(descriptionHash),
       amount: bondAmount,
       lockedLedger: clock.sequence,
       state: "Locked",
@@ -86,10 +90,10 @@ export const proposalBondsExecutor = {
   },
 
   refund_bond(store: MockLedgerStore, clock: LedgerClock, caller: string, args: unknown[]): null {
-    const [refundCaller, descriptionHash, proposalId] = args as [string, Uint8Array, bigint];
+    const [refundCaller, proposer, descriptionHash, proposalId] = args as [string, string, Uint8Array, bigint];
     requireSigner(caller, refundCaller);
 
-    const key = hashKey(descriptionHash);
+    const key = bondKey(proposer, descriptionHash);
     const bond = mustGetBond(store, key);
     if (bond.state !== "Locked") {
       throw new MockContractError(ProposalBondsErrorCode.BondNotLocked, "refund_bond: bond is not locked");
@@ -103,11 +107,14 @@ export const proposalBondsExecutor = {
       if (!proposal) {
         throw new MockContractError(GovernorErrorCode.ProposalNotFound, `refund_bond: proposal ${proposalId} not found`);
       }
-      if (proposal.descriptionHash !== key) {
+      if (proposal.descriptionHash !== hashKey(descriptionHash)) {
         throw new MockContractError(
           ProposalBondsErrorCode.DescriptionHashMismatch,
           "refund_bond: proposal description hash does not match this bond",
         );
+      }
+      if (proposal.proposer !== proposer) {
+        throw new MockContractError(ProposalBondsErrorCode.ProposerMismatch, "refund_bond: proposer mismatch");
       }
 
       const state = computeProposalState(store, clock, proposal);
@@ -136,13 +143,13 @@ export const proposalBondsExecutor = {
   },
 
   slash(store: MockLedgerStore, _clock: LedgerClock, caller: string, args: unknown[]): null {
-    const [slashCaller, descriptionHash, recipient] = args as [string, Uint8Array, string];
+    const [slashCaller, proposer, descriptionHash, recipient] = args as [string, string, Uint8Array, string];
     requireSigner(caller, slashCaller);
     if (slashCaller !== store.proposalBonds.governor) {
       throw new MockContractError(ProposalBondsErrorCode.NotAuthorized, "slash: only the governor may slash a bond");
     }
 
-    const bond = mustGetBond(store, hashKey(descriptionHash));
+    const bond = mustGetBond(store, bondKey(proposer, descriptionHash));
     if (bond.state !== "Locked") {
       throw new MockContractError(ProposalBondsErrorCode.BondNotLocked, "slash: bond is not locked");
     }
@@ -153,8 +160,8 @@ export const proposalBondsExecutor = {
   },
 
   get_bond(store: MockLedgerStore, _clock: LedgerClock, _caller: string, args: unknown[]): ProposalBondRecord | null {
-    const [descriptionHash] = args as [Uint8Array];
-    return store.proposalBonds.bonds.get(hashKey(descriptionHash)) ?? null;
+    const [proposer, descriptionHash] = args as [string, Uint8Array];
+    return store.proposalBonds.bonds.get(bondKey(proposer, descriptionHash)) ?? null;
   },
 
   get_settings(

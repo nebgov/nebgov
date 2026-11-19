@@ -834,6 +834,8 @@ export enum ProposalBondsErrorCode {
   ProposalNotTerminal = 7,
   RefundGraceNotElapsed = 8,
   NotAuthorized = 9,
+  InvalidBondAmount = 10,
+  ProposerMismatch = 12,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -846,7 +848,7 @@ const PROPOSAL_BONDS_MESSAGES: Record<ProposalBondsErrorCode, string> = {
   [ProposalBondsErrorCode.AlreadyInitialized]: "Contract is already initialized",
   [ProposalBondsErrorCode.NotInitialized]: "Contract has not been initialized yet",
   [ProposalBondsErrorCode.BondAlreadyLocked]:
-    "A bond has already been locked for this description hash",
+    "This proposer has already locked a bond for this description hash",
   [ProposalBondsErrorCode.BondNotFound]: "Bond not found",
   [ProposalBondsErrorCode.BondNotLocked]: "Bond is not in the Locked state",
   [ProposalBondsErrorCode.DescriptionHashMismatch]:
@@ -856,6 +858,8 @@ const PROPOSAL_BONDS_MESSAGES: Record<ProposalBondsErrorCode, string> = {
   [ProposalBondsErrorCode.RefundGraceNotElapsed]:
     "The post-terminal refund grace window has not elapsed yet",
   [ProposalBondsErrorCode.NotAuthorized]: "Caller is not authorized to perform this action",
+  [ProposalBondsErrorCode.InvalidBondAmount]: "Bond amount must be positive",
+  [ProposalBondsErrorCode.ProposerMismatch]: "The proposal belongs to another proposer",
   [ProposalBondsErrorCode.SimulationFailed]: "Simulation failed",
   [ProposalBondsErrorCode.TransactionFailed]: "Transaction failed",
   [ProposalBondsErrorCode.TransactionTimeout]: "Transaction timed out",
