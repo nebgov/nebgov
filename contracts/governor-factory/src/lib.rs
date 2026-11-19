@@ -131,6 +131,35 @@ impl GovernorFactoryContract {
             .set(&DataKey::GovernorList, &Vec::<u64>::new(&env));
     }
 
+    /// Update WASM hashes for deployed contracts. Allows upgrading to fixed/newer versions.
+    pub fn update_wasm_hashes(
+        env: Env,
+        admin: Address,
+        governor_wasm: BytesN<32>,
+        timelock_wasm: BytesN<32>,
+        token_votes_wasm: BytesN<32>,
+    ) {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::NotInitialized));
+        if admin != stored_admin {
+            panic!("not admin");
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::GovernorWasm, &governor_wasm);
+        env.storage()
+            .instance()
+            .set(&DataKey::TimelockWasm, &timelock_wasm);
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenVotesWasm, &token_votes_wasm);
+    }
+
     /// Configure the network native asset token contract used for deployer
     /// balance preflight checks.
     pub fn set_native_token(env: Env, admin: Address, native_token: Address) {

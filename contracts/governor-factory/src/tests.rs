@@ -529,6 +529,68 @@ fn test_set_native_token_before_initialize_returns_typed_error() {
 }
 
 #[test]
+fn test_update_wasm_hashes_updates_factory_configuration() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let old_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_governor_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let new_timelock_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let new_token_votes_hash = BytesN::from_array(&env, &[4u8; 32]);
+
+    let factory_id = env.register(GovernorFactoryContract, ());
+    let factory = GovernorFactoryContractClient::new(&env, &factory_id);
+    factory.initialize(&admin, &old_hash, &old_hash, &old_hash);
+
+    factory.update_wasm_hashes(
+        &admin,
+        &new_governor_hash,
+        &new_timelock_hash,
+        &new_token_votes_hash,
+    );
+
+    env.as_contract(&factory_id, || {
+        assert_eq!(
+            env.storage()
+                .instance()
+                .get::<_, BytesN<32>>(&DataKey::GovernorWasm),
+            Some(new_governor_hash)
+        );
+        assert_eq!(
+            env.storage()
+                .instance()
+                .get::<_, BytesN<32>>(&DataKey::TimelockWasm),
+            Some(new_timelock_hash)
+        );
+        assert_eq!(
+            env.storage()
+                .instance()
+                .get::<_, BytesN<32>>(&DataKey::TokenVotesWasm),
+            Some(new_token_votes_hash)
+        );
+    });
+}
+
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_update_wasm_hashes_rejects_non_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let old_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    let factory_id = env.register(GovernorFactoryContract, ());
+    let factory = GovernorFactoryContractClient::new(&env, &factory_id);
+    factory.initialize(&admin, &old_hash, &old_hash, &old_hash);
+
+    factory.update_wasm_hashes(&non_admin, &new_hash, &new_hash, &new_hash);
+}
+
+#[test]
 fn test_get_governor_unknown_id_returns_typed_error() {
     let env = Env::default();
     env.mock_all_auths();

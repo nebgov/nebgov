@@ -1,6 +1,11 @@
 #![no_std]
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol,
+    Vec,
+};
+
+const PERSISTENT_TTL_LEDGERS: u32 = 6_307_200;
 
 /// Error codes returned by the token-votes wrapper.
 #[contracterror]
@@ -32,6 +37,15 @@ pub enum DataKey {
 pub struct TokenVotesWrapperContract;
 
 impl TokenVotesWrapperContract {
+    /// Extend TTL for a persistent data key to prevent archival.
+    fn extend_ttl(env: &Env, key: &DataKey) {
+        if env.storage().persistent().has(key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(key, PERSISTENT_TTL_LEDGERS, PERSISTENT_TTL_LEDGERS);
+        }
+    }
+
     /// Binary search: find checkpoint votes at or before `ledger`.
     fn get_checkpoint_at(checkpoints: &Vec<Checkpoint>, ledger: u32) -> i128 {
         if checkpoints.is_empty() {
@@ -87,10 +101,11 @@ impl TokenVotesWrapperContract {
             return;
         }
         if let Some(src_addr) = src {
+            let key = DataKey::Checkpoints(src_addr.clone());
             let mut cps: Vec<Checkpoint> = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Checkpoints(src_addr.clone()))
+                .get(&key)
                 .unwrap_or_else(|| Vec::new(env));
             let current = if cps.is_empty() {
                 0
@@ -100,13 +115,15 @@ impl TokenVotesWrapperContract {
             Self::write_checkpoint(env, &mut cps, current - delta);
             env.storage()
                 .persistent()
-                .set(&DataKey::Checkpoints(src_addr.clone()), &cps);
+                .set(&key, &cps);
+            Self::extend_ttl(env, &key);
         }
         if let Some(dst_addr) = dst {
+            let key = DataKey::Checkpoints(dst_addr.clone());
             let mut cps: Vec<Checkpoint> = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Checkpoints(dst_addr.clone()))
+                .get(&key)
                 .unwrap_or_else(|| Vec::new(env));
             let current = if cps.is_empty() {
                 0
@@ -116,28 +133,33 @@ impl TokenVotesWrapperContract {
             Self::write_checkpoint(env, &mut cps, current + delta);
             env.storage()
                 .persistent()
-                .set(&DataKey::Checkpoints(dst_addr.clone()), &cps);
+                .set(&key, &cps);
+            Self::extend_ttl(env, &key);
         }
     }
 
     fn get_depositor_balance_internal(env: &Env, depositor: Address) -> i128 {
-        env.storage()
+        let key = DataKey::DepositorBalance(depositor);
+        let balance = env
+            .storage()
             .persistent()
-            .get(&DataKey::DepositorBalance(depositor))
-            .unwrap_or(0)
+            .get(&key)
+            .unwrap_or(0);
+        Self::extend_ttl(env, &key);
+        balance
     }
 
     fn set_depositor_balance(env: &Env, depositor: Address, balance: i128) {
+        let key = DataKey::DepositorBalance(depositor);
         env.storage()
             .persistent()
-            .set(&DataKey::DepositorBalance(depositor), &balance);
+            .set(&key, &balance);
+        Self::extend_ttl(env, &key);
     }
 
     /// Core deposit/wrap logic: transfer underlying → contract, update depositor
     /// balance, update voting-power checkpoints, update total supply.
-    /// Returns the underlying token address (needed by callers that include it
-    /// in their event payload).
-    fn do_deposit_logic(env: &Env, from: &Address, amount: i128) -> Address {
+    fn do_deposit_logic(env: &Env, from: &Address, amount: i128) {
         let underlying: Address = env
             .storage()
             .instance()
@@ -150,48 +172,52 @@ impl TokenVotesWrapperContract {
         let current_balance = Self::get_depositor_balance_internal(env, from.clone());
         Self::set_depositor_balance(env, from.clone(), current_balance + amount);
 
+        let delegate_key = DataKey::Delegate(from.clone());
         let delegatee: Address = env
             .storage()
             .persistent()
-            .get(&DataKey::Delegate(from.clone()))
+            .get(&delegate_key)
             .unwrap_or(from.clone());
+        Self::extend_ttl(env, &delegate_key);
         Self::move_voting_power(env, None, Some(&delegatee), amount);
 
+        let total_key = DataKey::TotalCheckpoints;
         let mut total_cps: Vec<Checkpoint> = env
             .storage()
             .persistent()
-            .get(&DataKey::TotalCheckpoints)
+            .get(&total_key)
             .unwrap_or_else(|| Vec::new(env));
         let current_total = total_cps.last().map(|c: Checkpoint| c.votes).unwrap_or(0);
         Self::write_checkpoint(env, &mut total_cps, current_total + amount);
         env.storage()
             .persistent()
-            .set(&DataKey::TotalCheckpoints, &total_cps);
-
-        underlying
+            .set(&total_key, &total_cps);
+        Self::extend_ttl(env, &total_key);
     }
 
     /// Core withdraw/unwrap logic: validate lock + balance, update depositor
     /// balance, update voting-power checkpoints, update total supply, transfer
     /// underlying back to caller.
-    /// Returns the underlying token address (needed by callers that include it
-    /// in their event payload).
-    fn do_withdraw_logic(env: &Env, from: &Address, amount: i128) -> Address {
+    fn do_withdraw_logic(env: &Env, from: &Address, amount: i128) {
+        let lock_key = DataKey::LockedUntil(from.clone());
         let locked_until: u32 = env
             .storage()
             .persistent()
-            .get(&DataKey::LockedUntil(from.clone()))
+            .get(&lock_key)
             .unwrap_or(0);
         assert!(
             env.ledger().sequence() > locked_until,
             "withdrawal locked: tokens used in active proposal"
         );
+        Self::extend_ttl(env, &lock_key);
 
+        let delegate_key = DataKey::Delegate(from.clone());
         let delegatee: Address = env
             .storage()
             .persistent()
-            .get(&DataKey::Delegate(from.clone()))
+            .get(&delegate_key)
             .unwrap_or(from.clone());
+        Self::extend_ttl(env, &delegate_key);
 
         let current_balance = Self::get_depositor_balance_internal(env, from.clone());
         assert!(amount <= current_balance, "InsufficientBalance");
@@ -199,16 +225,18 @@ impl TokenVotesWrapperContract {
 
         Self::move_voting_power(env, Some(&delegatee), None, amount);
 
+        let total_key = DataKey::TotalCheckpoints;
         let mut total_cps: Vec<Checkpoint> = env
             .storage()
             .persistent()
-            .get(&DataKey::TotalCheckpoints)
+            .get(&total_key)
             .unwrap_or_else(|| Vec::new(env));
         let current_total = total_cps.last().map(|c: Checkpoint| c.votes).unwrap_or(0);
         Self::write_checkpoint(env, &mut total_cps, current_total - amount);
         env.storage()
             .persistent()
-            .set(&DataKey::TotalCheckpoints, &total_cps);
+            .set(&total_key, &total_cps);
+        Self::extend_ttl(env, &total_key);
 
         let underlying: Address = env
             .storage()
@@ -217,8 +245,6 @@ impl TokenVotesWrapperContract {
             .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized));
         let underlying_client = token::Client::new(env, &underlying);
         underlying_client.transfer(&env.current_contract_address(), from, &amount);
-
-        underlying
     }
 }
 
@@ -245,9 +271,11 @@ impl TokenVotesWrapperContract {
     pub fn deposit(env: Env, from: Address, amount: i128) {
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
-        let underlying = Self::do_deposit_logic(&env, &from, amount);
-        env.events()
-            .publish((symbol_short!("deposit"), from), (underlying, amount));
+        Self::do_deposit_logic(&env, &from, amount);
+        env.events().publish(
+            (Symbol::new(&env, "Wrapped"), from.clone()),
+            (from, amount),
+        );
     }
 
     /// Wrap `amount` of the underlying SEP-41 token into 1:1 voting-weighted
@@ -268,9 +296,11 @@ impl TokenVotesWrapperContract {
     pub fn withdraw(env: Env, from: Address, amount: i128) {
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
-        let underlying = Self::do_withdraw_logic(&env, &from, amount);
-        env.events()
-            .publish((symbol_short!("withdraw"), from), (underlying, amount));
+        Self::do_withdraw_logic(&env, &from, amount);
+        env.events().publish(
+            (Symbol::new(&env, "Unwrapped"), from.clone()),
+            (from, amount),
+        );
     }
 
     /// Unwrap `amount` of wrapped tokens back to the underlying SEP-41 token.
@@ -302,6 +332,8 @@ impl TokenVotesWrapperContract {
         env.storage()
             .persistent()
             .set(&DataKey::Delegate(delegator.clone()), &delegatee);
+        let delegate_key = DataKey::Delegate(delegator.clone());
+        Self::extend_ttl(env, &delegate_key);
 
         if old_delegatee != delegatee {
             Self::move_voting_power(&env, Some(&old_delegatee), Some(&delegatee), balance);
@@ -315,6 +347,7 @@ impl TokenVotesWrapperContract {
 
     /// Lock withdrawal for `from` until `end_ledger`.
     /// Called by an authorized governor contract when a proposal is active.
+    /// If a lock already exists, extends it to the maximum of current and new end_ledger.
     pub fn lock_withdrawal(env: Env, caller: Address, from: Address, end_ledger: u32) {
         caller.require_auth();
         // Only the admin (governor) can call this
@@ -324,12 +357,21 @@ impl TokenVotesWrapperContract {
             .get(&DataKey::Admin)
             .unwrap_or_else(|| env.panic_with_error(WrapperError::NotInitialized));
         assert_eq!(caller, admin, "only admin can lock withdrawals");
+
+        let current_lock: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LockedUntil(from.clone()))
+            .unwrap_or(0);
+        let extended_ledger = end_ledger.max(current_lock);
+
         env.storage()
             .persistent()
-            .set(&DataKey::LockedUntil(from.clone()), &end_ledger);
+            .set(&DataKey::LockedUntil(from.clone()), &extended_ledger);
+        Self::extend_ttl(env, &DataKey::LockedUntil(from.clone()));
         env.events().publish(
             (symbol_short!("lock_wd"),),
-            (from, end_ledger, env.ledger().sequence()),
+            (from, extended_ledger, env.ledger().sequence()),
         );
     }
 
@@ -337,40 +379,50 @@ impl TokenVotesWrapperContract {
 
     /// Get current voting power (latest checkpoint) for an account.
     pub fn get_votes(env: Env, account: Address) -> i128 {
+        let key = DataKey::Checkpoints(account.clone());
         let cps: Vec<Checkpoint> = env
             .storage()
             .persistent()
-            .get(&DataKey::Checkpoints(account))
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
+        Self::extend_ttl(&env, &key);
         cps.last().map(|c: Checkpoint| c.votes).unwrap_or(0)
     }
 
     /// Get snapshot voting power at a past ledger.
     pub fn get_past_votes(env: Env, account: Address, ledger: u32) -> i128 {
+        let key = DataKey::Checkpoints(account);
         let cps: Vec<Checkpoint> = env
             .storage()
             .persistent()
-            .get(&DataKey::Checkpoints(account))
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
+        Self::extend_ttl(&env, &key);
         Self::get_checkpoint_at(&cps, ledger)
     }
 
     /// Get total wrapped token supply at a past ledger.
     pub fn get_past_total_supply(env: Env, ledger: u32) -> i128 {
+        let key = DataKey::TotalCheckpoints;
         let cps: Vec<Checkpoint> = env
             .storage()
             .persistent()
-            .get(&DataKey::TotalCheckpoints)
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
+        Self::extend_ttl(&env, &key);
         Self::get_checkpoint_at(&cps, ledger)
     }
 
     /// Get the delegatee for an account.
     pub fn get_delegate(env: Env, account: Address) -> Address {
-        env.storage()
+        let key = DataKey::Delegate(account.clone());
+        let delegate = env
+            .storage()
             .persistent()
-            .get(&DataKey::Delegate(account.clone()))
-            .unwrap_or(account)
+            .get(&key)
+            .unwrap_or(account);
+        Self::extend_ttl(&env, &key);
+        delegate
     }
 
     /// Get the wrapped balance deposited by an account.
@@ -534,6 +586,31 @@ mod tests {
         wrapper.lock_withdrawal(&admin, &user, &1000_u32);
 
         // Should panic
+        wrapper.withdraw(&user, &500_i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "withdrawal locked")]
+    fn test_lock_withdrawal_does_not_shorten_existing_lock() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+
+        let sac = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_addr = sac.address();
+        soroban_sdk::token::StellarAssetClient::new(&env, &token_addr).mint(&user, &1000_i128);
+
+        let wrapper_id = env.register(TokenVotesWrapperContract, ());
+        let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
+        wrapper.initialize(&admin, &token_addr);
+        wrapper.deposit(&user, &500_i128);
+
+        wrapper.lock_withdrawal(&admin, &user, &2000_u32);
+        wrapper.lock_withdrawal(&admin, &user, &1500_u32);
+
+        env.ledger().with_mut(|l| l.sequence_number = 1600);
         wrapper.withdraw(&user, &500_i128);
     }
 
