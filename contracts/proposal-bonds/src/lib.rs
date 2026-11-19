@@ -123,6 +123,12 @@ impl ProposalBondsContract {
         if bond_amount <= 0 {
             env.panic_with_error(ProposalBondsError::InvalidBondAmount);
         }
+        if max_lock_ledgers == 0
+            || max_lock_ledgers <= refund_grace_ledgers
+            || max_lock_ledgers >= BOND_TTL_LEDGERS
+        {
+            env.panic_with_error(ProposalBondsError::InvalidLockWindow);
+        }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::BondToken, &bond_token);
         env.storage().instance().set(&DataKey::BondAmount, &bond_amount);

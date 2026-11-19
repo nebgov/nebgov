@@ -65,6 +65,28 @@ const BOND_AMOUNT: i128 = 1_000;
 const GRACE_LEDGERS: u32 = 100;
 const MAX_LOCK_LEDGERS: u32 = 1_000;
 
+#[test]
+fn initialize_rejects_unsafe_lock_windows() {
+    for (grace, max_lock) in [
+        (GRACE_LEDGERS, 0),
+        (GRACE_LEDGERS, GRACE_LEDGERS),
+        (GRACE_LEDGERS, BOND_TTL_LEDGERS),
+        (GRACE_LEDGERS, BOND_TTL_LEDGERS + 1),
+    ] {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let governor = Address::generate(&env);
+        let id = env.register(ProposalBondsContract, ());
+        let client = ProposalBondsContractClient::new(&env, &id);
+        assert_eq!(
+            client.try_initialize(&admin, &token, &BOND_AMOUNT, &governor, &grace, &max_lock),
+            Err(Ok(ProposalBondsError::InvalidLockWindow)),
+        );
+    }
+}
+
 /// Deploy a fresh SAC token, a mock governor, and an initialized
 /// proposal-bonds contract. Returns (client, token, proposer, governor_id).
 fn setup(env: &Env) -> (ProposalBondsContractClient<'static>, Address, Address, Address) {
