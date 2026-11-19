@@ -77,16 +77,7 @@ impl ConvictionVotingContract {
         if env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(ConvictionVotingError::AlreadyInitialized);
         }
-        if decay_bps == 0
-            || decay_bps >= BPS as u32
-            || max_ratio_bps == 0
-            || max_ratio_bps > BPS as u32
-            || min_threshold_conviction <= 0
-            || weight_bps == 0
-            || weight_bps > BPS as u32
-        {
-            env.panic_with_error(ConvictionVotingError::InvalidConfiguration);
-        }
+        Self::validate_config(&env, decay_bps, max_ratio_bps, min_threshold_conviction, weight_bps);
         let storage = env.storage().instance();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::VotesToken, &votes_token);
@@ -95,6 +86,31 @@ impl ConvictionVotingContract {
         storage.set(&DataKey::MaxRatioBps, &max_ratio_bps);
         storage.set(&DataKey::MinThresholdConviction, &min_threshold_conviction);
         storage.set(&DataKey::WeightBps, &weight_bps);
+    }
+
+    /// Updated decay applies to existing proposals on their next conviction checkpoint.
+    pub fn update_config(
+        env: Env,
+        admin: Address,
+        decay_bps: u32,
+        max_ratio_bps: u32,
+        min_threshold_conviction: i128,
+        weight_bps: u32,
+    ) {
+        Self::require_admin(&env, &admin);
+        Self::validate_config(&env, decay_bps, max_ratio_bps, min_threshold_conviction, weight_bps);
+        let storage = env.storage().instance();
+        storage.set(&DataKey::DecayBps, &decay_bps);
+        storage.set(&DataKey::MaxRatioBps, &max_ratio_bps);
+        storage.set(&DataKey::MinThresholdConviction, &min_threshold_conviction);
+        storage.set(&DataKey::WeightBps, &weight_bps);
+        events::emit_config_updated(&env, &admin, decay_bps, max_ratio_bps, min_threshold_conviction, weight_bps);
+    }
+
+    pub fn set_admin(env: Env, admin: Address, new_admin: Address) {
+        Self::require_admin(&env, &admin);
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        events::emit_admin_changed(&env, &admin, &new_admin);
     }
 
     /// Create a continuously supported proposal.
@@ -349,6 +365,37 @@ impl ConvictionVotingContract {
     fn require_initialized(env: &Env) {
         if !env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(ConvictionVotingError::NotInitialized);
+        }
+    }
+
+    fn require_admin(env: &Env, caller: &Address) {
+        caller.require_auth();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
+        if caller != &admin {
+            env.panic_with_error(ConvictionVotingError::Unauthorized);
+        }
+    }
+
+    fn validate_config(
+        env: &Env,
+        decay_bps: u32,
+        max_ratio_bps: u32,
+        min_threshold_conviction: i128,
+        weight_bps: u32,
+    ) {
+        if decay_bps == 0
+            || decay_bps >= BPS as u32
+            || max_ratio_bps == 0
+            || max_ratio_bps > BPS as u32
+            || min_threshold_conviction <= 0
+            || weight_bps == 0
+            || weight_bps > BPS as u32
+        {
+            env.panic_with_error(ConvictionVotingError::InvalidConfiguration);
         }
     }
 
