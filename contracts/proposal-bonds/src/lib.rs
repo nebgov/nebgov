@@ -89,12 +89,9 @@ pub enum DataKey {
     BondAmount,
     Governor,
     Bond(BytesN<32>),
+    ScopedBond(Address, BytesN<32>),
     RefundGraceLedgers,
     MaxLockLedgers,
-    /// The token a bond was locked in, captured at `lock_bond` time so a
-    /// later `update_settings` that changes `BondToken` can never make
-    /// `refund_bond`/`slash` pay out an asset the bond was not posted in.
-    BondTokenOf(BytesN<32>),
 }
 
 /// ~1,000,000 ledgers (~58 days at the network's ~5s ledger close time),
@@ -130,8 +127,12 @@ impl ProposalBondsContract {
             env.panic_with_error(ProposalBondsError::InvalidLockWindow);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::BondToken, &bond_token);
-        env.storage().instance().set(&DataKey::BondAmount, &bond_amount);
+        env.storage()
+            .instance()
+            .set(&DataKey::BondToken, &bond_token);
+        env.storage()
+            .instance()
+            .set(&DataKey::BondAmount, &bond_amount);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage()
             .instance()
@@ -141,10 +142,20 @@ impl ProposalBondsContract {
             .set(&DataKey::MaxLockLedgers, &max_lock_ledgers);
     }
 
-    fn must_get_bond(env: &Env, description_hash: &BytesN<32>) -> Bond {
+    fn bond_key(env: &Env, proposer: &Address, description_hash: &BytesN<32>) -> DataKey {
+        let legacy = DataKey::Bond(description_hash.clone());
+        if let Some(bond) = env.storage().persistent().get::<_, Bond>(&legacy) {
+            if bond.proposer == *proposer {
+                return legacy;
+            }
+        }
+        DataKey::ScopedBond(proposer.clone(), description_hash.clone())
+    }
+
+    fn must_get_bond(env: &Env, proposer: &Address, description_hash: &BytesN<32>) -> Bond {
         env.storage()
             .persistent()
-            .get(&DataKey::Bond(description_hash.clone()))
+            .get(&Self::bond_key(env, proposer, description_hash))
             .unwrap_or_else(|| env.panic_with_error(ProposalBondsError::BondNotFound))
     }
 
@@ -162,58 +173,19 @@ impl ProposalBondsContract {
             .unwrap_or_else(|| env.panic_with_error(ProposalBondsError::NotInitialized))
     }
 
-    /// The token `description_hash`'s bond was locked in. Falls back to the
-    /// current `BondToken` for a bond with no recorded token.
-    fn locked_bond_token(env: &Env, description_hash: &BytesN<32>) -> Address {
-        env.storage()
-            .persistent()
-            .get(&DataKey::BondTokenOf(description_hash.clone()))
-            .unwrap_or_else(|| Self::get_bond_token(env))
-    }
-
-    fn require_admin(env: &Env, admin: &Address) {
-        let stored_admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .unwrap_or_else(|| env.panic_with_error(ProposalBondsError::NotInitialized));
-        admin.require_auth();
-        if admin != &stored_admin {
-            env.panic_with_error(ProposalBondsError::NotAuthorized);
-        }
-    }
-
-    /// Bounds on the refund windows. A `max_lock_ledgers` of 0 would open the
-    /// refund escape hatch in the same ledger a bond is locked, one no longer
-    /// than `refund_grace_ledgers` would let the escape hatch pre-empt the
-    /// slashing window, and one longer than `BOND_TTL_LEDGERS` would let the
-    /// bond entry be archived before the escape hatch opens.
-    fn validate_lock_window(env: &Env, refund_grace_ledgers: u32, max_lock_ledgers: u32) {
-        if max_lock_ledgers == 0
-            || max_lock_ledgers <= refund_grace_ledgers
-            || max_lock_ledgers > BOND_TTL_LEDGERS
-        {
-            env.panic_with_error(ProposalBondsError::InvalidLockWindow);
-        }
-    }
-
-    /// Lock the configured bond amount from `proposer`, keyed by
-    /// `description_hash` so it correlates 1:1 with the governor proposal
-    /// the caller submits alongside it (bonding and proposing are two
-    /// separate transactions, correlated off-chain by this shared hash).
-    /// If a bond already exists for this hash in a terminal state (Refunded
-    /// or Slashed), it will be overwritten.
+    /// Lock the configured bond amount from `proposer`, keyed by proposer and
+    /// `description_hash` so another account cannot reserve the proposer's hash.
+    /// The caller submits the governor proposal separately; the two
+    /// transactions are correlated off-chain by proposer and hash.
     pub fn lock_bond(env: Env, proposer: Address, description_hash: BytesN<32>) {
         proposer.require_auth();
 
-        if let Some(existing_bond) = env
+        if env
             .storage()
             .persistent()
-            .get::<_, Bond>(&DataKey::Bond(description_hash.clone()))
+            .has(&Self::bond_key(&env, &proposer, &description_hash))
         {
-            if existing_bond.state == BondState::Locked {
-                env.panic_with_error(ProposalBondsError::BondAlreadyLocked);
-            }
+            env.panic_with_error(ProposalBondsError::BondAlreadyLocked);
         }
 
         let bond_amount: i128 = env
@@ -236,24 +208,17 @@ impl ProposalBondsContract {
             locked_ledger: env.ledger().sequence(),
             state: BondState::Locked,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Bond(description_hash.clone()), &bond);
-        env.storage()
-            .persistent()
-            .set(&DataKey::BondTokenOf(description_hash.clone()), &bond_token);
+        env.storage().persistent().set(
+            &DataKey::ScopedBond(proposer.clone(), description_hash.clone()),
+            &bond,
+        );
         // A locked bond must outlive the full governor proposal lifecycle
         // (voting delay + voting period + grace period) plus this contract's
         // own post-terminal RefundGraceLedgers window before refund_bond or
         // slash can act on it, so bump its TTL by a generous fixed buffer
         // rather than trying to read governor's settings cross-contract here.
         env.storage().persistent().extend_ttl(
-            &DataKey::Bond(description_hash.clone()),
-            BOND_TTL_LEDGERS,
-            BOND_TTL_LEDGERS,
-        );
-        env.storage().persistent().extend_ttl(
-            &DataKey::BondTokenOf(description_hash.clone()),
+            &DataKey::ScopedBond(proposer.clone(), description_hash.clone()),
             BOND_TTL_LEDGERS,
             BOND_TTL_LEDGERS,
         );
@@ -262,7 +227,7 @@ impl ProposalBondsContract {
     }
 
     /// Refund a locked bond once its matching governor proposal (identified
-    /// by `proposal_id`, whose `description_hash` must match this bond's)
+    /// by `proposal_id`, whose proposer and `description_hash` must match this bond's)
     /// has reached a terminal, non-malicious state and the post-terminal
     /// `RefundGraceLedgers` window — during which the community can instead
     /// submit a `slash` governance proposal — has elapsed. Permissionless:
@@ -279,11 +244,18 @@ impl ProposalBondsContract {
     /// mirroring its ready/expiry math — out of scope here), so a bond
     /// behind such a proposal would otherwise be locked forever. Once
     /// `MaxLockLedgers` has elapsed since `lock_bond`, refund is allowed
-    /// unconditionally, regardless of the correlated proposal's state.
-    pub fn refund_bond(env: Env, caller: Address, description_hash: BytesN<32>, proposal_id: u64) {
+    /// regardless of the correlated proposal's state. The proposer argument
+    /// also identifies pre-upgrade bonds stored under the legacy hash key.
+    pub fn refund_bond(
+        env: Env,
+        caller: Address,
+        proposer: Address,
+        description_hash: BytesN<32>,
+        proposal_id: u64,
+    ) {
         caller.require_auth();
 
-        let mut bond = Self::must_get_bond(&env, &description_hash);
+        let mut bond = Self::must_get_bond(&env, &proposer, &description_hash);
         if bond.state != BondState::Locked {
             env.panic_with_error(ProposalBondsError::BondNotLocked);
         }
@@ -303,6 +275,9 @@ impl ProposalBondsContract {
             let proposal = governor_client.get_proposal(&proposal_id);
             if proposal.description_hash != description_hash {
                 env.panic_with_error(ProposalBondsError::DescriptionHashMismatch);
+            }
+            if proposal.proposer != proposer {
+                env.panic_with_error(ProposalBondsError::ProposerMismatch);
             }
 
             let state = governor_client.state(&proposal_id);
@@ -335,7 +310,7 @@ impl ProposalBondsContract {
             }
         }
 
-        let bond_token = Self::locked_bond_token(&env, &description_hash);
+        let bond_token = Self::get_bond_token(&env);
         token::TokenClient::new(&env, &bond_token).transfer(
             &env.current_contract_address(),
             &bond.proposer,
@@ -345,7 +320,7 @@ impl ProposalBondsContract {
         bond.state = BondState::Refunded;
         env.storage()
             .persistent()
-            .set(&DataKey::Bond(description_hash.clone()), &bond);
+            .set(&Self::bond_key(&env, &proposer, &description_hash), &bond);
 
         events::emit_bond_refunded(&env, &description_hash, &bond.proposer, bond.amount);
     }
@@ -355,7 +330,13 @@ impl ProposalBondsContract {
     /// proposal (i.e. `caller` must be the governor contract's own
     /// address) — this is how the community judges a proposal to have been
     /// spam, duplicated, or malicious.
-    pub fn slash(env: Env, caller: Address, description_hash: BytesN<32>, recipient: Address) {
+    pub fn slash(
+        env: Env,
+        caller: Address,
+        proposer: Address,
+        description_hash: BytesN<32>,
+        recipient: Address,
+    ) {
         caller.require_auth();
 
         let governor = Self::get_governor(&env);
@@ -363,12 +344,12 @@ impl ProposalBondsContract {
             env.panic_with_error(ProposalBondsError::NotAuthorized);
         }
 
-        let mut bond = Self::must_get_bond(&env, &description_hash);
+        let mut bond = Self::must_get_bond(&env, &proposer, &description_hash);
         if bond.state != BondState::Locked {
             env.panic_with_error(ProposalBondsError::BondNotLocked);
         }
 
-        let bond_token = Self::locked_bond_token(&env, &description_hash);
+        let bond_token = Self::get_bond_token(&env);
         token::TokenClient::new(&env, &bond_token).transfer(
             &env.current_contract_address(),
             &recipient,
@@ -378,15 +359,21 @@ impl ProposalBondsContract {
         bond.state = BondState::Slashed;
         env.storage()
             .persistent()
-            .set(&DataKey::Bond(description_hash.clone()), &bond);
+            .set(&Self::bond_key(&env, &proposer, &description_hash), &bond);
 
-        events::emit_bond_slashed(&env, &description_hash, &bond.proposer, bond.amount, &recipient);
+        events::emit_bond_slashed(
+            &env,
+            &description_hash,
+            &bond.proposer,
+            bond.amount,
+            &recipient,
+        );
     }
 
-    pub fn get_bond(env: Env, description_hash: BytesN<32>) -> Option<Bond> {
+    pub fn get_bond(env: Env, proposer: Address, description_hash: BytesN<32>) -> Option<Bond> {
         env.storage()
             .persistent()
-            .get(&DataKey::Bond(description_hash))
+            .get(&Self::bond_key(&env, &proposer, &description_hash))
     }
 
     pub fn update_bond_amount(env: Env, admin: Address, new_amount: i128) {
@@ -407,55 +394,10 @@ impl ProposalBondsContract {
             .instance()
             .get(&DataKey::BondAmount)
             .unwrap_or(0);
-        env.storage().instance().set(&DataKey::BondAmount, &new_amount);
+        env.storage()
+            .instance()
+            .set(&DataKey::BondAmount, &new_amount);
         events::emit_bond_amount_updated(&env, &admin, old_amount, new_amount);
-    }
-
-    /// Admin-only: replace the bond token, governor, `RefundGraceLedgers` and
-    /// `MaxLockLedgers` (the bond amount has its own `update_bond_amount`).
-    ///
-    /// - `bond_token` applies to bonds locked from now on. A bond that is
-    ///   already locked is always refunded or slashed in the token it was
-    ///   locked in.
-    /// - `governor` is the contract `refund_bond` queries and the only caller
-    ///   `slash` accepts, so point it at a redeployed governor here. Bonds
-    ///   whose proposals live on the old governor can no longer be looked up
-    ///   there and are refundable once `MaxLockLedgers` has passed.
-    /// - `refund_grace_ledgers` and `max_lock_ledgers` are read when a bond is
-    ///   refunded, so they apply to bonds that are already locked too.
-    pub fn update_settings(
-        env: Env,
-        admin: Address,
-        bond_token: Address,
-        governor: Address,
-        refund_grace_ledgers: u32,
-        max_lock_ledgers: u32,
-    ) {
-        Self::require_admin(&env, &admin);
-        Self::validate_lock_window(&env, refund_grace_ledgers, max_lock_ledgers);
-
-        let storage = env.storage().instance();
-        storage.set(&DataKey::BondToken, &bond_token);
-        storage.set(&DataKey::Governor, &governor);
-        storage.set(&DataKey::RefundGraceLedgers, &refund_grace_ledgers);
-        storage.set(&DataKey::MaxLockLedgers, &max_lock_ledgers);
-
-        events::emit_settings_updated(
-            &env,
-            &admin,
-            &bond_token,
-            &governor,
-            refund_grace_ledgers,
-            max_lock_ledgers,
-        );
-    }
-
-    /// Admin-only: hand the admin role to `new_admin`. Takes effect
-    /// immediately; `admin` loses the role in the same call.
-    pub fn set_admin(env: Env, admin: Address, new_admin: Address) {
-        Self::require_admin(&env, &admin);
-        env.storage().instance().set(&DataKey::Admin, &new_admin);
-        events::emit_admin_updated(&env, &admin, &new_admin);
     }
 
     /// Read-only settings snapshot — lets callers (e.g. the frontend) work

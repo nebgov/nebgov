@@ -648,10 +648,15 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     "/proposals/by-description-hash/:hash",
     async (req: Request, res: Response): Promise<void> => {
       const { hash } = req.params;
+      const proposer = req.query.proposer;
+      if (typeof proposer !== "string" || !proposer) {
+        res.status(400).json({ error: "proposer is required" });
+        return;
+      }
       try {
         const result = await pool.query(
-          `SELECT * FROM proposals WHERE description_hash = $1`,
-          [hash],
+          `SELECT * FROM proposals WHERE description_hash = $1 AND proposer = $2`,
+          [hash, proposer],
         );
         if (!result.rows[0]) {
           res.status(404).json({ error: "Proposal not found" });
@@ -2127,10 +2132,15 @@ export function createApp(server: SorobanRpc.Server): express.Application {
     "/proposal-bonds/:descriptionHash",
     async (req: Request, res: Response): Promise<void> => {
       const { descriptionHash } = req.params;
+      const proposer = req.query.proposer;
+      if (typeof proposer !== "string" || !proposer) {
+        res.status(400).json({ error: "proposer is required" });
+        return;
+      }
       try {
         const result = await pool.query(
-          `SELECT * FROM proposal_bonds WHERE description_hash = $1`,
-          [descriptionHash],
+          `SELECT * FROM proposal_bonds WHERE description_hash = $1 AND proposer_address = $2`,
+          [descriptionHash, proposer],
         );
         if (!result.rows[0]) {
           res.status(404).json({ error: "Bond not found" });

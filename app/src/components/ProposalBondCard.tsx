@@ -42,7 +42,7 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
     let cancelled = false;
     setLoading(true);
     client
-      .getBond(descriptionHash)
+      .getBond(proposer, descriptionHash)
       .then((result) => {
         if (!cancelled) setBond(result);
       })
@@ -56,7 +56,7 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [descriptionHash]);
+  }, [descriptionHash, proposer]);
 
   if (!client || loading) return null;
   if (bond) {
@@ -82,7 +82,7 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
     try {
       await client.lockBondWithSign(publicKey, descriptionHash, signTransaction);
       toast.success("Proposal bond locked.");
-      const refreshed = await client.getBond(descriptionHash);
+      const refreshed = await client.getBond(proposer, descriptionHash);
       setBond(refreshed);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Locking the bond failed");

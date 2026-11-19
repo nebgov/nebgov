@@ -245,7 +245,7 @@ Refundable proposer bonds (`contracts/proposal-bonds/`). A proposer locks a bond
 The bond is refunded once the proposal resolves, or slashed by governance. See [Proposal Bonds](./proposal-bonds.md)
 for the full lifecycle.
 
-- `lock_bond` takes the bond from the proposer, keyed by the proposal's `description_hash`
+- `lock_bond` takes the bond from the proposer, keyed by proposer and the proposal's `description_hash`
 - `refund_bond` returns the bond after the governor proposal resolves; `slash` sends it to a recipient instead
 - `update_bond_amount` (admin) changes the required bond; `update_settings` (admin) changes the bond token, governor
   and refund windows; `set_admin` (admin) hands over the admin role; `get_bond` and `get_settings` read the state

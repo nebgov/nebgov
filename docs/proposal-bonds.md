@@ -25,6 +25,8 @@ Proposer posts bond → Proposal created → Voting occurs → Execution or canc
 
 **Bond Amount**: The required amount of governance tokens (or other approved collateral) that a proposer must lock before creating a proposal. This is configurable per governance instance.
 
+**Bond identity**: New bonds use `(proposer, description_hash)` so a different wallet cannot reserve another proposer's hash. `get_bond`, `refund_bond`, and governance `slash` now require the proposer address. Refund compares that address with the governor proposal's proposer; an unrelated proposal cannot release the bond. Existing hash-only bond records remain readable for their original proposer until they are refunded or slashed. Indexer migration `013_scope_proposal_bonds_by_proposer.sql` must run before indexing new bond events; its rollback requires resolving any duplicate hashes across proposers first.
+
 **Bond Refund**: Bonds are automatically returned to the proposer when:
 - The proposal succeeds and is executed
 - The proposal is defeated but was not frivolous (standard rejection)
