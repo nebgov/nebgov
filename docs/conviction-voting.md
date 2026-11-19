@@ -2,6 +2,17 @@
 
 ## Overview
 
+## Administration
+
+The initialized admin may call `update_config(admin, decay_bps,
+max_ratio_bps, min_threshold_conviction, weight_bps)` to change the same
+bounded values checked by `initialize`. The `ConfigUpdated` event records the
+new values. A decay change applies to conviction already built up when that
+proposal next runs `update_conviction` or is checkpointed; it does not reset
+the stored conviction. The admin may transfer this authority with
+`set_admin(admin, new_admin)`, which emits `AdminChanged`. The old admin loses
+access immediately.
+
 The **Conviction Voting** feature (`contracts/conviction-voting`) implements a **self-executing alternative governance track** where proposals automatically execute when their conviction score exceeds a configurable threshold. This mechanism:
 
 - **Rewards long-term commitment** by weighting votes based on how long participants stake on proposals
