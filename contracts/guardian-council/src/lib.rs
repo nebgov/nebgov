@@ -64,8 +64,12 @@ pub struct PendingAction {
     pub action: GuardianAction,
     pub proposer: Address,
     pub created_ledger: u32,
+    /// Snapshotted when proposed; zero means no expiry.
+    pub expires_ledger: u32,
     pub approvals: Vec<Address>,
+    pub cancellation_approvals: Vec<Address>,
     pub executed: bool,
+    pub cancelled: bool,
 }
 
 #[contracttype]
@@ -113,7 +117,9 @@ impl GuardianCouncilContract {
         }
 
         env.storage().instance().set(&DataKey::Members, &members);
-        env.storage().instance().set(&DataKey::Threshold, &threshold);
+        env.storage()
+            .instance()
+            .set(&DataKey::Threshold, &threshold);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage().instance().set(&DataKey::NextActionId, &0u64);
         env.storage()
@@ -138,13 +144,26 @@ impl GuardianCouncilContract {
         let mut approvals = Vec::new(&env);
         approvals.push_back(proposer.clone());
 
+        let created_ledger = env.ledger().sequence();
+        let ttl: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActionTtlLedgers)
+            .unwrap_or(0);
         let pending = PendingAction {
             id,
             action: action.clone(),
             proposer: proposer.clone(),
-            created_ledger: env.ledger().sequence(),
+            created_ledger,
+            expires_ledger: if ttl == 0 {
+                0
+            } else {
+                created_ledger.saturating_add(ttl)
+            },
             approvals,
+            cancellation_approvals: Vec::new(&env),
             executed: false,
+            cancelled: false,
         };
         Self::put_action(&env, &pending);
 
@@ -160,6 +179,9 @@ impl GuardianCouncilContract {
         let mut pending = Self::must_get_action(&env, action_id);
         if pending.executed {
             env.panic_with_error(GuardianCouncilError::AlreadyExecuted);
+        }
+        if pending.cancelled {
+            env.panic_with_error(GuardianCouncilError::ActionCancelled);
         }
         // Double-approval from the same member does not double-count.
         if !pending.approvals.contains(&member) {
@@ -186,12 +208,41 @@ impl GuardianCouncilContract {
         }
     }
 
+    /// The proposer may withdraw immediately. Other members record cancellation
+    /// approvals; the action is cancelled once the council threshold is met.
+    pub fn cancel_action(env: Env, member: Address, action_id: u64) {
+        member.require_auth();
+        Self::require_member(&env, &member);
+        let mut pending = Self::must_get_action(&env, action_id);
+        if pending.executed {
+            env.panic_with_error(GuardianCouncilError::AlreadyExecuted);
+        }
+        if pending.cancelled {
+            env.panic_with_error(GuardianCouncilError::ActionCancelled);
+        }
+        if member == pending.proposer {
+            pending.cancelled = true;
+        } else {
+            if !pending.cancellation_approvals.contains(&member) {
+                pending.cancellation_approvals.push_back(member.clone());
+            }
+            pending.cancelled = pending.cancellation_approvals.len() >= Self::threshold(&env);
+        }
+        Self::put_action(&env, &pending);
+        if pending.cancelled {
+            events::emit_action_cancelled(&env, action_id, &member);
+        }
+    }
+
     /// Permissionless once approvals ≥ threshold and the action is still
     /// within its TTL window. Dispatches on the action variant.
     pub fn execute_action(env: Env, action_id: u64) {
         let mut pending = Self::must_get_action(&env, action_id);
         if pending.executed {
             env.panic_with_error(GuardianCouncilError::AlreadyExecuted);
+        }
+        if pending.cancelled {
+            env.panic_with_error(GuardianCouncilError::ActionCancelled);
         }
 
         // Only members who are *still* members at execution time count — a
@@ -206,17 +257,14 @@ impl GuardianCouncilContract {
             env.panic_with_error(GuardianCouncilError::ThresholdNotMet);
         }
 
-        let ttl: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::ActionTtlLedgers)
-            .unwrap_or(0);
-        if ttl > 0 && env.ledger().sequence() > pending.created_ledger.saturating_add(ttl) {
+        if pending.expires_ledger > 0 && env.ledger().sequence() > pending.expires_ledger {
             env.panic_with_error(GuardianCouncilError::ActionExpired);
         }
 
         match pending.action.clone() {
-            GuardianAction::Pause => Self::governor_client(&env).pause(&env.current_contract_address()),
+            GuardianAction::Pause => {
+                Self::governor_client(&env).pause(&env.current_contract_address())
+            }
             GuardianAction::Unpause => {
                 Self::governor_client(&env).unpause(&env.current_contract_address())
             }
@@ -227,7 +275,9 @@ impl GuardianCouncilContract {
                 Self::governor_client(&env).cancel_queued(&env.current_contract_address(), &pid)
             }
             GuardianAction::RotateMember(r) => Self::do_rotate(&env, &r.old, &r.new),
-            GuardianAction::SetThreshold(new_threshold) => Self::do_set_threshold(&env, new_threshold),
+            GuardianAction::SetThreshold(new_threshold) => {
+                Self::do_set_threshold(&env, new_threshold)
+            }
             GuardianAction::SetActionTtl(new_ttl) => Self::do_set_action_ttl(&env, new_ttl),
         }
 
@@ -239,6 +289,23 @@ impl GuardianCouncilContract {
     // ── Views ────────────────────────────────────────────────────────────
     pub fn get_action(env: Env, action_id: u64) -> PendingAction {
         Self::must_get_action(&env, action_id)
+    }
+
+    pub fn get_action_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::NextActionId)
+            .unwrap_or(0)
+    }
+
+    pub fn get_actions(env: Env, offset: u64, limit: u32) -> Vec<PendingAction> {
+        let count = Self::get_action_count(env.clone());
+        let end = offset.saturating_add(limit as u64).min(count);
+        let mut actions = Vec::new(&env);
+        for id in offset..end {
+            actions.push_back(Self::must_get_action(&env, id));
+        }
+        actions
     }
 
     pub fn get_members(env: Env) -> Vec<Address> {

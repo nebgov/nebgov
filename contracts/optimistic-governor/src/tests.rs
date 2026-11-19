@@ -60,6 +60,7 @@ const CHALLENGE_WINDOW: u32 = 100;
 const OBJECTION_THRESHOLD_BPS: u32 = 300; // 3%
 const TOTAL_SUPPLY: i128 = 1_000_000;
 const BOND_AMOUNT: i128 = 1_000;
+const EXECUTION_WINDOW: u32 = 1_000;
 
 struct Fixture {
     env: Env,
@@ -96,6 +97,7 @@ fn setup(bond_amount: i128) -> Fixture {
         &OBJECTION_THRESHOLD_BPS,
         &bond_amount,
         &bond_token,
+        &EXECUTION_WINDOW,
     );
 
     let votes = MockVotesClient::new(&env, &votes_id);
@@ -289,7 +291,10 @@ fn cancel_refunds_bond_and_is_allowed_while_objected() {
     assert_eq!(c.get_proposal(&id).state, OptimisticProposalState::Objected);
 
     c.cancel(&f.proposer, &id);
-    assert_eq!(c.get_proposal(&id).state, OptimisticProposalState::Cancelled);
+    assert_eq!(
+        c.get_proposal(&id).state,
+        OptimisticProposalState::Cancelled
+    );
     assert_eq!(tok.balance(&f.proposer), balance_before);
 }
 
@@ -357,7 +362,12 @@ fn propose_before_initialize_rejected() {
 fn update_config_by_admin_applies_to_future_proposals() {
     let f = setup(0);
     let c = client(&f);
-    c.update_config(&f.admin, &(CHALLENGE_WINDOW * 2), &(OBJECTION_THRESHOLD_BPS * 2));
+    c.update_config(
+        &f.admin,
+        &(CHALLENGE_WINDOW * 2),
+        &(OBJECTION_THRESHOLD_BPS * 2),
+        &EXECUTION_WINDOW,
+    );
 
     let id = propose(&f);
     let proposal = c.get_proposal(&id);
@@ -385,7 +395,42 @@ fn update_config_by_non_admin_rejected() {
     let f = setup(0);
     let c = client(&f);
     let attacker = Address::generate(&f.env);
-    c.update_config(&attacker, &CHALLENGE_WINDOW, &OBJECTION_THRESHOLD_BPS);
+    c.update_config(
+        &attacker,
+        &CHALLENGE_WINDOW,
+        &OBJECTION_THRESHOLD_BPS,
+        &EXECUTION_WINDOW,
+    );
+}
+
+#[test]
+fn bond_updates_do_not_change_existing_refund_token() {
+    let f = setup(BOND_AMOUNT);
+    let c = client(&f);
+    let id = propose(&f);
+    let replacement = f
+        .env
+        .register_stellar_asset_contract_v2(f.admin.clone())
+        .address();
+    c.update_bond_config(&f.admin, &(BOND_AMOUNT * 2), &replacement);
+    f.env
+        .ledger()
+        .with_mut(|l| l.sequence_number += CHALLENGE_WINDOW + 1);
+    c.finalize(&id);
+    assert_eq!(
+        token::TokenClient::new(&f.env, &f.bond_token).balance(&f.proposer),
+        BOND_AMOUNT * 10
+    );
+}
+
+#[test]
+fn admin_can_be_rotated() {
+    let f = setup(0);
+    let c = client(&f);
+    let next = Address::generate(&f.env);
+    c.set_admin(&f.admin, &next);
+    c.update_bond_config(&next, &1, &f.bond_token);
+    assert_eq!(c.get_config().proposer_bond_amount, 1);
 }
 
 // ── #1377: refund_bond ProposerBondToken typed-error path ───────────────────

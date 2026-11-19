@@ -32,8 +32,11 @@ export interface PendingAction {
   action: GuardianAction;
   proposer: string;
   createdLedger: number;
+  expiresLedger: number;
   approvals: string[];
+  cancellationApprovals: string[];
   executed: boolean;
+  cancelled: boolean;
 }
 
 /** Encode the Soroban enum as a symbol-led vector, including typed payloads. */
@@ -88,11 +91,6 @@ export function decodeGuardianAction(raw: unknown): GuardianAction {
     default:
       throw new Error(`Unknown GuardianAction: ${String(tag)}`);
   }
-}
-
-/** True when a simulation failed with the contract's `ActionNotFound` (#4). */
-function isActionNotFound(err: unknown): boolean {
-  return err instanceof Error && /Error\(Contract, #4\)/.test(err.message);
 }
 
 /** Keypair- and wallet-signed transactions plus read-only RPC views for the guardian council. */
@@ -171,6 +169,15 @@ export class GuardianCouncilClient {
     ).hash;
   }
 
+  async cancelAction(member: Keypair, actionId: bigint): Promise<string> {
+    return (await this.submit(
+      member,
+      "cancel_action",
+      nativeToScVal(member.publicKey(), { type: "address" }),
+      nativeToScVal(actionId, { type: "u64" }),
+    )).hash;
+  }
+
   /** Permissionless after the approval threshold is met; caller pays fees. */
   async executeAction(caller: Keypair, actionId: bigint): Promise<string> {
     return (
@@ -234,6 +241,20 @@ export class GuardianCouncilClient {
     ).hash;
   }
 
+  async cancelActionWithSign(
+    memberPublicKey: string,
+    actionId: bigint,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    return (await this.submitWithSign(
+      memberPublicKey,
+      signUnsignedXdr,
+      "cancel_action",
+      nativeToScVal(memberPublicKey, { type: "address" }),
+      nativeToScVal(actionId, { type: "u64" }),
+    )).hash;
+  }
+
   /** Wallet-signing variant of {@link executeAction}. */
   async executeActionWithSign(
     callerPublicKey: string,
@@ -261,8 +282,11 @@ export class GuardianCouncilClient {
       action: decodeGuardianAction(raw.action),
       proposer: String(raw.proposer),
       createdLedger: Number(raw.created_ledger),
+      expiresLedger: Number(raw.expires_ledger ?? 0),
       approvals: raw.approvals as string[],
+      cancellationApprovals: (raw.cancellation_approvals as string[] | undefined) ?? [],
       executed: Boolean(raw.executed),
+      cancelled: Boolean(raw.cancelled),
     };
   }
 
@@ -279,24 +303,27 @@ export class GuardianCouncilClient {
     return Number(await this.simulate("get_action_ttl"));
   }
 
-  /**
-   * List actions in id order, starting at `startId`.
-   *
-   * The contract has no action counter view, so this reads ids sequentially
-   * and stops at the first id the contract reports as `ActionNotFound`
-   * (ids are never skipped). Any other failure is rethrown.
-   */
+  async getActionCount(): Promise<bigint> {
+    return BigInt(String(await this.simulate("get_action_count")));
+  }
+
   async listActions(startId = 0n, limit = 50): Promise<PendingAction[]> {
-    const actions: PendingAction[] = [];
-    for (let id = startId; actions.length < limit; id += 1n) {
-      try {
-        actions.push(await this.getAction(id));
-      } catch (err) {
-        if (isActionNotFound(err)) break;
-        throw err;
-      }
-    }
-    return actions;
+    const rows = await this.simulate(
+      "get_actions",
+      nativeToScVal(startId, { type: "u64" }),
+      nativeToScVal(limit, { type: "u32" }),
+    ) as Array<Record<string, unknown>>;
+    return rows.map((raw) => ({
+      id: BigInt(String(raw.id)),
+      action: decodeGuardianAction(raw.action),
+      proposer: String(raw.proposer),
+      createdLedger: Number(raw.created_ledger),
+      expiresLedger: Number(raw.expires_ledger ?? 0),
+      approvals: raw.approvals as string[],
+      cancellationApprovals: (raw.cancellation_approvals as string[] | undefined) ?? [],
+      executed: Boolean(raw.executed),
+      cancelled: Boolean(raw.cancelled),
+    }));
   }
 
   /** Read the governor protected by this council. */

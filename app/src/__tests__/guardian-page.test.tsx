@@ -44,8 +44,11 @@ function action(overrides: Partial<PendingAction> & { id: bigint }): PendingActi
     action: { tag: "Pause" },
     proposer: M1,
     createdLedger: 90,
+    expiresLedger: 0,
     approvals: [M1],
+    cancellationApprovals: [],
     executed: false,
+    cancelled: false,
     ...overrides,
   };
 }

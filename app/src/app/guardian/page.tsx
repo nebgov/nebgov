@@ -25,11 +25,12 @@ import { AddressDisplay } from "../../components/AddressDisplay";
 import { ErrorState } from "../../components/ErrorState";
 import { Skeleton } from "../../components/ui/Skeleton";
 
-type ActionKind = "approve" | "revoke" | "execute";
+type ActionKind = "approve" | "revoke" | "cancel" | "execute";
 
 const ACTION_LABELS: Record<ActionKind, { idle: string; busy: string; done: string }> = {
   approve: { idle: "Approve", busy: "Approving...", done: "Approval submitted." },
   revoke: { idle: "Revoke approval", busy: "Revoking...", done: "Approval revoked." },
+  cancel: { idle: "Cancel action", busy: "Cancelling...", done: "Cancellation submitted." },
   execute: { idle: "Execute", busy: "Executing...", done: "Action executed." },
 };
 
@@ -55,7 +56,6 @@ interface ActionCardProps {
   action: PendingAction;
   members: string[];
   threshold: number;
-  actionTtl: number;
   currentLedger: number;
   publicKey: string | null;
   busy: string | null;
@@ -66,7 +66,6 @@ function ActionCard({
   action,
   members,
   threshold,
-  actionTtl,
   currentLedger,
   publicKey,
   busy,
@@ -77,7 +76,7 @@ function ActionCard({
   const liveApprovals = action.approvals.filter((a) => members.includes(a));
   const staleApprovals = action.approvals.length - liveApprovals.length;
   const thresholdMet = liveApprovals.length >= threshold;
-  const expiresAt = actionTtl > 0 ? action.createdLedger + actionTtl : null;
+  const expiresAt = action.expiresLedger > 0 ? action.expiresLedger : null;
   const expired = expiresAt !== null && currentLedger > 0 && currentLedger > expiresAt;
 
   const isMember = publicKey !== null && members.includes(publicKey);
@@ -108,7 +107,7 @@ function ActionCard({
         </h3>
         <span
           className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-            action.executed
+            action.executed || action.cancelled
               ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
               : expired
                 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
@@ -117,7 +116,7 @@ function ActionCard({
                   : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
           }`}
         >
-          {action.executed ? "Executed" : expired ? "Expired" : thresholdMet ? "Ready to execute" : "Pending"}
+          {action.executed ? "Executed" : action.cancelled ? "Cancelled" : expired ? "Expired" : thresholdMet ? "Ready to execute" : "Pending"}
         </span>
       </div>
 
@@ -158,10 +157,11 @@ function ActionCard({
         </ul>
       )}
 
-      {!action.executed && publicKey && (
+      {!action.executed && !action.cancelled && publicKey && (
         <div className="mt-4 flex flex-wrap gap-2">
           {isMember && !hasApproved && !expired && button("approve", "bg-indigo-600 text-white hover:bg-indigo-700")}
           {isMember && hasApproved && button("revoke", "border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800")}
+          {isMember && button("cancel", "border border-red-300 text-red-700 hover:bg-red-50")}
           {thresholdMet && !expired && button("execute", "bg-green-600 text-white hover:bg-green-700")}
         </div>
       )}
@@ -194,6 +194,7 @@ export default function GuardianPage() {
     try {
       if (kind === "approve") await client.approveActionWithSign(publicKey, action.id, signTransaction);
       else if (kind === "revoke") await client.revokeApprovalWithSign(publicKey, action.id, signTransaction);
+      else if (kind === "cancel") await client.cancelActionWithSign(publicKey, action.id, signTransaction);
       else await client.executeActionWithSign(publicKey, action.id, signTransaction);
       toast.success(ACTION_LABELS[kind].done);
       refetch();
@@ -298,7 +299,6 @@ export default function GuardianPage() {
                     action={action}
                     members={data.members}
                     threshold={data.threshold}
-                    actionTtl={data.actionTtl}
                     currentLedger={currentLedger}
                     publicKey={publicKey}
                     busy={busy}

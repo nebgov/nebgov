@@ -23,8 +23,11 @@ const action: PendingAction = {
   action: { tag: "Pause" },
   proposer: "GMEMBER1",
   createdLedger: 10,
+  expiresLedger: 0,
   approvals: ["GMEMBER1"],
+  cancellationApprovals: [],
   executed: false,
+  cancelled: false,
 };
 
 describe("useGuardianCouncil", () => {

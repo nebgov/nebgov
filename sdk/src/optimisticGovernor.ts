@@ -123,6 +123,25 @@ export class OptimisticGovernorClient {
     )).hash;
   }
 
+  async updateBondConfig(admin: Keypair, amount: bigint, token: string): Promise<string> {
+    return (await this.submit(
+      admin,
+      "update_bond_config",
+      nativeToScVal(admin.publicKey(), { type: "address" }),
+      nativeToScVal(amount, { type: "i128" }),
+      nativeToScVal(token, { type: "address" }),
+    )).hash;
+  }
+
+  async setAdmin(admin: Keypair, newAdmin: string): Promise<string> {
+    return (await this.submit(
+      admin,
+      "set_admin",
+      nativeToScVal(admin.publicKey(), { type: "address" }),
+      nativeToScVal(newAdmin, { type: "address" }),
+    )).hash;
+  }
+
   /** Indexer-backed listing, optionally filtered by lifecycle state. */
   async listProposals(status?: OptimisticProposalState): Promise<OptimisticProposal[]> {
     if (!this.config.indexerUrl) throw new Error("indexerUrl is required");

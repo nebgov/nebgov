@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GuardianCouncilClient, type PendingAction } from "@nebgov/sdk";
 import { readGuardianCouncilConfig } from "../lib/nebgov-env";
 
-/** Upper bound on actions read per load; the contract has no counter view. */
+/** Upper bound on actions read per load. */
 const MAX_ACTIONS = 100;
 
 export function buildGuardianCouncilClient(

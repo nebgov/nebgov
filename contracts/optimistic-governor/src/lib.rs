@@ -82,6 +82,7 @@ pub enum DataKey {
     ProposerBondToken,
     ExecutionWindowLedgers,
     Bond(u64),
+    BondToken(u64),
 }
 
 #[contract]
@@ -148,7 +149,9 @@ impl OptimisticGovernorContract {
         let next = id
             .checked_add(1)
             .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
-        env.storage().instance().set(&DataKey::NextProposalId, &next);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextProposalId, &next);
 
         let bond_amount: i128 = env
             .storage()
@@ -166,9 +169,19 @@ impl OptimisticGovernorContract {
                 &env.current_contract_address(),
                 &bond_amount,
             );
-            env.storage().persistent().set(&DataKey::Bond(id), &bond_amount);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Bond(id), &bond_amount);
+            env.storage()
+                .persistent()
+                .set(&DataKey::BondToken(id), &bond_token);
             env.storage().persistent().extend_ttl(
                 &DataKey::Bond(id),
+                RECORD_TTL_LEDGERS,
+                RECORD_TTL_LEDGERS,
+            );
+            env.storage().persistent().extend_ttl(
+                &DataKey::BondToken(id),
                 RECORD_TTL_LEDGERS,
                 RECORD_TTL_LEDGERS,
             );
@@ -251,7 +264,9 @@ impl OptimisticGovernorContract {
                 .checked_mul(BPS)
                 .and_then(|v| v.checked_div(total_supply))
                 .map(|ratio| ratio >= threshold_bps as i128)
-                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
+                .unwrap_or_else(|| {
+                    env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow)
+                });
 
         if crossed {
             proposal.state = OptimisticProposalState::Objected;
@@ -318,9 +333,8 @@ impl OptimisticGovernorContract {
         let args = if proposal.calldata.is_empty() {
             Vec::<Val>::new(&env)
         } else {
-            Vec::<Val>::from_xdr(&env, &proposal.calldata).unwrap_or_else(|_| {
-                env.panic_with_error(OptimisticGovernorError::InvalidCalldata)
-            })
+            Vec::<Val>::from_xdr(&env, &proposal.calldata)
+                .unwrap_or_else(|_| env.panic_with_error(OptimisticGovernorError::InvalidCalldata))
         };
         env.invoke_contract::<Val>(&proposal.target, &proposal.fn_name, args);
         events::emit_proposal_executed(&env, proposal_id);
@@ -409,12 +423,48 @@ impl OptimisticGovernorContract {
         storage.set(&DataKey::ChallengeWindowLedgers, &challenge_window_ledgers);
         storage.set(&DataKey::ObjectionThresholdBps, &objection_threshold_bps);
         storage.set(&DataKey::ExecutionWindowLedgers, &execution_window_ledgers);
-        events::emit_config_updated(&env, challenge_window_ledgers, objection_threshold_bps, execution_window_ledgers);
+        events::emit_config_updated(
+            &env,
+            challenge_window_ledgers,
+            objection_threshold_bps,
+            execution_window_ledgers,
+        );
+    }
+
+    /// Admin-only bond settings for future proposals. Existing bonds retain
+    /// the token and amount captured when they were locked.
+    pub fn update_bond_config(env: Env, admin: Address, amount: i128, token: Address) {
+        Self::require_admin(&env, &admin);
+        if amount < 0 {
+            env.panic_with_error(OptimisticGovernorError::InvalidConfiguration);
+        }
+        let storage = env.storage().instance();
+        storage.set(&DataKey::ProposerBondAmount, &amount);
+        storage.set(&DataKey::ProposerBondToken, &token);
+        events::emit_bond_config_updated(&env, amount, &token);
+    }
+
+    pub fn set_admin(env: Env, admin: Address, new_admin: Address) {
+        Self::require_admin(&env, &admin);
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        events::emit_admin_updated(&env, &admin, &new_admin);
     }
 
     fn require_initialized(env: &Env) {
         if !env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(OptimisticGovernorError::NotInitialized);
+        }
+    }
+
+    fn require_admin(env: &Env, admin: &Address) {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
+        admin.require_auth();
+        if admin != &stored {
+            env.panic_with_error(OptimisticGovernorError::Unauthorized);
         }
     }
 
@@ -448,21 +498,27 @@ impl OptimisticGovernorContract {
     fn refund_bond(env: &Env, proposal_id: u64, proposer: &Address) {
         let key = DataKey::Bond(proposal_id);
         if let Some(amount) = env.storage().persistent().get::<_, i128>(&key) {
-            // ProposerBondToken is always set during initialize() before any
-            // bond can be locked, so a missing key here would mean the
-            // contract was never properly initialized — surface that as a
-            // typed error instead of an opaque panic.
-            let bond_token: Address = env
+            let token_address = env
                 .storage()
-                .instance()
-                .get(&DataKey::ProposerBondToken)
-                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
-            token::TokenClient::new(env, &bond_token).transfer(
+                .persistent()
+                .get(&DataKey::BondToken(proposal_id))
+                .unwrap_or_else(|| {
+                    env.storage()
+                        .instance()
+                        .get(&DataKey::ProposerBondToken)
+                        .unwrap_or_else(|| {
+                            env.panic_with_error(OptimisticGovernorError::NotInitialized)
+                        })
+                });
+            token::TokenClient::new(env, &token_address).transfer(
                 &env.current_contract_address(),
                 proposer,
                 &amount,
             );
             env.storage().persistent().remove(&key);
+            env.storage()
+                .persistent()
+                .remove(&DataKey::BondToken(proposal_id));
         }
     }
 }

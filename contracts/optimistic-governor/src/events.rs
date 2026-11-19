@@ -55,6 +55,24 @@ pub fn emit_config_updated(
 ) {
     env.events().publish(
         (Symbol::new(env, "ConfigUpdated"),),
-        (challenge_window_ledgers, objection_threshold_bps, execution_window_ledgers),
+        (
+            challenge_window_ledgers,
+            objection_threshold_bps,
+            execution_window_ledgers,
+        ),
+    );
+}
+
+pub fn emit_bond_config_updated(env: &Env, amount: i128, token: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "BondConfigUpdated"),),
+        (amount, token.clone()),
+    );
+}
+
+pub fn emit_admin_updated(env: &Env, old_admin: &Address, new_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "AdminUpdated"),),
+        (old_admin.clone(), new_admin.clone()),
     );
 }
