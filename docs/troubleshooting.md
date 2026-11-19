@@ -497,11 +497,11 @@ Common errors when interacting with NebGov on Stellar, along with their causes a
 
 #### `Bond already locked` (`ProposalBondsError::BondAlreadyLocked`)
 
-**Cause:** `lock_bond()` was called with a `description_hash` that already has an existing bond in storage. Each proposal description hash may only have one active bond.
+**Cause:** `lock_bond()` was called with a proposer and `description_hash` pair that already has a bond in storage. Other proposers may bond the same hash independently.
 
 **Fix:**
 1. Ensure `lock_bond()` is only called once per unique proposal `description_hash`.
-2. Query `get_bond(description_hash)` before locking to check whether a bond already exists.
+2. Query `get_bond(proposer, description_hash)` before locking to check whether a bond already exists.
 3. If re-proposing after a refund or slash, compute a new `description_hash` (e.g., by appending a nonce to the description).
 
 ---
@@ -511,7 +511,7 @@ Common errors when interacting with NebGov on Stellar, along with their causes a
 **Cause:** `refund_bond()` or `slash()` was called with a `description_hash` for which no bond record exists in persistent storage.
 
 **Fix:**
-1. Verify the `description_hash` matches the one used in the original `lock_bond()` call (byte-for-byte identical).
+1. Verify the proposer and `description_hash` match the original `lock_bond()` call (byte-for-byte identical).
 2. Confirm `lock_bond()` was included in a successfully finalized ledger (not just simulated).
 3. The bond record has a TTL of ~1,000,000 ledgers (~58 days). If the record has expired from storage, the bond cannot be refunded on-chain.
 
@@ -522,7 +522,7 @@ Common errors when interacting with NebGov on Stellar, along with their causes a
 **Cause:** `refund_bond()` or `slash()` was called on a bond that is already in state `Refunded` or `Slashed`. Each bond can only be refunded or slashed once.
 
 **Fix:**
-1. Call `get_bond(description_hash)` and inspect the `state` field before calling `refund_bond()` or `slash()`.
+1. Call `get_bond(proposer, description_hash)` and inspect the `state` field before calling `refund_bond()` or `slash()`.
 2. Only bonds with `state = Locked` can be refunded or slashed.
 
 ---

@@ -21,15 +21,15 @@ interface UseBondResult {
   refetch: () => void;
 }
 
-/** Fetch a single proposal bond by description hash, with manual refetch. */
-export function useProposalBond(descriptionHash: string | null): UseBondResult {
+/** Fetch a proposer's bond by description hash, with manual refetch. */
+export function useProposalBond(proposer: string | null, descriptionHash: string | null): UseBondResult {
   const [bond, setBond] = useState<ProposalBond | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refetchToken, setRefetchToken] = useState(0);
 
   useEffect(() => {
-    if (!descriptionHash) {
+    if (!proposer || !descriptionHash) {
       setLoading(false);
       return;
     }
@@ -46,7 +46,7 @@ export function useProposalBond(descriptionHash: string | null): UseBondResult {
     }
 
     client
-      .getBond(descriptionHash)
+      .getBond(proposer, descriptionHash)
       .then((result) => {
         if (!cancelled) setBond(result);
       })
@@ -60,7 +60,7 @@ export function useProposalBond(descriptionHash: string | null): UseBondResult {
     return () => {
       cancelled = true;
     };
-  }, [descriptionHash, refetchToken]);
+  }, [proposer, descriptionHash, refetchToken]);
 
   const refetch = useCallback(() => setRefetchToken((t) => t + 1), []);
 
@@ -121,6 +121,7 @@ export function useBondsByProposer(address: string | null): UseBondsByProposerRe
 }
 
 interface IndexedProposal {
+  proposer: string;
   end_ledger: number;
   executed: boolean;
   cancelled: boolean;
@@ -148,6 +149,7 @@ function isRefundEligible(
   if (bond.state !== "Locked" || currentLedger <= 0) return false;
   if (currentLedger >= bond.lockedLedger + settings.maxLockLedgers) return true;
   if (!proposal) return false;
+  if (proposal.proposer !== bond.proposer) return false;
 
   const terminal = proposal.executed || proposal.cancelled || (!proposal.queued && currentLedger > proposal.end_ledger);
   if (!terminal) return false;
@@ -184,7 +186,7 @@ export function useBondEligibility(
           lockedBonds.map(async (bond) => {
             try {
               const resp = await fetch(
-                `${indexerUrl}/proposals/by-description-hash/${bond.descriptionHash}`,
+                `${indexerUrl}/proposals/by-description-hash/${bond.descriptionHash}?proposer=${encodeURIComponent(bond.proposer)}`,
               );
               const proposal: IndexedProposal | null = resp.ok ? await resp.json() : null;
               return [

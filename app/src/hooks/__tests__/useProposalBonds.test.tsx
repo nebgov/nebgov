@@ -34,7 +34,7 @@ describe("proposal-bond hooks", () => {
   it("starts loading, resolves a bond, and refetches on demand", async () => {
     mockClient.getBond.mockResolvedValueOnce(bond).mockResolvedValueOnce(null);
 
-    const { result } = renderHook(() => useProposalBond("hash-1"));
+    const { result } = renderHook(() => useProposalBond("GPROPOSER", "hash-1"));
     expect(result.current).toEqual({
       bond: null,
       loading: true,
@@ -56,7 +56,7 @@ describe("proposal-bond hooks", () => {
     mockClient.getBond.mockRejectedValueOnce(new Error("indexer unavailable")).mockResolvedValueOnce(bond);
 
     const { result, rerender } = renderHook(
-      ({ hash }: { hash: string }) => useProposalBond(hash),
+      ({ hash }: { hash: string }) => useProposalBond("GPROPOSER", hash),
       { initialProps: { hash: "hash-1" } },
     );
 
@@ -64,7 +64,7 @@ describe("proposal-bond hooks", () => {
     rerender({ hash: "hash-2" });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(mockClient.getBond).toHaveBeenNthCalledWith(2, "hash-2");
+    expect(mockClient.getBond).toHaveBeenNthCalledWith(2, "GPROPOSER", "hash-2");
     expect(result.current.bond).toEqual(bond);
     expect(result.current.error).toBeNull();
   });
