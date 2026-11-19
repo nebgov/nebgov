@@ -42,13 +42,19 @@ pub fn emit_proposal_cancelled(env: &Env, proposal_id: u64, caller: &Address) {
     );
 }
 
+pub fn emit_proposal_expired(env: &Env, proposal_id: u64) {
+    env.events()
+        .publish((Symbol::new(env, "ProposalExpired"), proposal_id), ());
+}
+
 pub fn emit_config_updated(
     env: &Env,
     challenge_window_ledgers: u32,
     objection_threshold_bps: u32,
+    execution_window_ledgers: u32,
 ) {
     env.events().publish(
         (Symbol::new(env, "ConfigUpdated"),),
-        (challenge_window_ledgers, objection_threshold_bps),
+        (challenge_window_ledgers, objection_threshold_bps, execution_window_ledgers),
     );
 }

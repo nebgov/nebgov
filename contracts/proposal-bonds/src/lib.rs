@@ -156,15 +156,19 @@ impl ProposalBondsContract {
     /// `description_hash` so it correlates 1:1 with the governor proposal
     /// the caller submits alongside it (bonding and proposing are two
     /// separate transactions, correlated off-chain by this shared hash).
+    /// If a bond already exists for this hash in a terminal state (Refunded
+    /// or Slashed), it will be overwritten.
     pub fn lock_bond(env: Env, proposer: Address, description_hash: BytesN<32>) {
         proposer.require_auth();
 
-        if env
+        if let Some(existing_bond) = env
             .storage()
             .persistent()
-            .has(&DataKey::Bond(description_hash.clone()))
+            .get::<_, Bond>(&DataKey::Bond(description_hash.clone()))
         {
-            env.panic_with_error(ProposalBondsError::BondAlreadyLocked);
+            if existing_bond.state == BondState::Locked {
+                env.panic_with_error(ProposalBondsError::BondAlreadyLocked);
+            }
         }
 
         let bond_amount: i128 = env

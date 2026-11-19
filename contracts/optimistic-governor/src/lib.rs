@@ -36,6 +36,7 @@ pub enum OptimisticProposalState {
     Passed,
     Executed,
     Cancelled,
+    Expired,
 }
 
 #[contracttype]
@@ -64,6 +65,7 @@ pub struct OptimisticGovernorConfig {
     pub objection_threshold_bps: u32,
     pub proposer_bond_amount: i128,
     pub proposer_bond_token: Address,
+    pub execution_window_ledgers: u32,
 }
 
 #[contracttype]
@@ -78,6 +80,7 @@ pub enum DataKey {
     ObjectionThresholdBps,
     ProposerBondAmount,
     ProposerBondToken,
+    ExecutionWindowLedgers,
     Bond(u64),
 }
 
@@ -96,6 +99,7 @@ impl OptimisticGovernorContract {
         objection_threshold_bps: u32,
         proposer_bond_amount: i128,
         proposer_bond_token: Address,
+        execution_window_ledgers: u32,
     ) {
         admin.require_auth();
         if env.storage().instance().has(&DataKey::Admin) {
@@ -105,6 +109,7 @@ impl OptimisticGovernorContract {
             || objection_threshold_bps == 0
             || objection_threshold_bps > BPS as u32
             || proposer_bond_amount < 0
+            || execution_window_ledgers == 0
         {
             env.panic_with_error(OptimisticGovernorError::InvalidConfiguration);
         }
@@ -116,6 +121,7 @@ impl OptimisticGovernorContract {
         storage.set(&DataKey::ObjectionThresholdBps, &objection_threshold_bps);
         storage.set(&DataKey::ProposerBondAmount, &proposer_bond_amount);
         storage.set(&DataKey::ProposerBondToken, &proposer_bond_token);
+        storage.set(&DataKey::ExecutionWindowLedgers, &execution_window_ledgers);
     }
 
     /// Schedule a proposal for execution by default; it only fails if
@@ -282,12 +288,30 @@ impl OptimisticGovernorContract {
     /// has cleared its challenge window unobjected. Anyone may trigger this
     /// once a proposal is `Passed`; there is no meaningful caller identity to
     /// gate on since the target invocation runs with the contract's own
-    /// authority, not the caller's.
+    /// authority, not the caller's. Must be executed within the execution
+    /// window, or the proposal expires.
     pub fn execute(env: Env, proposal_id: u64) {
         let mut proposal = Self::must_get_proposal(&env, proposal_id);
         if proposal.state != OptimisticProposalState::Passed {
             env.panic_with_error(OptimisticGovernorError::ProposalNotPassed);
         }
+
+        let execution_window_ledgers: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ExecutionWindowLedgers)
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized));
+        let expiration_ledger = proposal
+            .challenge_end_ledger
+            .checked_add(execution_window_ledgers)
+            .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::ArithmeticOverflow));
+        if env.ledger().sequence() >= expiration_ledger {
+            proposal.state = OptimisticProposalState::Expired;
+            Self::save_proposal(&env, &proposal);
+            events::emit_proposal_expired(&env, proposal_id);
+            env.panic_with_error(OptimisticGovernorError::ProposalExpired);
+        }
+
         proposal.state = OptimisticProposalState::Executed;
         Self::save_proposal(&env, &proposal);
 
@@ -349,17 +373,21 @@ impl OptimisticGovernorContract {
             proposer_bond_token: storage
                 .get(&DataKey::ProposerBondToken)
                 .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
+            execution_window_ledgers: storage
+                .get(&DataKey::ExecutionWindowLedgers)
+                .unwrap_or_else(|| env.panic_with_error(OptimisticGovernorError::NotInitialized)),
         }
     }
 
-    /// Admin-only tuning of the challenge window and objection threshold for
-    /// future proposals; does not retroactively affect proposals already in
-    /// flight.
+    /// Admin-only tuning of the challenge window, objection threshold, and
+    /// execution window for future proposals; does not retroactively affect
+    /// proposals already in flight.
     pub fn update_config(
         env: Env,
         admin: Address,
         challenge_window_ledgers: u32,
         objection_threshold_bps: u32,
+        execution_window_ledgers: u32,
     ) {
         let stored_admin: Address = env
             .storage()
@@ -373,13 +401,15 @@ impl OptimisticGovernorContract {
         if challenge_window_ledgers == 0
             || objection_threshold_bps == 0
             || objection_threshold_bps > BPS as u32
+            || execution_window_ledgers == 0
         {
             env.panic_with_error(OptimisticGovernorError::InvalidConfiguration);
         }
         let storage = env.storage().instance();
         storage.set(&DataKey::ChallengeWindowLedgers, &challenge_window_ledgers);
         storage.set(&DataKey::ObjectionThresholdBps, &objection_threshold_bps);
-        events::emit_config_updated(&env, challenge_window_ledgers, objection_threshold_bps);
+        storage.set(&DataKey::ExecutionWindowLedgers, &execution_window_ledgers);
+        events::emit_config_updated(&env, challenge_window_ledgers, objection_threshold_bps, execution_window_ledgers);
     }
 
     fn require_initialized(env: &Env) {

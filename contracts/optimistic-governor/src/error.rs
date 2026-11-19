@@ -20,4 +20,5 @@ pub enum OptimisticGovernorError {
     Unauthorized = 14,
     ArithmeticOverflow = 15,
     ProposalNotCancellable = 16,
+    ProposalExpired = 17,
 }
