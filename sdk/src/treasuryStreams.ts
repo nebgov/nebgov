@@ -38,7 +38,7 @@ const TREASURY_STREAMS_MESSAGES: Partial<Record<TreasuryStreamsErrorCode, string
   [TreasuryStreamsErrorCode.NotAuthorized]: "Caller is not authorized to manage this stream",
   [TreasuryStreamsErrorCode.InvalidAmount]: "Amount per interval must be positive",
   [TreasuryStreamsErrorCode.InvalidInterval]: "Interval must be at least one ledger",
-  [TreasuryStreamsErrorCode.InvalidSchedule]: "End ledger must be after the start ledger and in the future",
+  [TreasuryStreamsErrorCode.InvalidSchedule]: "End ledger must be in the future and at least one interval after the start ledger",
   [TreasuryStreamsErrorCode.StreamNotFound]: "No stream exists with this id",
   [TreasuryStreamsErrorCode.StreamCancelled]: "Stream has been cancelled",
   [TreasuryStreamsErrorCode.StreamPaused]: "Stream is paused",

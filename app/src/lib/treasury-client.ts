@@ -527,6 +527,48 @@ export class TreasuryClient {
     return BigInt(scValToNative(rv) as number | bigint);
   }
 
+  /** Create an interval-payment stream on the separate treasury-streams contract. */
+  async createRecurringStream(
+    streamsAddress: string,
+    signerPublicKey: string,
+    recipient: string,
+    asset: string,
+    amountPerInterval: bigint,
+    intervalLedgers: number,
+    startLedger: number,
+    endLedger: number,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<bigint> {
+    const account = await this.server.getAccount(signerPublicKey);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        new Contract(streamsAddress).call(
+          "create_stream",
+          nativeToScVal(signerPublicKey, { type: "address" }),
+          nativeToScVal(recipient, { type: "address" }),
+          nativeToScVal(asset, { type: "address" }),
+          nativeToScVal(amountPerInterval, { type: "i128" }),
+          nativeToScVal(intervalLedgers, { type: "u32" }),
+          nativeToScVal(startLedger, { type: "u32" }),
+          nativeToScVal(endLedger, { type: "u32" }),
+        ),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await this.server.prepareTransaction(tx);
+    const signedXdr = await signUnsignedXdr(prepared.toXDR());
+    const signed = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);
+    const result = await this.server.sendTransaction(signed);
+    if (result.status === "ERROR") throw new Error(`create_stream failed: ${JSON.stringify(result)}`);
+    const confirmed = await this.pollSuccess(result.hash);
+    if (!confirmed.returnValue) throw new Error("create_stream returned no stream id");
+    return BigInt(scValToNative(confirmed.returnValue) as number | bigint);
+  }
+
   async streamSpend(
     signerPublicKey: string,
     streamId: number,

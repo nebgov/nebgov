@@ -77,6 +77,7 @@ export default function StreamsPage() {
             ← Back to Treasury
           </Link>
           <h1 className="text-xl font-bold text-gray-900 mt-1">Budget Streams</h1>
+          <Link href="/treasury/recurring-streams" className="text-sm text-indigo-600">Create recurring payment stream</Link>
         </div>
         {publicKey && (
           <button

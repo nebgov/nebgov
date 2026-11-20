@@ -100,7 +100,10 @@ impl TreasuryStreamsContract {
         if interval_ledgers == 0 {
             env.panic_with_error(TreasuryStreamsError::InvalidInterval);
         }
-        if end_ledger <= start_ledger || end_ledger <= env.ledger().sequence() {
+        if end_ledger <= start_ledger
+            || end_ledger - start_ledger < interval_ledgers
+            || end_ledger <= env.ledger().sequence()
+        {
             env.panic_with_error(TreasuryStreamsError::InvalidSchedule);
         }
 

@@ -163,6 +163,22 @@ fn test_create_stream_rejects_end_before_start() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_create_stream_rejects_schedule_shorter_than_interval() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    client.create_stream(
+        &f.governor,
+        &f.recipient,
+        &f.asset,
+        &AMOUNT_PER_INTERVAL,
+        &100,
+        &100,
+        &150,
+    );
+}
+
+#[test]
 fn test_execute_pays_each_whole_interval_that_came_due() {
     let f = setup();
     let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
