@@ -331,12 +331,18 @@ impl VotingRewardsContract {
             env.panic_with_error(VotingRewardsError::EpochNotEnded);
         }
 
-        let unclaimed = epoch.total_reward_amount - epoch.claimed_amount;
+        let unclaimed = epoch
+            .total_reward_amount
+            .checked_sub(epoch.claimed_amount)
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow));
         if unclaimed > 0 {
             let allocated = Self::allocated(&env);
+            let remaining = allocated
+                .checked_sub(unclaimed)
+                .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::ArithmeticOverflow));
             env.storage()
                 .instance()
-                .set(&DataKey::RewardsPool, &(allocated - unclaimed));
+                .set(&DataKey::RewardsPool, &remaining);
         }
 
         epoch.total_reward_amount = epoch.claimed_amount;
