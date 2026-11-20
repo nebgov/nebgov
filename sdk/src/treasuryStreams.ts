@@ -213,7 +213,7 @@ export class TreasuryStreamsClient {
     )).hash;
   }
 
-  /** Cancel a stream permanently. Execute any due intervals first, since they are forfeited. */
+  /** Cancel a stream permanently, settling accrued whole intervals atomically. */
   async cancelStream(requester: Keypair, streamId: number): Promise<string> {
     return (await this.submit(
       requester,

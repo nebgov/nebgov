@@ -228,8 +228,7 @@ impl TreasuryStreamsContract {
         emit_stream_resumed(&env, stream_id);
     }
 
-    /// Cancel a stream permanently. Intervals that are due but not yet
-    /// executed are forfeited, so execute them before cancelling.
+    /// Cancel a stream permanently, paying all whole intervals already due.
     pub fn cancel_stream(env: Env, requester: Address, stream_id: u64) {
         requester.require_auth();
         let mut stream = Self::load_stream(&env, stream_id);
@@ -237,6 +236,24 @@ impl TreasuryStreamsContract {
 
         if stream.cancelled {
             env.panic_with_error(TreasuryStreamsError::StreamCancelled);
+        }
+
+        let (intervals, settled_amount) = Self::accrued(&env, &stream);
+        if settled_amount > 0 {
+            let this_contract = env.current_contract_address();
+            let asset = token::TokenClient::new(&env, &stream.asset);
+            if asset.balance(&this_contract) < settled_amount {
+                env.panic_with_error(TreasuryStreamsError::InsufficientBalance);
+            }
+            let span = intervals
+                .checked_mul(stream.interval_ledgers)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+            stream.last_streamed_ledger = stream.last_streamed_ledger
+                .checked_add(span)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+            stream.total_streamed = stream.total_streamed
+                .checked_add(settled_amount)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
         }
 
         stream.cancelled = true;
@@ -250,7 +267,12 @@ impl TreasuryStreamsContract {
         }
         Self::save_active_ids(&env, &remaining);
 
-        emit_stream_cancelled(&env, stream_id, stream.total_streamed);
+        if settled_amount > 0 {
+            let asset = token::TokenClient::new(&env, &stream.asset);
+            asset.transfer(&env.current_contract_address(), &stream.recipient, &settled_amount);
+        }
+
+        emit_stream_cancelled(&env, stream_id, stream.total_streamed, settled_amount);
     }
 
     pub fn get_stream(env: Env, stream_id: u64) -> Stream {
