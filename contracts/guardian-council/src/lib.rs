@@ -89,6 +89,15 @@ const COUNCIL_TTL_LEDGERS: u32 = 1_200_000;
 #[contract]
 pub struct GuardianCouncilContract;
 
+pub const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
+
 #[contractimpl]
 impl GuardianCouncilContract {
     pub fn initialize(
@@ -98,6 +107,7 @@ impl GuardianCouncilContract {
         governor: Address,
         action_ttl_ledgers: u32,
     ) {
+        extend_instance_ttl(&env);
         if env.storage().instance().has(&DataKey::Governor) {
             env.panic_with_error(GuardianCouncilError::AlreadyInitialized);
         }
@@ -129,6 +139,7 @@ impl GuardianCouncilContract {
 
     /// A member proposes an action and auto-approves it as the first signer.
     pub fn propose_action(env: Env, proposer: Address, action: GuardianAction) -> u64 {
+        extend_instance_ttl(&env);
         proposer.require_auth();
         Self::require_member(&env, &proposer);
 
@@ -173,6 +184,7 @@ impl GuardianCouncilContract {
     }
 
     pub fn approve_action(env: Env, member: Address, action_id: u64) {
+        extend_instance_ttl(&env);
         member.require_auth();
         Self::require_member(&env, &member);
 
@@ -192,6 +204,7 @@ impl GuardianCouncilContract {
     }
 
     pub fn revoke_approval(env: Env, member: Address, action_id: u64) {
+        extend_instance_ttl(&env);
         member.require_auth();
 
         let mut pending = Self::must_get_action(&env, action_id);
@@ -211,6 +224,7 @@ impl GuardianCouncilContract {
     /// The proposer may withdraw immediately. Other members record cancellation
     /// approvals; the action is cancelled once the council threshold is met.
     pub fn cancel_action(env: Env, member: Address, action_id: u64) {
+        extend_instance_ttl(&env);
         member.require_auth();
         Self::require_member(&env, &member);
         let mut pending = Self::must_get_action(&env, action_id);
@@ -237,6 +251,7 @@ impl GuardianCouncilContract {
     /// Permissionless once approvals ≥ threshold and the action is still
     /// within its TTL window. Dispatches on the action variant.
     pub fn execute_action(env: Env, action_id: u64) {
+        extend_instance_ttl(&env);
         let mut pending = Self::must_get_action(&env, action_id);
         if pending.executed {
             env.panic_with_error(GuardianCouncilError::AlreadyExecuted);
@@ -288,10 +303,12 @@ impl GuardianCouncilContract {
 
     // ── Views ────────────────────────────────────────────────────────────
     pub fn get_action(env: Env, action_id: u64) -> PendingAction {
+        extend_instance_ttl(&env);
         Self::must_get_action(&env, action_id)
     }
 
     pub fn get_action_count(env: Env) -> u64 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::NextActionId)
@@ -299,6 +316,7 @@ impl GuardianCouncilContract {
     }
 
     pub fn get_actions(env: Env, offset: u64, limit: u32) -> Vec<PendingAction> {
+        extend_instance_ttl(&env);
         let count = Self::get_action_count(env.clone());
         let end = offset.saturating_add(limit as u64).min(count);
         let mut actions = Vec::new(&env);
@@ -309,14 +327,17 @@ impl GuardianCouncilContract {
     }
 
     pub fn get_members(env: Env) -> Vec<Address> {
+        extend_instance_ttl(&env);
         Self::members(&env)
     }
 
     pub fn get_threshold(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         Self::threshold(&env)
     }
 
     pub fn get_governor(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Governor)
@@ -325,6 +346,7 @@ impl GuardianCouncilContract {
 
     /// Returns the current action TTL in ledgers. `0` means no expiry.
     pub fn get_action_ttl(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::ActionTtlLedgers)

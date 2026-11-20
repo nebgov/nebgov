@@ -398,3 +398,18 @@ fn set_action_ttl_action_itself_can_expire() {
     let err = s.council.try_execute_action(&id).unwrap_err().unwrap();
     assert_eq!(err, GuardianCouncilError::ActionExpired.into());
 }
+
+#[test]
+fn test_instance_ttl_extended() {
+    let s = setup(2, 50);
+
+    // Advance ledger past default instance TTL
+    s.env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    // Contract still answers queries
+    assert_eq!(s.council.get_threshold(), 2);
+    assert_eq!(s.council.get_action_count(), 0);
+    assert_eq!(s.council.get_members().len(), 3);
+}

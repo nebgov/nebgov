@@ -694,3 +694,17 @@ fn test_withdraw_co_sponsorship_succeeds_after_expiry() {
     assert_eq!(draft_after.total_power, 0);
     assert_eq!(client.get_co_sponsor_power(&draft_id, &sponsor), 0);
 }
+
+#[test]
+fn test_instance_ttl_extended() {
+    let (env, client, _votes, _admin) = setup();
+
+    // Advance ledger past default instance TTL
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    // Contract still answers queries
+    let drafts = client.get_active_drafts(&0, &10);
+    assert_eq!(drafts.len(), 0);
+}
