@@ -17,7 +17,8 @@
 //!
 //! Only whole intervals are paid. A trailing partial interval before
 //! `end_ledger` is not paid. A paused stream pays nothing while paused, and
-//! intervals that came due during the pause are paid once it resumes.
+//! intervals due before a pause remain payable after resume. The paused span
+//! extends the schedule without accruing new intervals.
 
 mod error;
 mod events;
@@ -56,6 +57,7 @@ enum DataKey {
     Governor,
     NextStreamId,
     Stream(u64),
+    PausedAt(u64),
     StreamsByRecipient(Address),
     /// Ids of streams that have not been cancelled, in creation order.
     ActiveStreams,
@@ -207,6 +209,11 @@ impl TreasuryStreamsContract {
         }
 
         stream.paused = true;
+        let pause_key = DataKey::PausedAt(stream_id);
+        env.storage().persistent().set(&pause_key, &env.ledger().sequence());
+        env.storage()
+            .persistent()
+            .extend_ttl(&pause_key, TTL_LEDGERS, TTL_LEDGERS);
         Self::save_stream(&env, &stream);
         emit_stream_paused(&env, stream_id);
     }
@@ -223,9 +230,52 @@ impl TreasuryStreamsContract {
             env.panic_with_error(TreasuryStreamsError::NotPaused);
         }
 
+        let pause_key = DataKey::PausedAt(stream_id);
+        let paused_at: u32 = env
+            .storage()
+            .persistent()
+            .get(&pause_key)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::PauseCheckpointMissing));
+        let paused_span = env.ledger().sequence().saturating_sub(paused_at);
+        stream.last_streamed_ledger = stream
+            .last_streamed_ledger
+            .checked_add(paused_span)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+        stream.end_ledger = stream
+            .end_ledger
+            .checked_add(paused_span)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
         stream.paused = false;
         Self::save_stream(&env, &stream);
+        env.storage().persistent().remove(&pause_key);
         emit_stream_resumed(&env, stream_id);
+    }
+
+    /// Repair a paused stream created before pause checkpoints were recorded.
+    /// The caller must supply the ledger at which the pause actually began.
+    pub fn backfill_pause_checkpoint(
+        env: Env,
+        requester: Address,
+        stream_id: u64,
+        paused_at: u32,
+    ) {
+        requester.require_auth();
+        let stream = Self::load_stream(&env, stream_id);
+        Self::require_admin_or_creator(&env, &requester, &stream);
+        if !stream.paused || stream.cancelled {
+            env.panic_with_error(TreasuryStreamsError::NotPaused);
+        }
+        let key = DataKey::PausedAt(stream_id);
+        if env.storage().persistent().has(&key) {
+            env.panic_with_error(TreasuryStreamsError::AlreadyPaused);
+        }
+        if paused_at < stream.last_streamed_ledger || paused_at > env.ledger().sequence() {
+            env.panic_with_error(TreasuryStreamsError::InvalidSchedule);
+        }
+        env.storage().persistent().set(&key, &paused_at);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
     }
 
     /// Cancel a stream permanently. Intervals that are due but not yet
@@ -241,6 +291,9 @@ impl TreasuryStreamsContract {
 
         stream.cancelled = true;
         Self::save_stream(&env, &stream);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PausedAt(stream_id));
 
         let mut remaining: Vec<u64> = Vec::new(&env);
         for id in Self::active_ids(&env).iter() {

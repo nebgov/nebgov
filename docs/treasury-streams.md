@@ -26,8 +26,10 @@ to hold enough of the asset for the intervals it funds. If the balance is short,
 
 ## Pause, resume and cancel
 
-- **Pause** stops execution. Intervals that come due while paused are paid after `resume_stream`, so pausing holds
-  payouts and does not forfeit them.
+- **Pause** stops execution and accrual. Whole intervals earned before the pause remain payable after `resume_stream`.
+  The paused duration extends the stream's end ledger, so the paused span does not consume scheduled intervals.
+- A stream paused before checkpoint support was deployed cannot resume until the admin or creator calls
+  `backfill_pause_checkpoint(requester, stream_id, paused_at)` with the ledger where the pause began.
 - **Cancel** is permanent. Intervals that are due but not yet executed are forfeited, so execute them before cancelling.
   A cancelled stream stays readable and is removed from `get_active_streams`.
 

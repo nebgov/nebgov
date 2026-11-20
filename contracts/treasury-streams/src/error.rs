@@ -18,4 +18,5 @@ pub enum TreasuryStreamsError {
     StreamNotDue = 12,
     InsufficientBalance = 13,
     ArithmeticOverflow = 14,
+    PauseCheckpointMissing = 15,
 }

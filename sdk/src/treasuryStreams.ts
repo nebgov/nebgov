@@ -27,6 +27,7 @@ export enum TreasuryStreamsErrorCode {
   StreamNotDue = 12,
   InsufficientBalance = 13,
   ArithmeticOverflow = 14,
+  PauseCheckpointMissing = 15,
   SimulationFailed = 100,
   TransactionFailed = 101,
   TransactionTimeout = 102,
@@ -47,6 +48,7 @@ const TREASURY_STREAMS_MESSAGES: Partial<Record<TreasuryStreamsErrorCode, string
   [TreasuryStreamsErrorCode.StreamNotDue]: "No interval has come due on this stream yet",
   [TreasuryStreamsErrorCode.InsufficientBalance]: "The streams contract does not hold enough of the asset",
   [TreasuryStreamsErrorCode.ArithmeticOverflow]: "Arithmetic overflow in stream accounting",
+  [TreasuryStreamsErrorCode.PauseCheckpointMissing]: "Paused stream has no pause checkpoint; operator repair is required",
 };
 
 export class TreasuryStreamsError extends Error {
@@ -210,6 +212,17 @@ export class TreasuryStreamsClient {
       "resume_stream",
       nativeToScVal(requester.publicKey(), { type: "address" }),
       nativeToScVal(streamId, { type: "u64" }),
+    )).hash;
+  }
+
+  /** Repair a paused stream from before pause checkpoints were recorded. */
+  async backfillPauseCheckpoint(requester: Keypair, streamId: number, pausedAt: number): Promise<string> {
+    return (await this.submit(
+      requester,
+      "backfill_pause_checkpoint",
+      nativeToScVal(requester.publicKey(), { type: "address" }),
+      nativeToScVal(streamId, { type: "u64" }),
+      nativeToScVal(pausedAt, { type: "u32" }),
     )).hash;
   }
 
