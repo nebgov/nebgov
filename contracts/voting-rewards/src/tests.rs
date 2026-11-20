@@ -499,39 +499,74 @@ const GOLDEN_PROOFS: [&[&str]; 5] = [
 ];
 
 #[test]
-fn set_admin_rotates_the_admin_address() {
+fn proposed_admin_only_becomes_active_after_acceptance() {
     let env = Env::default();
     let f = setup(&env);
 
     let new_admin = Address::generate(&env);
-    f.client.set_admin(&f.admin, &new_admin);
+    f.client.propose_admin(&f.admin, &new_admin);
+
+    assert_eq!(f.client.get_admin(), f.admin);
+    assert_eq!(f.client.get_pending_admin(), Some(new_admin.clone()));
+
+    f.client.accept_admin(&new_admin);
 
     assert_eq!(f.client.get_admin(), new_admin);
+    assert_eq!(f.client.get_pending_admin(), None);
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
-fn set_admin_rejects_non_admin_caller() {
+fn propose_admin_rejects_non_admin_caller() {
     let env = Env::default();
     let f = setup(&env);
 
     let non_admin = Address::generate(&env);
     let new_admin = Address::generate(&env);
-    f.client.set_admin(&non_admin, &new_admin);
+    f.client.propose_admin(&non_admin, &new_admin);
 }
 
 #[test]
-fn set_admin_emits_admin_set_event() {
+#[should_panic(expected = "Error(Contract, #3)")]
+fn accept_admin_rejects_an_address_that_was_not_proposed() {
     let env = Env::default();
     let f = setup(&env);
 
     let new_admin = Address::generate(&env);
-    f.client.set_admin(&f.admin, &new_admin);
+    let other_admin = Address::generate(&env);
+    f.client.propose_admin(&f.admin, &new_admin);
+    f.client.accept_admin(&other_admin);
+}
 
-    let events = env.events().all();
-    let event = events.last().unwrap();
+#[test]
+fn admin_transfer_emits_events_for_both_steps() {
+    use soroban_sdk::{testutils::Events, Symbol, TryIntoVal};
 
-    assert_eq!(event.1.len(), 1);
+    let env = Env::default();
+    let f = setup(&env);
+
+    let new_admin = Address::generate(&env);
+    f.client.propose_admin(&f.admin, &new_admin);
+
+    let proposed = env.events().all().last().unwrap();
+    let proposed_topic: Symbol = proposed
+        .1
+        .get(0)
+        .unwrap()
+        .try_into_val(&env)
+        .unwrap();
+    assert_eq!(proposed_topic, Symbol::new(&env, "AdminProposed"));
+
+    f.client.accept_admin(&new_admin);
+
+    let accepted = env.events().all().last().unwrap();
+    let accepted_topic: Symbol = accepted
+        .1
+        .get(0)
+        .unwrap()
+        .try_into_val(&env)
+        .unwrap();
+    assert_eq!(accepted_topic, Symbol::new(&env, "AdminAccepted"));
 }
 
 #[test]

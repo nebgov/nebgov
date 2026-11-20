@@ -458,9 +458,8 @@ impl LiquidityContract {
             (pool.reserve_b, pool.reserve_a, token_hi, token_lo)
         };
 
-        let amount_out = (amount_in * reserve_out) / (reserve_in + amount_in);
-        let fee = (amount_out * pool.fee_bps as i128) / 10_000;
-        let amount_out_with_fee = amount_out - fee;
+        let (amount_out_with_fee, fee) =
+            Self::calculate_amount_out(amount_in, reserve_in, reserve_out, pool.fee_bps);
 
         if amount_out_with_fee < min_amount_out {
             env.panic_with_error(LiquidityError::SlippageExceeded);
@@ -567,6 +566,61 @@ impl LiquidityContract {
             return 0;
         }
         (pool.reserve_b * 10_000) / pool.reserve_a
+    }
+
+    /// Calculate quote for swapping `amount_in` of `outcome_in` to `outcome_out`.
+    /// Returns (amount_out_with_fee, fee).
+    pub fn get_amount_out(
+        env: Env,
+        outcome_in: u32,
+        outcome_out: u32,
+        amount_in: i128,
+    ) -> (i128, i128) {
+        if outcome_in == outcome_out {
+            env.panic_with_error(LiquidityError::SameOutcome);
+        }
+
+        if amount_in <= 0 {
+            env.panic_with_error(LiquidityError::InvalidAmount);
+        }
+
+        let lo_is_in = outcome_in < outcome_out;
+        let (lo, hi) = if lo_is_in {
+            (outcome_in, outcome_out)
+        } else {
+            (outcome_out, outcome_in)
+        };
+
+        let pool_key = Self::pool_key(lo, hi);
+        let pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| env.panic_with_error(LiquidityError::PoolNotFound));
+
+        if pool.reserve_a == 0 || pool.reserve_b == 0 {
+            env.panic_with_error(LiquidityError::InsufficientReserves);
+        }
+
+        let (reserve_in, reserve_out) = if lo_is_in {
+            (pool.reserve_a, pool.reserve_b)
+        } else {
+            (pool.reserve_b, pool.reserve_a)
+        };
+
+        Self::calculate_amount_out(amount_in, reserve_in, reserve_out, pool.fee_bps)
+    }
+
+    fn calculate_amount_out(
+        amount_in: i128,
+        reserve_in: i128,
+        reserve_out: i128,
+        fee_bps: u32,
+    ) -> (i128, i128) {
+        let amount_out = (amount_in * reserve_out) / (reserve_in + amount_in);
+        let fee = (amount_out * fee_bps as i128) / 10_000;
+        let amount_out_with_fee = amount_out - fee;
+        (amount_out_with_fee, fee)
     }
 
     fn require_governor(env: &Env, caller: &Address) {

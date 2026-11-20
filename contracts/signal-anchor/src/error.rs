@@ -8,4 +8,5 @@ pub enum SignalAnchorError {
     AlreadyAnchored = 2,
     Unauthorized = 3,
     NotInitialized = 4,
+    NoPendingAdmin = 5,
 }

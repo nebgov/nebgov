@@ -52,8 +52,8 @@ function i128le(value: bigint): Buffer {
 }
 
 /**
- * `sha256(claimant || epoch_id || amount)`, the leaf the contract's `claim`
- * reconstructs from its own arguments.
+ * `sha256(0x00 || claimant || epoch_id || amount)`, the leaf the contract's
+ * `claim` reconstructs from its own arguments.
  *
  * `claimant` is encoded as the XDR of its `ScVal::Address` — exactly what
  * `Address::to_xdr` emits on the Rust side — so an account address and a
@@ -61,11 +61,11 @@ function i128le(value: bigint): Buffer {
  */
 export function computeLeaf(address: string, epochId: bigint, amount: bigint): Buffer {
   const claimant = Address.fromString(address).toScVal().toXDR();
-  return sha256(Buffer.concat([claimant, u64le(epochId), i128le(amount)]));
+  return sha256(Buffer.concat([Buffer.from([0x00]), claimant, u64le(epochId), i128le(amount)]));
 }
 
 /**
- * `sha256(min(a, b) || max(a, b))`.
+ * `sha256(0x01 || min(a, b) || max(a, b))`.
  *
  * Sorting the pair is what lets a proof be a bare list of siblings with no
  * left/right flags, which is the shape `claim(..., proof: Vec<BytesN<32>>)`
@@ -73,8 +73,8 @@ export function computeLeaf(address: string, epochId: bigint, amount: bigint): B
  */
 export function hashPair(a: Buffer, b: Buffer): Buffer {
   return Buffer.compare(a, b) <= 0
-    ? sha256(Buffer.concat([a, b]))
-    : sha256(Buffer.concat([b, a]));
+    ? sha256(Buffer.concat([Buffer.from([0x01]), a, b]))
+    : sha256(Buffer.concat([Buffer.from([0x01]), b, a]));
 }
 
 function nextLevel(level: Buffer[]): Buffer[] {

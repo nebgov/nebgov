@@ -246,6 +246,70 @@ export class VotingRewardsClient {
     return String(scValToNative(raw));
   }
 
+  /** The proposed next admin, or `null` when no transfer is in progress. */
+  async getPendingAdmin(): Promise<string | null> {
+    const raw = await this.simulate("get_pending_admin");
+    if (!raw) {
+      throw new VotingRewardsError(
+        VotingRewardsErrorCode.MissingReturnValue,
+        "No return value from get_pending_admin",
+      );
+    }
+    const pendingAdmin = scValToNative(raw);
+    return pendingAdmin == null ? null : String(pendingAdmin);
+  }
+
+  /** Propose a new admin; the current admin remains active until acceptance. */
+  async proposeAdmin(admin: Keypair, newAdmin: string): Promise<string> {
+    const { hash } = await this.submit(
+      admin,
+      "propose_admin",
+      nativeToScVal(admin.publicKey(), { type: "address" }),
+      nativeToScVal(newAdmin, { type: "address" }),
+    );
+    return hash;
+  }
+
+  /** Wallet-signing variant of {@link proposeAdmin}. */
+  async proposeAdminWithSign(
+    adminPublicKey: string,
+    newAdmin: string,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    const { hash } = await this.submitWithSign(
+      adminPublicKey,
+      signUnsignedXdr,
+      "propose_admin",
+      nativeToScVal(adminPublicKey, { type: "address" }),
+      nativeToScVal(newAdmin, { type: "address" }),
+    );
+    return hash;
+  }
+
+  /** Accept the pending admin transfer using the proposed admin's signature. */
+  async acceptAdmin(newAdmin: Keypair): Promise<string> {
+    const { hash } = await this.submit(
+      newAdmin,
+      "accept_admin",
+      nativeToScVal(newAdmin.publicKey(), { type: "address" }),
+    );
+    return hash;
+  }
+
+  /** Wallet-signing variant of {@link acceptAdmin}. */
+  async acceptAdminWithSign(
+    newAdminPublicKey: string,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    const { hash } = await this.submitWithSign(
+      newAdminPublicKey,
+      signUnsignedXdr,
+      "accept_admin",
+      nativeToScVal(newAdminPublicKey, { type: "address" }),
+    );
+    return hash;
+  }
+
   /** Whether `address` has already claimed its reward for `epochId`. */
   async hasClaimed(epochId: bigint | number, address: string): Promise<boolean> {
     const raw = await this.simulate(

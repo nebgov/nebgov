@@ -18,6 +18,14 @@ pub use error::TokenVotesError;
 pub use split_delegation::SplitDelegation;
 
 pub(crate) const PERSISTENT_TTL_LEDGERS: u32 = 6_307_200;
+pub(crate) const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub(crate) const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
 
 pub(crate) fn extend_persistent_ttl(env: &Env, key: &DataKey) {
     if env.storage().persistent().has(key) {
@@ -49,6 +57,14 @@ pub struct Checkpoint {
 }
 
 #[contracttype]
+#[derive(Clone)]
+pub struct TimeWeightCheckpoint {
+    pub ledger: u32,
+    pub enabled: bool,
+    pub scale: u32,
+}
+
+#[contracttype]
 #[derive(Clone, Default)]
 pub struct DelegatorRecord {
     pub balance: i128,
@@ -69,6 +85,7 @@ pub enum DataKey {
     DelegatorRecord(Address),        // delegator -> DelegatorRecord
     TimeWeightEnabled,               // bool
     TimeWeightScale,                 // u32
+    TimeWeightCheckpoints,           // Vec<TimeWeightCheckpoint>
     DomainSeparator,                 // BytesN<32>: cached at init
     UsedNonce(Address, u64),         // (delegator, nonce) -> bool: replay protection
     DelegationPermitExpiry(Address), // delegator -> u32: latest permit expiry
@@ -97,7 +114,12 @@ pub struct TokenVotesContract;
 impl TokenVotesContract {
     /// Initialize with the underlying SEP-41 token.
     pub fn initialize(env: Env, admin: Address, token: Address) {
+        extend_instance_ttl(&env);
         admin.require_auth();
+        if env.storage().instance().has(&DataKey::Admin) {
+            env.panic_with_error(TokenVotesError::AlreadyInitialized);
+        }
+
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
         // Set default retention period to 100,800 ledgers (~2 weeks at 7.5s per ledger)
@@ -112,6 +134,15 @@ impl TokenVotesContract {
         env.storage()
             .instance()
             .set(&DataKey::TimeWeightScale, &4204800u32);
+        let mut time_weight_checkpoints = soroban_sdk::Vec::new(&env);
+        time_weight_checkpoints.push_back(TimeWeightCheckpoint {
+            ledger: env.ledger().sequence(),
+            enabled: false,
+            scale: 4204800,
+        });
+        env.storage()
+            .instance()
+            .set(&DataKey::TimeWeightCheckpoints, &time_weight_checkpoints);
         // Relayer whitelist is opt-in.
         env.storage()
             .instance()
@@ -121,6 +152,7 @@ impl TokenVotesContract {
 
     /// Upgrade the contract WASM. Only the configured admin may perform an upgrade.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -142,6 +174,7 @@ impl TokenVotesContract {
     /// — voting power simply moves from the old delegatee to the new one
     /// without altering how much supply is actively delegated.
     pub fn delegate(env: Env, delegator: Address, delegatee: Address) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
         Self::apply_delegation(&env, delegator, delegatee);
     }
@@ -167,6 +200,7 @@ impl TokenVotesContract {
     ///
     /// Panics if `delegatees` is empty.
     pub fn delegate_batch(env: Env, delegator: Address, delegatees: Vec<Address>) {
+        extend_instance_ttl(&env);
         assert!(!delegatees.is_empty(), "delegatees must not be empty");
         delegator.require_auth();
         for delegatee in delegatees.iter() {
@@ -179,6 +213,7 @@ impl TokenVotesContract {
     /// If the account is already self-delegated or has never delegated, this
     /// is a no-op.
     pub fn undelegate(env: Env, delegator: Address) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
 
         let current_delegate: Option<Address> = env
@@ -202,6 +237,7 @@ impl TokenVotesContract {
         amount: i128,
         delegatee: Address,
     ) {
+        extend_instance_ttl(&env);
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
 
@@ -338,6 +374,7 @@ impl TokenVotesContract {
 
     /// Revoke delegation and remove voting power from the previous delegatee.
     pub fn revoke_delegation(env: Env, delegator: Address) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
 
         let previous_delegate: Option<Address> = env
@@ -392,6 +429,7 @@ impl TokenVotesContract {
 
     /// Get the current delegatee of an account.
     pub fn delegates(env: Env, account: Address) -> Option<Address> {
+        extend_instance_ttl(&env);
         let key = DataKey::Delegate(account);
         let result = env.storage().persistent().get(&key);
         if result.is_some() {
@@ -402,6 +440,7 @@ impl TokenVotesContract {
 
     /// Get the delegator record (balance and start ledger) for an account.
     pub fn get_delegator_record(env: Env, account: Address) -> DelegatorRecord {
+        extend_instance_ttl(&env);
         let key = DataKey::DelegatorRecord(account);
         let record = env.storage().persistent().get(&key).unwrap_or_default();
         extend_persistent_ttl(&env, &key);
@@ -410,6 +449,7 @@ impl TokenVotesContract {
 
     /// Get current voting power of an account.
     pub fn get_votes(env: Env, account: Address) -> i128 {
+        extend_instance_ttl(&env);
         let key = DataKey::Checkpoints(account);
         let checkpoints: soroban_sdk::Vec<Checkpoint> = env
             .storage()
@@ -422,11 +462,11 @@ impl TokenVotesContract {
         }
         let last = checkpoints.last().unwrap();
 
-        if !Self::time_weight_enabled(env.clone()) {
+        let (enabled, scale) = Self::current_time_weight_settings(&env);
+        if !enabled {
             return last.votes;
         }
 
-        let scale = Self::time_weight_scale(env.clone());
         let current_ledger = env.ledger().sequence();
         let bonus = (current_ledger as i128 * last.votes - last.weighted_sum) / scale as i128;
         last.votes + bonus
@@ -434,6 +474,7 @@ impl TokenVotesContract {
 
     /// Get current base voting power (raw tokens) of an account.
     pub fn get_base_votes(env: Env, account: Address) -> i128 {
+        extend_instance_ttl(&env);
         let checkpoints: soroban_sdk::Vec<Checkpoint> = env
             .storage()
             .persistent()
@@ -447,6 +488,7 @@ impl TokenVotesContract {
 
     /// Get the underlying token address.
     pub fn token(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Token)
@@ -455,6 +497,7 @@ impl TokenVotesContract {
 
     /// Get the admin address.
     pub fn admin(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -465,6 +508,7 @@ impl TokenVotesContract {
 
     /// Get full delegation history for a delegator.
     pub fn get_delegation_history(env: Env, delegator: Address) -> Vec<DelegationHistoryEntry> {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegation_history(&env, delegator)
     }
 
@@ -475,26 +519,31 @@ impl TokenVotesContract {
         offset: u32,
         limit: u32,
     ) -> Vec<DelegatorInfo> {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegators(&env, delegatee, offset, limit)
     }
 
     /// Get total number of current delegators.
     pub fn get_delegator_count(env: Env, delegatee: Address) -> u32 {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegator_count(&env, delegatee)
     }
 
     /// Get the full delegation chain from delegator to the final tip.
     pub fn get_delegation_chain(env: Env, delegator: Address) -> Vec<Address> {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegation_chain(&env, delegator)
     }
 
     /// Get depth of the delegation chain from this address.
     pub fn get_chain_depth(env: Env, delegator: Address) -> u32 {
+        extend_instance_ttl(&env);
         delegation_registry::get_chain_depth(&env, delegator)
     }
 
     /// Get comprehensive delegate profile.
     pub fn get_delegate_profile(env: Env, address: Address) -> DelegateProfile {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegate_profile(&env, address)
     }
 
@@ -505,11 +554,13 @@ impl TokenVotesContract {
         offset: u32,
         limit: u32,
     ) -> Vec<DelegationEntry> {
+        extend_instance_ttl(&env);
         delegation_registry::get_received_delegations(&env, delegatee, offset, limit)
     }
 
     /// Admin function to update the maximum delegation chain depth.
     pub fn set_delegation_depth_limit(env: Env, admin: Address, new_limit: u32) {
+        extend_instance_ttl(&env);
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -522,11 +573,13 @@ impl TokenVotesContract {
 
     /// Get current delegation depth limit.
     pub fn get_delegation_depth_limit(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegation_depth_limit(&env)
     }
 
     /// Check whether delegating from `delegator` to `delegatee` would create a cycle.
     pub fn would_create_cycle(env: Env, delegator: Address, delegatee: Address) -> bool {
+        extend_instance_ttl(&env);
         delegation_registry::would_create_cycle(&env, delegator, delegatee)
     }
 
@@ -538,6 +591,7 @@ impl TokenVotesContract {
         offset: u32,
         limit: u32,
     ) -> Vec<DelegatorInfo> {
+        extend_instance_ttl(&env);
         delegation_registry::get_delegation_snapshot(&env, delegatee, at_ledger, offset, limit)
     }
 
@@ -551,6 +605,7 @@ impl TokenVotesContract {
     /// entries, contain no duplicate delegatees, have every `weight_bps > 0`,
     /// and sum to exactly 10000 (100%).
     pub fn delegate_split(env: Env, delegator: Address, splits: Vec<SplitDelegation>) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
         split_delegation::delegate_split(&env, delegator, splits);
     }
@@ -559,6 +614,7 @@ impl TokenVotesContract {
     /// reporting the legacy single delegation (if any) as a single 100%
     /// entry, so callers don't need to know which path a delegator used.
     pub fn get_split_delegations(env: Env, delegator: Address) -> Vec<SplitDelegation> {
+        extend_instance_ttl(&env);
         split_delegation::get_split_delegations(&env, delegator)
     }
 
@@ -566,12 +622,14 @@ impl TokenVotesContract {
     /// delegator across all previously-split entries. No-op if the
     /// delegator has never delegated or is already self-delegated.
     pub fn undelegate_split(env: Env, delegator: Address) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
         split_delegation::undelegate_split(&env, delegator);
     }
 
     /// Admin function to update the maximum number of split delegation targets.
     pub fn set_max_split_targets(env: Env, admin: Address, max_targets: u32) {
+        extend_instance_ttl(&env);
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -584,11 +642,13 @@ impl TokenVotesContract {
 
     /// Get the current maximum number of split delegation targets.
     pub fn get_max_split_targets(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         split_delegation::get_max_split_targets(&env)
     }
 
     /// Get voting power at a past ledger sequence (snapshot).
     pub fn get_past_votes(env: Env, account: Address, ledger: u32) -> i128 {
+        extend_instance_ttl(&env);
         let current_ledger = env.ledger().sequence();
         if ledger > current_ledger {
             env.panic_with_error(TokenVotesError::FutureLedger);
@@ -606,17 +666,18 @@ impl TokenVotesContract {
             return 0;
         }
 
-        if !Self::time_weight_enabled(env.clone()) {
+        let (enabled, scale) = Self::time_weight_settings_at(&env, ledger);
+        if !enabled {
             return cp.votes;
         }
 
-        let scale = Self::time_weight_scale(env.clone());
         let bonus = (ledger as i128 * cp.votes - cp.weighted_sum) / scale as i128;
         cp.votes + bonus
     }
 
     /// Get base voting power at a past ledger sequence.
     pub fn get_past_base_votes(env: Env, account: Address, ledger: u32) -> i128 {
+        extend_instance_ttl(&env);
         let checkpoints: soroban_sdk::Vec<Checkpoint> = env
             .storage()
             .persistent()
@@ -632,6 +693,7 @@ impl TokenVotesContract {
     /// the value recorded at or just before `ledger`. This is used by the
     /// governor to compute quorum as a fraction of the historical total supply.
     pub fn get_past_total_supply(env: Env, ledger: u32) -> i128 {
+        extend_instance_ttl(&env);
         if ledger > env.ledger().sequence() {
             env.panic_with_error(TokenVotesError::FutureLedger);
         }
@@ -647,59 +709,13 @@ impl TokenVotesContract {
             return 0;
         }
 
-        if !Self::time_weight_enabled(env.clone()) {
+        let (enabled, scale) = Self::time_weight_settings_at(&env, ledger);
+        if !enabled {
             return cp.votes;
         }
 
-        let scale = Self::time_weight_scale(env.clone());
         let bonus = (ledger as i128 * cp.votes - cp.weighted_sum) / scale as i128;
         cp.votes + bonus
-    }
-
-    /// Write a checkpoint for an account. Called internally after balance changes.
-    pub fn checkpoint(env: Env, account: Address, votes: i128) {
-        let key = DataKey::Checkpoints(account.clone());
-        let mut checkpoints: soroban_sdk::Vec<Checkpoint> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Vec::new(&env));
-        extend_persistent_ttl(&env, &key);
-
-        let current_ledger = env.ledger().sequence();
-
-        // When using raw checkpoint manually, we assume no weighted sum change for simplicity
-        // or we try to estimate it based on last checkpoint.
-        let weighted_sum = if checkpoints.is_empty() {
-            votes * current_ledger as i128
-        } else {
-            let last = checkpoints.last().unwrap();
-            let delta = votes - last.votes;
-            last.weighted_sum + delta * current_ledger as i128
-        };
-
-        if !checkpoints.is_empty() && checkpoints.last().unwrap().ledger == current_ledger {
-            let last_idx = checkpoints.len() - 1;
-            checkpoints.set(
-                last_idx,
-                Checkpoint {
-                    ledger: current_ledger,
-                    votes,
-                    weighted_sum,
-                },
-            );
-        } else {
-            checkpoints.push_back(Checkpoint {
-                ledger: current_ledger,
-                votes,
-                weighted_sum,
-            });
-        }
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Checkpoints(account), &checkpoints);
-        extend_persistent_ttl(&env, &key);
     }
 
     // --- Internal helpers ---
@@ -868,6 +884,7 @@ impl TokenVotesContract {
     ///
     /// Returns the delegator's new nonce.
     pub fn delegate_by_sig(env: Env, relayer: Address, permit: DelegationPermit) -> u64 {
+        extend_instance_ttl(&env);
         relayer.require_auth();
         if !delegation_sig::is_relayer_allowed(&env, &relayer) {
             env.panic_with_error(TokenVotesError::RelayerNotWhitelisted);
@@ -888,6 +905,7 @@ impl TokenVotesContract {
     ///
     /// Panics if `permits` is empty.
     pub fn delegate_batch_by_sig(env: Env, relayer: Address, permits: Vec<DelegationPermit>) {
+        extend_instance_ttl(&env);
         assert!(!permits.is_empty(), "permits must not be empty");
         relayer.require_auth();
         if !delegation_sig::is_relayer_allowed(&env, &relayer) {
@@ -911,6 +929,7 @@ impl TokenVotesContract {
     /// nonce past anything they may have already signed. Only the delegator
     /// themself may call this.
     pub fn invalidate_all_permits(env: Env, delegator: Address) {
+        extend_instance_ttl(&env);
         delegator.require_auth();
         let new_nonce = delegation_sig::invalidate_all_permits(&env, &delegator);
         events::emit_permits_invalidated(&env, &delegator, new_nonce);
@@ -918,11 +937,13 @@ impl TokenVotesContract {
 
     /// Get the current (next expected) nonce for a delegator.
     pub fn nonce(env: Env, delegator: Address) -> u64 {
+        extend_instance_ttl(&env);
         delegation_sig::current_nonce(&env, &delegator)
     }
 
     /// Compute the domain separator for this contract instance.
     pub fn domain_separator(env: Env) -> BytesN<32> {
+        extend_instance_ttl(&env);
         delegation_sig::domain_separator(&env)
     }
 
@@ -930,22 +951,26 @@ impl TokenVotesContract {
     /// verification/tooling parity. See delegation_sig.rs for why this is
     /// informational and not itself the on-chain signature check.
     pub fn compute_permit_hash(env: Env, permit: DelegationPermit) -> BytesN<32> {
+        extend_instance_ttl(&env);
         delegation_sig::compute_permit_hash(&env, &permit)
     }
 
     /// Check whether a nonce has already been used by a delegator.
     pub fn is_nonce_used(env: Env, delegator: Address, nonce: u64) -> bool {
+        extend_instance_ttl(&env);
         delegation_sig::is_nonce_used(&env, &delegator, nonce)
     }
 
     /// The `expiry_ledger` of the most recently applied signed permit for
     /// `delegator`, if any.
     pub fn delegation_permit_expiry(env: Env, delegator: Address) -> Option<u32> {
+        extend_instance_ttl(&env);
         delegation_sig::delegation_permit_expiry(&env, &delegator)
     }
 
     /// Admin: enable or disable the relayer whitelist.
     pub fn set_relayer_whitelist_enabled(env: Env, admin: Address, enabled: bool) {
+        extend_instance_ttl(&env);
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -958,6 +983,7 @@ impl TokenVotesContract {
 
     /// Admin: add or remove a relayer from the whitelist.
     pub fn set_relayer_whitelisted(env: Env, admin: Address, relayer: Address, whitelisted: bool) {
+        extend_instance_ttl(&env);
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -972,11 +998,13 @@ impl TokenVotesContract {
     /// Check if a relayer is whitelisted (or if the whitelist is disabled,
     /// in which case every relayer is allowed).
     pub fn is_relayer_allowed(env: Env, relayer: Address) -> bool {
+        extend_instance_ttl(&env);
         delegation_sig::is_relayer_allowed(&env, &relayer)
     }
 
     /// Set the checkpoint retention period (admin only).
     pub fn set_checkpoint_retention_period(env: Env, period_ledgers: u32) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -996,6 +1024,7 @@ impl TokenVotesContract {
 
     /// Get the current checkpoint retention period.
     pub fn checkpoint_retention_period(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::CheckpointRetentionPeriod)
@@ -1006,6 +1035,7 @@ impl TokenVotesContract {
     /// Only removes checkpoints older than the retention period that are not needed by active proposals.
     /// Returns the number of checkpoints pruned.
     pub fn prune_checkpoints(env: Env, min_active_proposal_ledger: Option<u32>) -> u32 {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -1042,6 +1072,7 @@ impl TokenVotesContract {
 
     /// Set whether time-weighted voting is enabled (admin only).
     pub fn set_time_weight_enabled(env: Env, enabled: bool) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -1052,10 +1083,12 @@ impl TokenVotesContract {
         env.storage()
             .instance()
             .set(&DataKey::TimeWeightEnabled, &enabled);
+        Self::record_time_weight_settings(&env, enabled, Self::time_weight_scale(env.clone()));
     }
 
     /// Get whether time-weighted voting is enabled.
     pub fn time_weight_enabled(env: Env) -> bool {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::TimeWeightEnabled)
@@ -1064,6 +1097,11 @@ impl TokenVotesContract {
 
     /// Set the time-weighted reward scale (admin only).
     pub fn set_time_weight_scale(env: Env, scale_ledgers: u32) {
+        extend_instance_ttl(&env);
+        if scale_ledgers == 0 {
+            env.panic_with_error(TokenVotesError::InvalidTimeWeightScale);
+        }
+
         let admin: Address = env
             .storage()
             .instance()
@@ -1074,14 +1112,80 @@ impl TokenVotesContract {
         env.storage()
             .instance()
             .set(&DataKey::TimeWeightScale, &scale_ledgers);
+        Self::record_time_weight_settings(
+            &env,
+            Self::time_weight_enabled(env.clone()),
+            scale_ledgers,
+        );
     }
 
     /// Get the current time-weighted reward scale.
     pub fn time_weight_scale(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::TimeWeightScale)
             .unwrap_or(4204800u32)
+    }
+
+    fn current_time_weight_settings(env: &Env) -> (bool, u32) {
+        (
+            Self::time_weight_enabled(env.clone()),
+            Self::time_weight_scale(env.clone()),
+        )
+    }
+
+    fn record_time_weight_settings(env: &Env, enabled: bool, scale: u32) {
+        let mut checkpoints: soroban_sdk::Vec<TimeWeightCheckpoint> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TimeWeightCheckpoints)
+            .unwrap_or(soroban_sdk::Vec::new(env));
+        let current_ledger = env.ledger().sequence();
+        let checkpoint = TimeWeightCheckpoint {
+            ledger: current_ledger,
+            enabled,
+            scale,
+        };
+
+        if !checkpoints.is_empty() && checkpoints.last().unwrap().ledger == current_ledger {
+            let last_idx = checkpoints.len() - 1;
+            checkpoints.set(last_idx, checkpoint);
+        } else {
+            checkpoints.push_back(checkpoint);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::TimeWeightCheckpoints, &checkpoints);
+    }
+
+    fn time_weight_settings_at(env: &Env, ledger: u32) -> (bool, u32) {
+        let checkpoints: soroban_sdk::Vec<TimeWeightCheckpoint> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TimeWeightCheckpoints)
+            .unwrap_or(soroban_sdk::Vec::new(env));
+        if checkpoints.is_empty() {
+            return (false, 4204800);
+        }
+
+        let mut low = 0u32;
+        let mut high = checkpoints.len();
+        while low < high {
+            let mid = low + (high - low) / 2;
+            if checkpoints.get(mid).unwrap().ledger <= ledger {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        if low == 0 {
+            return (false, 4204800);
+        }
+        let checkpoint = checkpoints.get(low - 1).unwrap();
+        (checkpoint.enabled, checkpoint.scale)
     }
 
     /// Prune total supply checkpoints older than cutoff_ledger.
@@ -1222,6 +1326,55 @@ mod tests {
         let client = TokenVotesContractClient::new(env, &contract_id);
         client.initialize(admin, &token_addr);
         (contract_id, token_addr)
+    }
+
+    #[test]
+    fn test_initialize_already_initialized_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let (contract_id, token_addr) = setup(&env, &admin);
+        let client = TokenVotesContractClient::new(&env, &contract_id);
+
+        let err = client
+            .try_initialize(&admin, &token_addr)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, TokenVotesError::AlreadyInitialized.into());
+    }
+
+    #[test]
+    fn test_zero_time_weight_scale_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let (contract_id, _) = setup(&env, &admin);
+        let client = TokenVotesContractClient::new(&env, &contract_id);
+
+        let err = client.try_set_time_weight_scale(&0).unwrap_err().unwrap();
+        assert_eq!(err, TokenVotesError::InvalidTimeWeightScale.into());
+    }
+
+    #[test]
+    fn test_historical_votes_use_snapshot_time_weight_settings() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let delegator = Address::generate(&env);
+        let (contract_id, token_addr) = setup(&env, &admin);
+        let client = TokenVotesContractClient::new(&env, &contract_id);
+        token::StellarAssetClient::new(&env, &token_addr).mint(&delegator, &1000);
+
+        env.ledger().with_mut(|l| l.sequence_number = 5);
+        client.set_time_weight_enabled(&true);
+        env.ledger().with_mut(|l| l.sequence_number = 10);
+        client.delegate(&delegator, &delegator);
+        env.ledger().with_mut(|l| l.sequence_number = 15);
+        let snapshot_votes = client.get_past_votes(&delegator, &15);
+
+        env.ledger().with_mut(|l| l.sequence_number = 20);
+        client.set_time_weight_scale(&1);
+        assert_eq!(client.get_past_votes(&delegator, &15), snapshot_votes);
     }
 
     #[test]
@@ -1521,9 +1674,8 @@ mod tests {
             l.sequence_number = 10;
         });
         sac_client.mint(&user1, &500i128);
-        // We must call checkpoint or delegate to update the voting power log.
-        // In a real scenario, the token contract would call this.
-        client.checkpoint(&user1, &1500i128);
+        // Re-delegation refreshes the checkpoint from the current token balance.
+        client.delegate(&user1, &user1);
         assert_eq!(client.get_votes(&user1), 1500);
         assert_eq!(client.get_past_votes(&user1, &10), 1500);
 
@@ -1531,7 +1683,8 @@ mod tests {
         env.ledger().with_mut(|l| {
             l.sequence_number = 20;
         });
-        client.checkpoint(&user1, &1300i128);
+        token::TokenClient::new(&env, &token_addr).transfer(&user1, &admin, &200i128);
+        client.delegate(&user1, &user1);
         assert_eq!(client.get_votes(&user1), 1300);
         assert_eq!(client.get_past_votes(&user1, &20), 1300);
 
@@ -2232,6 +2385,29 @@ mod tests {
 
         let empty: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
         client.delegate_batch(&delegator, &empty);
+    }
+
+    #[test]
+    fn test_instance_ttl_extended() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let (contract_id, token_addr) = setup(&env, &admin);
+        let client = TokenVotesContractClient::new(&env, &contract_id);
+
+        // Advance ledger past default instance TTL
+        env.ledger().with_mut(|l| {
+            l.sequence_number += 10_000;
+        });
+
+        // Contract still answers queries and state changes
+        assert_eq!(client.token(), token_addr);
+        assert_eq!(client.admin(), admin);
+
+        let delegator = Address::generate(&env);
+        let delegatee = Address::generate(&env);
+        client.delegate(&delegator, &delegatee);
+        assert_eq!(client.delegates(&delegator), Some(delegatee));
     }
 }
 

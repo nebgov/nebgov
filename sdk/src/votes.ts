@@ -942,6 +942,13 @@ export class VotesClient {
    * Set the time-weighting scale (admin only).
    */
   async setTimeWeightScale(signer: Keypair, scale: number): Promise<void> {
+    if (!Number.isInteger(scale) || scale <= 0 || scale > 0xffffffff) {
+      throw new VotesError(
+        VotesErrorCode.InvalidTimeWeightScale,
+        "Time-weighting scale must be a positive u32",
+      );
+    }
+
     const account = await this.server.getAccount(signer.publicKey());
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,

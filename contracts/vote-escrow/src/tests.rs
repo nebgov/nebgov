@@ -1402,3 +1402,24 @@ fn test_update_escrow_config_config_unchanged_after_invalid_call() {
         assert_eq!(stored_mul, MAX_MULTIPLIER_BPS, "MaxMultiplierBps must be unchanged");
     });
 }
+
+#[test]
+fn test_instance_ttl_extended() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let contract_id = env.register(VoteEscrowContract, ());
+    let client = VoteEscrowContractClient::new(&env, &contract_id);
+
+    client.initialize(&admin, &token, &MIN_LOCK_DURATION, &MAX_LOCK_DURATION, &MAX_MULTIPLIER_BPS);
+
+    // Advance ledger past default instance TTL
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    // Contract still answers view functions
+    assert_eq!(client.token(), token);
+    assert_eq!(client.get_admin(), admin);
+}

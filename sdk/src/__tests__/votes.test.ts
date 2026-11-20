@@ -120,6 +120,18 @@ describe("VotesClient", () => {
     });
   });
 
+  describe("setTimeWeightScale()", () => {
+    it("rejects zero before submitting a transaction", async () => {
+      await expect(
+        client.setTimeWeightScale(mockKeypair, 0),
+      ).rejects.toMatchObject({
+        code: VotesErrorCode.InvalidTimeWeightScale,
+      });
+      expect(mockGetAccount).not.toHaveBeenCalled();
+      expect(mockSendTransaction).not.toHaveBeenCalled();
+    });
+  });
+
   describe("transferAndDelegate()", () => {
     const toAddr = "GBTESTRECIPIENTADDRESSEXAMPLEFORUNITTESTSTESTING";
     const delegateeAddr = "GBTESTDELEGATEEADDRESSEXAMPLEFORUNITTESTSTESTING";

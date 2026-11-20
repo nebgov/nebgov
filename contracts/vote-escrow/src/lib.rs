@@ -54,6 +54,14 @@ pub const MAX_LOCK_HISTORY_ENTRIES: u32 = 32;
 /// real governance deployment while keeping downstream boost arithmetic safely
 /// inside `i128` for any plausible lock amount.
 pub const MAX_MULTIPLIER_BPS_CEILING: u32 = 200_000;
+pub const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
 
 #[contract]
 pub struct VoteEscrowContract;
@@ -68,6 +76,7 @@ impl VoteEscrowContract {
         max_lock_duration: u32,
         max_multiplier_bps: u32,
     ) {
+        extend_instance_ttl(&env);
         admin.require_auth();
 
         if env.storage().instance().has(&DataKey::Admin) {
@@ -97,6 +106,7 @@ impl VoteEscrowContract {
     }
 
     pub fn create_lock(env: Env, owner: Address, amount: i128, duration_ledgers: u32) -> Lock {
+        extend_instance_ttl(&env);
         owner.require_auth();
 
         let min_duration: u32 = env
@@ -187,6 +197,7 @@ impl VoteEscrowContract {
     }
 
     pub fn increase_lock_amount(env: Env, owner: Address, additional_amount: i128) -> Lock {
+        extend_instance_ttl(&env);
         owner.require_auth();
 
         if additional_amount <= 0 {
@@ -293,6 +304,7 @@ impl VoteEscrowContract {
     }
 
     pub fn extend_lock(env: Env, owner: Address, new_end_ledger: u32) -> Lock {
+        extend_instance_ttl(&env);
         owner.require_auth();
 
         let mut lock: Lock = env
@@ -352,6 +364,7 @@ impl VoteEscrowContract {
     }
 
     pub fn withdraw(env: Env, owner: Address) -> i128 {
+        extend_instance_ttl(&env);
         owner.require_auth();
 
         let mut lock: Lock = env
@@ -409,6 +422,7 @@ impl VoteEscrowContract {
     }
 
     pub fn get_votes(env: Env, account: Address) -> i128 {
+        extend_instance_ttl(&env);
         let lock_opt: Option<Lock> = env
             .storage()
             .persistent()
@@ -427,6 +441,7 @@ impl VoteEscrowContract {
     }
 
     pub fn get_past_votes(env: Env, account: Address, ledger: u32) -> i128 {
+        extend_instance_ttl(&env);
         let lock_opt: Option<Lock> = env
             .storage()
             .persistent()
@@ -457,10 +472,12 @@ impl VoteEscrowContract {
     }
 
     pub fn get_past_total_supply(env: Env, ledger: u32) -> i128 {
+        extend_instance_ttl(&env);
         Self::binary_search_checkpoint(&env, ledger)
     }
 
     pub fn token(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::LockedToken)
@@ -468,6 +485,7 @@ impl VoteEscrowContract {
     }
 
     pub fn get_total_locked(env: Env) -> i128 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::TotalLocked)
@@ -475,6 +493,7 @@ impl VoteEscrowContract {
     }
 
     pub fn get_admin(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -482,12 +501,14 @@ impl VoteEscrowContract {
     }
 
     pub fn get_lock(env: Env, owner: Address) -> Option<Lock> {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Lock(owner))
     }
 
     pub fn get_lock_history(env: Env, owner: Address, offset: u32, limit: u32) -> Vec<Lock> {
+        extend_instance_ttl(&env);
         let retained = Self::retained_history_len(&env, &owner);
         let mut result = Vec::new(&env);
 
@@ -511,6 +532,7 @@ impl VoteEscrowContract {
         max_lock_duration: u32,
         max_multiplier_bps: u32,
     ) {
+        extend_instance_ttl(&env);
         admin.require_auth();
 
         // Verify the caller is the stored admin, not just any authenticated address.

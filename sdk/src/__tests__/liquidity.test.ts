@@ -138,6 +138,21 @@ describe("LiquidityClient", () => {
     });
   });
 
+  describe("getAmountOut()", () => {
+    it("invokes get_amount_out and returns amountOut and fee", async () => {
+      mockSimulateTransaction.mockResolvedValueOnce({
+        result: { retval: {} },
+      });
+      mockScValToNative.mockReturnValueOnce([950n, 50n]);
+
+      const quote = await client.getAmountOut(0, 1, 1000n);
+      expect(quote).toEqual({ amountOut: 950n, fee: 50n });
+      expect(mockNativeToScVal).toHaveBeenCalledWith(0, { type: "u32" });
+      expect(mockNativeToScVal).toHaveBeenCalledWith(1, { type: "u32" });
+      expect(mockNativeToScVal).toHaveBeenCalledWith(1000n, { type: "i128" });
+    });
+  });
+
   describe("getPrice()", () => {
     it("returns the scaled reserve ratio", async () => {
       mockScValToNative.mockReturnValue(20000n);

@@ -339,4 +339,130 @@ export class SignalingClient {
       };
     });
   }
+  /**
+   * Rotate the admin of the signal-anchor contract.
+   *
+   * @param admin Keypair of the current admin.
+   * @param newAdmin Address of the new admin.
+   * @returns The transaction hash.
+   */
+  async setAdmin(admin: Keypair, newAdmin: string): Promise<string> {
+    if (!this.config.signalAnchorAddress) {
+      throw new SignalingError(
+        SignalingErrorCode.SimulationFailed,
+        "SignalingClient.setAdmin requires config.signalAnchorAddress to be set",
+      );
+    }
+    const contract = new Contract(this.config.signalAnchorAddress);
+    return this.retry(async () => {
+      const sourceAccount = await this.server.getAccount(admin.publicKey());
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          contract.call(
+            "set_admin",
+            nativeToScVal(admin.publicKey(), { type: "address" }),
+            nativeToScVal(newAdmin, { type: "address" }),
+          ),
+        )
+        .setTimeout(30)
+        .build();
+
+      tx.sign(admin);
+      const res = await this.server.sendTransaction(tx);
+      if (res.status === "ERROR") {
+        throw new SignalingError(
+          SignalingErrorCode.TransactionFailed,
+          `Failed to set admin: ${JSON.stringify(res.errorResultXdr)}`,
+        );
+      }
+      return res.hash;
+    });
+  }
+
+  /**
+   * Propose a new admin under the two-step rotation flow.
+   *
+   * @param admin Keypair of current admin.
+   * @param newAdmin Address of proposed admin.
+   * @returns The transaction hash.
+   */
+  async proposeAdmin(admin: Keypair, newAdmin: string): Promise<string> {
+    if (!this.config.signalAnchorAddress) {
+      throw new SignalingError(
+        SignalingErrorCode.SimulationFailed,
+        "SignalingClient.proposeAdmin requires config.signalAnchorAddress to be set",
+      );
+    }
+    const contract = new Contract(this.config.signalAnchorAddress);
+    return this.retry(async () => {
+      const sourceAccount = await this.server.getAccount(admin.publicKey());
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          contract.call(
+            "propose_admin",
+            nativeToScVal(admin.publicKey(), { type: "address" }),
+            nativeToScVal(newAdmin, { type: "address" }),
+          ),
+        )
+        .setTimeout(30)
+        .build();
+
+      tx.sign(admin);
+      const res = await this.server.sendTransaction(tx);
+      if (res.status === "ERROR") {
+        throw new SignalingError(
+          SignalingErrorCode.TransactionFailed,
+          `Failed to propose admin: ${JSON.stringify(res.errorResultXdr)}`,
+        );
+      }
+      return res.hash;
+    });
+  }
+
+  /**
+   * Accept the proposed admin role under the two-step rotation flow.
+   *
+   * @param newAdmin Keypair of the pending admin.
+   * @returns The transaction hash.
+   */
+  async acceptAdmin(newAdmin: Keypair): Promise<string> {
+    if (!this.config.signalAnchorAddress) {
+      throw new SignalingError(
+        SignalingErrorCode.SimulationFailed,
+        "SignalingClient.acceptAdmin requires config.signalAnchorAddress to be set",
+      );
+    }
+    const contract = new Contract(this.config.signalAnchorAddress);
+    return this.retry(async () => {
+      const sourceAccount = await this.server.getAccount(newAdmin.publicKey());
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          contract.call(
+            "accept_admin",
+            nativeToScVal(newAdmin.publicKey(), { type: "address" }),
+          ),
+        )
+        .setTimeout(30)
+        .build();
+
+      tx.sign(newAdmin);
+      const res = await this.server.sendTransaction(tx);
+      if (res.status === "ERROR") {
+        throw new SignalingError(
+          SignalingErrorCode.TransactionFailed,
+          `Failed to accept admin: ${JSON.stringify(res.errorResultXdr)}`,
+        );
+      }
+      return res.hash;
+    });
+  }
 }

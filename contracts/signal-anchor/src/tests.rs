@@ -110,3 +110,52 @@ fn anchor_result_extends_ttl_on_write_and_read() {
         env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
     assert_eq!(ttl_after_read, ANCHOR_TTL_LEDGERS);
 }
+
+#[test]
+fn set_admin_rotates_admin_successfully() {
+    let (env, client, admin, _contract_id) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.set_admin(&admin, &new_admin);
+    assert_eq!(client.admin(), new_admin);
+
+    // New admin can anchor results
+    let hash = BytesN::from_array(&env, &[5u8; 32]);
+    client.anchor_result(&new_admin, &1, &hash);
+    assert_eq!(client.get_anchor(&1).unwrap().anchorer, new_admin);
+}
+
+#[test]
+#[should_panic]
+fn set_admin_panics_for_non_admin() {
+    let (env, client, _admin, _contract_id) = setup();
+    let stranger = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    client.set_admin(&stranger, &new_admin);
+}
+
+#[test]
+fn propose_and_accept_admin_two_step() {
+    let (env, client, admin, _contract_id) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin(&admin, &new_admin);
+    assert_eq!(client.admin(), admin);
+    assert_eq!(client.pending_admin(), Some(new_admin.clone()));
+
+    client.accept_admin(&new_admin);
+    assert_eq!(client.admin(), new_admin);
+    assert_eq!(client.pending_admin(), None);
+}
+
+#[test]
+#[should_panic]
+fn accept_admin_panics_for_non_pending() {
+    let (env, client, admin, _contract_id) = setup();
+    let new_admin = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    client.propose_admin(&admin, &new_admin);
+    client.accept_admin(&stranger);
+}

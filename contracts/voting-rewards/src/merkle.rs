@@ -9,7 +9,7 @@
 
 use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
 
-/// `sha256(claimant || epoch_id || amount)`.
+/// `sha256(0x00 || claimant || epoch_id || amount)`.
 ///
 /// Encoding, which `merkle.ts` reproduces byte-for-byte:
 /// - `claimant`: the XDR of its `ScVal::Address` (what `Address::to_xdr`
@@ -20,19 +20,19 @@ use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
 ///   `contracts/governor`'s commit-reveal preimage established.
 /// - `amount`: `i128` little-endian (16 bytes), two's complement.
 ///
-/// The leaf preimage is variable-length and structured, and internal nodes
-/// are always exactly 64 bytes of two concatenated digests, so a leaf can
-/// never be reinterpreted as an internal node — the usual second-preimage
-/// concern for Merkle drops does not apply here.
+/// A `0x00` leaf prefix and a `0x01` internal-node prefix provide explicit
+/// domain separation, even when a contract-address leaf preimage is exactly
+/// 64 bytes long.
 pub fn compute_leaf(env: &Env, claimant: &Address, epoch_id: u64, amount: i128) -> BytesN<32> {
     let mut preimage = Bytes::new(env);
+    preimage.append(&Bytes::from_array(env, &[0x00]));
     preimage.append(&claimant.clone().to_xdr(env));
     preimage.append(&Bytes::from_array(env, &epoch_id.to_le_bytes()));
     preimage.append(&Bytes::from_array(env, &amount.to_le_bytes()));
     env.crypto().sha256(&preimage).into()
 }
 
-/// Hash an internal node as `sha256(min(a, b) || max(a, b))`.
+/// Hash an internal node as `sha256(0x01 || min(a, b) || max(a, b))`.
 ///
 /// Sorting the pair makes a proof position-independent, which is why
 /// `claim`'s `proof` is a bare `Vec<BytesN<32>>` with no direction flags —
@@ -44,6 +44,7 @@ pub(crate) fn hash_pair(env: &Env, a: &BytesN<32>, b: &BytesN<32>) -> BytesN<32>
         (b, a)
     };
     let mut buf = Bytes::new(env);
+    buf.append(&Bytes::from_array(env, &[0x01]));
     buf.append(&Bytes::from_array(env, &first.to_array()));
     buf.append(&Bytes::from_array(env, &second.to_array()));
     env.crypto().sha256(&buf).into()

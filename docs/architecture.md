@@ -199,7 +199,7 @@ unbounded per-epoch voter list is stored:
   the current epoch has ended
 - `fund_pool` adds reward tokens; `get_available_pool` is the balance not yet allocated to a published epoch
 - `sweep_epoch` (admin) returns an epoch's unclaimed rewards to the available pool
-- `set_admin` and `update_epoch_duration` (admin) rotate the admin and change the duration of future epochs
+- `propose_admin` / `accept_admin` (two-step admin rotation) and `update_epoch_duration` (admin) change authority and the duration of future epochs
 
 **Depends on:** only the reward token (a SEP-41 token contract). Its admin should be set to the governor, so it must
 be deployed and initialized after the governor (`scripts/deploy-testnet.sh` does this).

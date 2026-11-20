@@ -32,16 +32,20 @@ Instead of computing eligibility on-chain, voting rewards uses a Merkle tree app
 
 This approach keeps the voting-rewards contract small and avoids expensive on-chain iteration over unbounded voter lists.
 
+Leaves are hashed as `sha256(0x00 || claimant_xdr || epoch_id_le || amount_le)` and internal nodes as `sha256(0x01 || min(child_a, child_b) || max(child_a, child_b))`. This domain-separated encoding replaces the original scheme. Coordinate the contract and backend rollout at an epoch boundary, and do not upgrade while any rewards published with the old encoding still have outstanding claims: those existing roots cannot verify against the new leaf encoding. Resolve them by allowing claims to complete or sweeping the remaining allocation before activation.
+
 ## Core Concepts
 
 ### Admin Authority
 
 The `Admin` is authorized to:
 - Publish epoch roots with reward allocations
-- Rotate the admin address (future operations require explicit `set_admin` call)
+- Propose a new admin address; the current admin remains active until the proposal is accepted
 - Update epoch duration (applies to next epoch onward)
 
 The admin address is typically the governor contract itself, making root publication a governance action.
+
+Admin rotation is a two-step transfer: the current admin calls `propose_admin(admin, new_admin)`, then the proposed address calls `accept_admin(new_admin)` with its own authorization. Until acceptance, `get_admin` continues to return the current admin and publishing authorization is unchanged. `get_pending_admin` reports the proposed address, if any. A subsequent proposal replaces the pending address.
 
 ### Reward Pool
 
@@ -130,7 +134,7 @@ Claim voting rewards for an epoch using a Merkle proof.
 **Requirements:**
 - Epoch must be finalized
 - Claimant must not have claimed from this epoch before
-- Proof must be valid (proves membership of `sha256(claimant || epoch_id || amount)` in the epoch's tree)
+- Proof must be valid (proves membership of `sha256(0x00 || claimant_xdr || epoch_id_le || amount_le)` in the epoch's tree)
 - `new_claimed_amount` must not exceed `epoch.total_reward_amount`
 
 **Effect:**
@@ -160,6 +164,12 @@ Get the current admin address. Useful for off-chain code determining whether it 
 
 ---
 
+#### `get_pending_admin(env: Env) -> Option<Address>`
+
+Get the proposed admin address during a two-step admin transfer, or `None` when no transfer is pending.
+
+---
+
 #### `get_available_pool(env: Env) -> i128`
 
 Get the amount of unallocated rewards currently available for new epochs.
@@ -180,6 +190,8 @@ All state changes emit events for indexing and monitoring:
 - **EpochRootPublished**: A root is published with reward allocation
 - **RewardClaimed**: A claimant receives their reward
 - **PoolFunded**: Reward tokens are transferred in
+- **AdminProposed**: The current admin proposes a new admin
+- **AdminAccepted**: The proposed admin accepts the transfer
 
 ## Deployment and Configuration
 
@@ -199,7 +211,7 @@ All state changes emit events for indexing and monitoring:
 
 ### Admin Rotation
 
-If the governor is upgraded or redeployed, call `set_admin` to point the contract at the new governor address. This is typically a governance action.
+If the governor is upgraded or redeployed, call `propose_admin` with the current admin and new governor address, then execute `accept_admin` as the new governor so it becomes active. This is typically carried out through governance. The new governor must be able to authorize the acceptance call.
 
 ## Technical Details
 

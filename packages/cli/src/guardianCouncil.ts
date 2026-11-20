@@ -102,6 +102,7 @@ export function registerGuardianCouncil(
   for (const [name, method] of [
     ["approve", "approveAction"],
     ["revoke", "revokeApproval"],
+    ["cancel", "cancelAction"],
     ["execute", "executeAction"],
   ] as const) {
     council.addCommand(

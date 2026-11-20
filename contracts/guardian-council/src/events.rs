@@ -7,6 +7,7 @@ pub const ACTION_EXECUTED_TOPIC: &str = "ActionExecuted";
 pub const MEMBERSHIP_ROTATED_TOPIC: &str = "MembershipRotated";
 pub const THRESHOLD_UPDATED_TOPIC: &str = "ThresholdUpdated";
 pub const ACTION_TTL_UPDATED_TOPIC: &str = "ActionTtlUpdated";
+pub const ACTION_CANCELLED_TOPIC: &str = "ActionCancelled";
 
 /// `action` is emitted as its debug-ish discriminant symbol so the indexer can
 /// group without decoding the whole `GuardianAction` from XDR.
@@ -32,8 +33,13 @@ pub fn emit_approval_revoked(env: &Env, action_id: u64, member: &Address) {
 }
 
 pub fn emit_action_executed(env: &Env, action_id: u64) {
+    env.events()
+        .publish((Symbol::new(env, ACTION_EXECUTED_TOPIC),), action_id);
+}
+
+pub fn emit_action_cancelled(env: &Env, action_id: u64, member: &Address) {
     env.events().publish(
-        (Symbol::new(env, ACTION_EXECUTED_TOPIC),),
+        (Symbol::new(env, ACTION_CANCELLED_TOPIC), member.clone()),
         action_id,
     );
 }

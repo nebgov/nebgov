@@ -12,6 +12,7 @@ use events::emit_governor_deployed;
 
 const DEPLOYED_CONTRACT_COUNT: i128 = 3;
 const MIN_CONTRACT_RESERVE_STROOPS: i128 = 5_000_000;
+const GOVERNOR_TTL_LEDGERS: u32 = 3_110_400;
 
 /// Error codes returned by the governor factory.
 #[contracterror]
@@ -55,7 +56,6 @@ pub enum DataKey {
     TokenVotesWasm,
     Admin,
     NativeToken,
-    GovernorList,
 }
 
 #[contractclient(name = "TokenVotesClient")]
@@ -126,9 +126,35 @@ impl GovernorFactoryContract {
             .instance()
             .set(&DataKey::TokenVotesWasm, &token_votes_wasm);
         env.storage().instance().set(&DataKey::GovernorCount, &0u64);
+    }
+
+    /// Update WASM hashes for deployed contracts. Allows upgrading to fixed/newer versions.
+    pub fn update_wasm_hashes(
+        env: Env,
+        admin: Address,
+        governor_wasm: BytesN<32>,
+        timelock_wasm: BytesN<32>,
+        token_votes_wasm: BytesN<32>,
+    ) {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::NotInitialized));
+        if admin != stored_admin {
+            panic!("not admin");
+        }
+
         env.storage()
             .instance()
-            .set(&DataKey::GovernorList, &Vec::<u64>::new(&env));
+            .set(&DataKey::GovernorWasm, &governor_wasm);
+        env.storage()
+            .instance()
+            .set(&DataKey::TimelockWasm, &timelock_wasm);
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenVotesWasm, &token_votes_wasm);
     }
 
     /// Configure the network native asset token contract used for deployer
@@ -333,20 +359,12 @@ impl GovernorFactoryContract {
             deployer: deployer.clone(),
         };
 
+        let key = DataKey::Governor(id);
+        env.storage().persistent().set(&key, &entry);
         env.storage()
             .persistent()
-            .set(&DataKey::Governor(id), &entry);
+            .extend_ttl(&key, GOVERNOR_TTL_LEDGERS, GOVERNOR_TTL_LEDGERS);
         env.storage().instance().set(&DataKey::GovernorCount, &id);
-
-        let mut list: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::GovernorList)
-            .unwrap_or(Vec::<u64>::new(&env));
-        list.push_back(id);
-        env.storage()
-            .instance()
-            .set(&DataKey::GovernorList, &list);
 
         emit_governor_deployed(
             &env,
@@ -362,30 +380,33 @@ impl GovernorFactoryContract {
 
     /// Get a registered governor by ID.
     pub fn get_governor(env: Env, id: u64) -> GovernorEntry {
+        let key = DataKey::Governor(id);
+        let entry = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| env.panic_with_error(FactoryError::GovernorNotFound));
         env.storage()
             .persistent()
-            .get(&DataKey::Governor(id))
-            .unwrap_or_else(|| env.panic_with_error(FactoryError::GovernorNotFound))
+            .extend_ttl(&key, GOVERNOR_TTL_LEDGERS, GOVERNOR_TTL_LEDGERS);
+        entry
     }
 
     /// Get a paginated list of all registered governors.
     pub fn get_all_governors(env: Env, offset: u32, limit: u32) -> Vec<GovernorEntry> {
-        let list: Vec<u64> = env
+        let count: u64 = env
             .storage()
             .instance()
-            .get(&DataKey::GovernorList)
-            .unwrap_or(Vec::<u64>::new(&env));
-        let len = list.len();
-        let start = offset.min(len);
-        let end = offset.saturating_add(limit).min(len);
+            .get(&DataKey::GovernorCount)
+            .unwrap_or(0);
+        let start = u64::from(offset);
+        let end = u64::from(offset.saturating_add(limit)).min(count);
         let mut entries = Vec::new(&env);
-        let mut i = start;
-        while i < end {
-            // `i < end <= len`, so the index is always in bounds.
-            let id = list.get(i).unwrap();
+        let mut id = start.saturating_add(1);
+        while id <= end {
             let entry = Self::get_governor(env.clone(), id);
             entries.push_back(entry);
-            i += 1;
+            id += 1;
         }
         entries
     }

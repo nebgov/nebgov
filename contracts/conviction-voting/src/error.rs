@@ -15,4 +15,5 @@ pub enum ConvictionVotingError {
     Unauthorized = 9,
     ArithmeticOverflow = 10,
     InvalidCalldata = 11,
+    InvalidFundingAction = 12,
 }

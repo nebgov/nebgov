@@ -7,12 +7,8 @@
 # Usage:
 #   ./scripts/upgrade-contract.sh <contract-name>
 #
-#   contract-name is the Cargo package name, e.g.:
-#     sorogov_governor | sorogov_timelock | sorogov_token_votes
-#     sorogov_treasury | sorogov_governor_factory
-#     sorogov_proposal_bonds | sorogov_optimistic_governor
-#     sorogov_conviction_voting | sorogov_treasury_strategies
-#     sorogov_signal_anchor | sorogov_vote_escrow | sorogov_voting_rewards
+#   Supported contract-name values:
+#     sorogov_governor | sorogov_timelock | sorogov_treasury
 #
 # Required env vars (or set in .env.testnet):
 #   GOVERNOR_ADDRESS   — deployed governor contract address
@@ -51,18 +47,6 @@ fail()  { printf '%b[error]%b %s\n' "$RED" "$NC" "$*" >&2; exit 1; }
 CONTRACT_NAME="${1:-}"
 [[ -n "$CONTRACT_NAME" ]] || fail "Usage: $0 <contract-name>  (e.g. sorogov_governor)"
 
-# Governance proposals target the contract being upgraded, not the governor itself.
-# Each supported contract adds a deployed-address environment variable here.
-case "$CONTRACT_NAME" in
-  sorogov_token_votes)
-    TARGET_ADDRESS="${TOKEN_VOTES_ADDRESS:-}"
-    [[ -n "$TARGET_ADDRESS" ]] || fail "TOKEN_VOTES_ADDRESS is not set. Run deploy-testnet.sh first or set it in $ENV_FILE."
-    ;;
-  *)
-    TARGET_ADDRESS="$GOVERNOR_ADDRESS"
-    ;;
-esac
-
 # ---- Load env ---------------------------------------------------
 if [[ -f "$ENV_FILE" ]]; then
   info "Loading env from $ENV_FILE"
@@ -81,6 +65,24 @@ NETWORK="${STELLAR_NETWORK:-testnet}"
 
 GOVERNOR_ADDRESS="${GOVERNOR_ADDRESS:-}"
 [[ -n "$GOVERNOR_ADDRESS" ]] || fail "GOVERNOR_ADDRESS is not set. Run deploy-testnet.sh first or set it in $ENV_FILE."
+
+# Governance proposals target the contract being upgraded, not the governor itself.
+case "$CONTRACT_NAME" in
+  sorogov_governor)
+    TARGET_ADDRESS="$GOVERNOR_ADDRESS"
+    ;;
+  sorogov_timelock)
+    TARGET_ADDRESS="${TIMELOCK_ADDRESS:-}"
+    [[ -n "$TARGET_ADDRESS" ]] || fail "TIMELOCK_ADDRESS is not set. Run deploy-testnet.sh first or set it in $ENV_FILE."
+    ;;
+  sorogov_treasury)
+    TARGET_ADDRESS="${TREASURY_ADDRESS:-}"
+    [[ -n "$TARGET_ADDRESS" ]] || fail "TREASURY_ADDRESS is not set. Run deploy-testnet.sh first or set it in $ENV_FILE."
+    ;;
+  *)
+    fail "Unsupported upgrade target '$CONTRACT_NAME'. Supported targets: sorogov_governor, sorogov_timelock, sorogov_treasury."
+    ;;
+esac
 
 DEPLOYER_ADDR="${DEPLOYER_ADDR:-$(stellar keys address "$IDENTITY")}"
 [[ -n "$DEPLOYER_ADDR" ]] || fail "Cannot resolve deployer address for identity '$IDENTITY'."

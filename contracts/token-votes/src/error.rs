@@ -35,4 +35,6 @@ pub enum TokenVotesError {
     WeightBpsOverflow = 24,
     TokenNotSet = 25,
     FutureLedger = 26,
+    AlreadyInitialized = 27,
+    InvalidTimeWeightScale = 28,
 }

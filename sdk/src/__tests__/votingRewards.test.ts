@@ -1,4 +1,4 @@
-import { StrKey, xdr, scValToNative } from "@stellar/stellar-sdk";
+import { StrKey, xdr, scValToNative, nativeToScVal } from "@stellar/stellar-sdk";
 import { VotingRewardsClient } from "../votingRewards";
 import { VotingRewardsError, VotingRewardsErrorCode, parseVotingRewardsError } from "../errors";
 
@@ -146,6 +146,22 @@ describe("VotingRewardsClient", () => {
         .mockResolvedValue(xdr.ScVal.scvVoid());
 
       await expect(client.getEpoch(99n)).resolves.toBeNull();
+    });
+
+    describe("getPendingAdmin", () => {
+      it("returns the proposed address, or null when no transfer is pending", async () => {
+        const client = makeClient();
+        const simulate = jest.spyOn(
+          client as unknown as { simulate: (fnName: string) => Promise<xdr.ScVal | undefined> },
+          "simulate",
+        );
+
+        simulate.mockResolvedValue(nativeToScVal(governorAddress, { type: "address" }));
+        await expect(client.getPendingAdmin()).resolves.toBe(governorAddress);
+
+        simulate.mockResolvedValue(xdr.ScVal.scvVoid());
+        await expect(client.getPendingAdmin()).resolves.toBeNull();
+      });
     });
   });
 

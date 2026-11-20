@@ -105,6 +105,8 @@ export async function publishEpochRoot(
   epoch: StoredEpoch,
 ): Promise<PublishOutcome> {
   const root = epoch.merkleRoot ?? EMPTY_EPOCH_ROOT;
+  // getAdmin returns the effective, already-accepted admin. A pending
+  // transfer must not change the publishing route until accept_admin runs.
   const admin = await client.getAdmin();
   const relayer = getRelayerKeypair();
 

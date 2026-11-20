@@ -7,10 +7,12 @@ pub use error::ConvictionVotingError;
 
 use soroban_sdk::{
     contract, contractclient, contractimpl, contracttype, xdr::FromXdr, Address, Bytes, Env, Map,
-    Symbol, Val, Vec,
+    Symbol, TryIntoVal, Val, Vec,
 };
 
 const BPS: i128 = 10_000;
+
+const TTL_LEDGERS: u32 = 1_000_000;
 
 #[contractclient(name = "VotesClient")]
 pub trait VotesTrait {
@@ -56,6 +58,7 @@ pub enum DataKey {
     MaxRatioBps,
     MinThresholdConviction,
     WeightBps,
+    Treasury,
 }
 
 #[contract]
@@ -68,6 +71,7 @@ impl ConvictionVotingContract {
         env: Env,
         admin: Address,
         votes_token: Address,
+        treasury: Address,
         decay_bps: u32,
         max_ratio_bps: u32,
         min_threshold_conviction: i128,
@@ -90,6 +94,7 @@ impl ConvictionVotingContract {
         let storage = env.storage().instance();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::VotesToken, &votes_token);
+        storage.set(&DataKey::Treasury, &treasury);
         storage.set(&DataKey::NextProposalId, &1u64);
         storage.set(&DataKey::DecayBps, &decay_bps);
         storage.set(&DataKey::MaxRatioBps, &max_ratio_bps);
@@ -114,6 +119,7 @@ impl ConvictionVotingContract {
         if !calldata.is_empty() && Vec::<Val>::from_xdr(&env, &calldata).is_err() {
             env.panic_with_error(ConvictionVotingError::InvalidCalldata);
         }
+        Self::validate_funding_action(&env, &target, &fn_name, &calldata, requested_amount);
         let id: u64 = env
             .storage()
             .instance()
@@ -141,10 +147,19 @@ impl ConvictionVotingContract {
             .set(&DataKey::Proposal(id), &proposal);
         env.storage()
             .persistent()
+            .extend_ttl(&DataKey::Proposal(id), TTL_LEDGERS, TTL_LEDGERS);
+        env.storage()
+            .persistent()
             .set(&DataKey::StakesByProposal(id), &Map::<Address, i128>::new(&env));
         env.storage()
             .persistent()
+            .extend_ttl(&DataKey::StakesByProposal(id), TTL_LEDGERS, TTL_LEDGERS);
+        env.storage()
+            .persistent()
             .set(&DataKey::TotalStakedByProposal(id), &0i128);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::TotalStakedByProposal(id), TTL_LEDGERS, TTL_LEDGERS);
         env.storage()
             .instance()
             .set(&DataKey::NextProposalId, &next);
@@ -155,10 +170,12 @@ impl ConvictionVotingContract {
     /// Commit voting power, moving any existing stake to this proposal.
     ///
     /// This is non-custodial: no tokens are transferred or locked. `stake()`
-    /// only records a `StakeByStaker` pointer to `proposal_id`, which is
-    /// validated against the staker's live `get_votes()` balance on every
-    /// conviction update. The staker's tokens remain fully liquid and
-    /// transferable throughout — unlike e.g. `contracts/proposal-bonds` or
+    /// only records a `StakeByStaker` pointer to `proposal_id` with an amount.
+    /// The staked amount is validated against the staker's live `get_votes()`
+    /// balance on every conviction update: if the staker's voting power drops
+    /// below their stake, only their current voting power counts toward
+    /// conviction. The staker's tokens remain fully liquid and transferable
+    /// throughout — unlike e.g. `contracts/proposal-bonds` or
     /// `contracts/optimistic-governor`, where a bond/proposer stake is an
     /// actual escrowed token transfer.
     pub fn stake(env: Env, staker: Address, proposal_id: u64, amount: i128) {
@@ -193,6 +210,9 @@ impl ConvictionVotingContract {
         env.storage()
             .persistent()
             .set(&DataKey::StakesByProposal(proposal_id), &stakes);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::StakesByProposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
         let prev_total: i128 = env
             .storage()
             .persistent()
@@ -206,7 +226,13 @@ impl ConvictionVotingContract {
             .set(&DataKey::TotalStakedByProposal(proposal_id), &new_total);
         env.storage()
             .persistent()
+            .extend_ttl(&DataKey::TotalStakedByProposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
+        env.storage()
+            .persistent()
             .set(&DataKey::StakeByStaker(staker.clone()), &proposal_id);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::StakeByStaker(staker.clone()), TTL_LEDGERS, TTL_LEDGERS);
         events::emit_stake_updated(&env, &staker, proposal_id, amount);
     }
 
@@ -232,6 +258,9 @@ impl ConvictionVotingContract {
     /// Accumulate conviction and execute once the dynamic threshold is met.
     pub fn checkpoint_conviction(env: Env, proposal_id: u64) -> i128 {
         let proposal = Self::must_get_proposal(&env, proposal_id);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Proposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
         if proposal.executed || proposal.cancelled {
             return proposal.conviction;
         }
@@ -242,6 +271,9 @@ impl ConvictionVotingContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::Proposal(proposal_id), &proposal);
+            env.storage()
+                .persistent()
+                .extend_ttl(&DataKey::Proposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
             let args = if proposal.calldata.is_empty() {
                 Vec::<Val>::new(&env)
             } else {
@@ -343,12 +375,45 @@ impl ConvictionVotingContract {
         env.storage()
             .persistent()
             .set(&DataKey::Proposal(proposal_id), &proposal);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Proposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
         events::emit_proposal_cancelled(&env, proposal_id, &caller);
     }
 
     fn require_initialized(env: &Env) {
         if !env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(ConvictionVotingError::NotInitialized);
+        }
+    }
+
+    fn validate_funding_action(
+        env: &Env,
+        target: &Address,
+        fn_name: &Symbol,
+        calldata: &Bytes,
+        requested_amount: i128,
+    ) {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
+        if target != &treasury || fn_name != &Symbol::new(env, "transfer") {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
+        }
+        let args = Vec::<Val>::from_xdr(env, calldata)
+            .unwrap_or_else(|_| env.panic_with_error(ConvictionVotingError::InvalidCalldata));
+        if args.len() != 3 {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
+        }
+        let amount: i128 = args
+            .get(2)
+            .unwrap()
+            .try_into_val(env)
+            .unwrap_or_else(|_| env.panic_with_error(ConvictionVotingError::InvalidFundingAction));
+        if amount != requested_amount {
+            env.panic_with_error(ConvictionVotingError::InvalidFundingAction);
         }
     }
 
@@ -390,6 +455,9 @@ impl ConvictionVotingContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::StakesByProposal(proposal_id), &stakes);
+            env.storage()
+                .persistent()
+                .extend_ttl(&DataKey::StakesByProposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
             let prev_total: i128 = env
                 .storage()
                 .persistent()
@@ -402,6 +470,9 @@ impl ConvictionVotingContract {
                 &DataKey::TotalStakedByProposal(proposal_id),
                 &new_total,
             );
+            env.storage()
+                .persistent()
+                .extend_ttl(&DataKey::TotalStakedByProposal(proposal_id), TTL_LEDGERS, TTL_LEDGERS);
         }
         env.storage()
             .persistent()
@@ -413,6 +484,19 @@ impl ConvictionVotingContract {
             .persistent()
             .get(&DataKey::TotalStakedByProposal(proposal_id))
             .unwrap_or(0)
+    }
+
+    fn effective_total_staked(env: &Env, proposal_id: u64) -> i128 {
+        let stakes = Self::stakes(env, proposal_id);
+        let mut effective_total: i128 = 0;
+        for (staker, amount) in stakes.iter() {
+            let votes = Self::votes_client(env).get_votes(&staker);
+            let capped_amount = core::cmp::min(amount, votes);
+            effective_total = effective_total
+                .checked_add(capped_amount)
+                .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::ArithmeticOverflow));
+        }
+        effective_total
     }
 
     fn update_conviction(env: &Env, mut proposal: ConvictionProposal) -> ConvictionProposal {
@@ -432,7 +516,7 @@ impl ConvictionVotingContract {
             .get(&DataKey::WeightBps)
             .unwrap_or_else(|| env.panic_with_error(ConvictionVotingError::NotInitialized));
         let decay = Self::pow_bps(decay_bps as i128, elapsed);
-        let total = Self::total_staked(env, proposal.id);
+        let total = Self::effective_total_staked(env, proposal.id);
         let steady = total
             .checked_mul(weight_bps as i128)
             .and_then(|v| v.checked_div((BPS - decay_bps as i128).max(1)))
@@ -451,6 +535,9 @@ impl ConvictionVotingContract {
         env.storage()
             .persistent()
             .set(&DataKey::Proposal(proposal.id), &proposal);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Proposal(proposal.id), TTL_LEDGERS, TTL_LEDGERS);
         events::emit_conviction_updated(env, proposal.id, proposal.conviction);
         proposal
     }

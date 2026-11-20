@@ -80,6 +80,15 @@ const MAX_CALLDATA_COUNT: u32 = 10;
 #[contract]
 pub struct CoSponsorshipContract;
 
+pub const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
+
 #[contractimpl]
 impl CoSponsorshipContract {
     pub fn initialize(
@@ -90,6 +99,7 @@ impl CoSponsorshipContract {
         draft_expiry_ledgers: u32,
         max_co_sponsors: u32,
     ) {
+        extend_instance_ttl(&env);
         admin.require_auth();
         if env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(CoSponsorshipError::AlreadyInitialized);
@@ -183,6 +193,7 @@ impl CoSponsorshipContract {
         fn_names: Vec<Symbol>,
         calldatas: Vec<Bytes>,
     ) -> u64 {
+        extend_instance_ttl(&env);
         creator.require_auth();
 
         if !(targets.len() == fn_names.len() && targets.len() == calldatas.len()) {
@@ -277,6 +288,7 @@ impl CoSponsorshipContract {
     /// may co-sponsor a given draft at most once; call
     /// `withdraw_co_sponsorship` first to change a pledge.
     pub fn co_sponsor(env: Env, sponsor: Address, draft_id: u64) {
+        extend_instance_ttl(&env);
         sponsor.require_auth();
 
         let mut draft = Self::must_get_draft(&env, draft_id);
@@ -330,6 +342,7 @@ impl CoSponsorshipContract {
     /// Remove a previously pledged co-sponsorship, subtracting its power
     /// from the draft's total.
     pub fn withdraw_co_sponsorship(env: Env, sponsor: Address, draft_id: u64) {
+        extend_instance_ttl(&env);
         sponsor.require_auth();
 
         let mut draft = Self::must_get_draft(&env, draft_id);
@@ -376,6 +389,7 @@ impl CoSponsorshipContract {
     /// co-sponsor power meets the governor's current `proposal_threshold`.
     /// Only callable by the draft's creator.
     pub fn finalize_draft(env: Env, caller: Address, draft_id: u64) -> u64 {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         let mut draft = Self::must_get_draft(&env, draft_id);
@@ -463,6 +477,7 @@ impl CoSponsorshipContract {
     /// Cancel a draft. Only callable by the draft's creator or this
     /// contract's admin.
     pub fn cancel_draft(env: Env, caller: Address, draft_id: u64) {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         let mut draft = Self::must_get_draft(&env, draft_id);
@@ -487,6 +502,7 @@ impl CoSponsorshipContract {
 
     /// Get a draft by id.
     pub fn get_draft(env: Env, draft_id: u64) -> ProposalDraft {
+        extend_instance_ttl(&env);
         let draft = Self::must_get_draft(&env, draft_id);
         Self::emit_draft_expired_if_needed(&env, &draft);
         draft
@@ -500,6 +516,7 @@ impl CoSponsorshipContract {
     /// indexer-backed query instead (see `proposals_count_by_state` in the
     /// governor contract for the equivalent trade-off already made there).
     pub fn get_active_drafts(env: Env, offset: u64, limit: u64) -> Vec<ProposalDraft> {
+        extend_instance_ttl(&env);
         let draft_list: Vec<u64> = env
             .storage()
             .persistent()
@@ -531,6 +548,7 @@ impl CoSponsorshipContract {
 
     /// Get the voting power a specific address has pledged to a draft.
     pub fn get_co_sponsor_power(env: Env, draft_id: u64, sponsor: Address) -> i128 {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::DraftCoSponsor(draft_id, sponsor))
@@ -540,6 +558,7 @@ impl CoSponsorshipContract {
     /// Check whether a draft's accumulated co-sponsor power meets the
     /// governor's current proposal threshold.
     pub fn draft_threshold_met(env: Env, draft_id: u64) -> bool {
+        extend_instance_ttl(&env);
         let draft = Self::must_get_draft(&env, draft_id);
         let governor: Address = env
             .storage()
@@ -563,6 +582,7 @@ impl CoSponsorshipContract {
     }
 
     pub fn set_governor(env: Env, governor: Address) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -573,6 +593,7 @@ impl CoSponsorshipContract {
     }
 
     pub fn set_votes_token(env: Env, votes_token: Address) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -585,6 +606,7 @@ impl CoSponsorshipContract {
     }
 
     pub fn set_draft_expiry_ledgers(env: Env, draft_expiry_ledgers: u32) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -597,6 +619,7 @@ impl CoSponsorshipContract {
     }
 
     pub fn set_max_co_sponsors(env: Env, max_co_sponsors: u32) {
+        extend_instance_ttl(&env);
         let admin: Address = env
             .storage()
             .instance()

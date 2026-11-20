@@ -146,6 +146,32 @@ export class LiquidityClient {
   }
 
   /**
+   * Preview swap quote for swapping `amountIn` of `outcomeIn` to `outcomeOut`.
+   * Calls the on-chain `get_amount_out` read function.
+   *
+   * @param outcomeIn ID of input outcome token.
+   * @param outcomeOut ID of output outcome token.
+   * @param amountIn Amount of input token in stroops.
+   * @returns Object containing `amountOut` (net amount after fee) and `fee`.
+   */
+  async getAmountOut(
+    outcomeIn: number,
+    outcomeOut: number,
+    amountIn: bigint,
+  ): Promise<{ amountOut: bigint; fee: bigint }> {
+    const value = await this.readNative("get_amount_out", [
+      nativeToScVal(outcomeIn, { type: "u32" }),
+      nativeToScVal(outcomeOut, { type: "u32" }),
+      nativeToScVal(amountIn, { type: "i128" }),
+    ]);
+    const tuple = value as [bigint | number | string, bigint | number | string];
+    return {
+      amountOut: BigInt(tuple[0]),
+      fee: BigInt(tuple[1]),
+    };
+  }
+
+  /**
    * Deposit `amountA` and `amountB` into a pool and receive LP tokens. The
    * amounts map to `outcomeA` and `outcomeB` respectively.
    *

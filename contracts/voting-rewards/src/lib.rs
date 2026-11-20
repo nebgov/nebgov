@@ -41,6 +41,7 @@ pub enum DataKey {
     /// the governor's own address, so publishing a root is itself a
     /// governance-executed action rather than a trusted operator key.
     Admin,
+    PendingAdmin,
     RewardToken,
     /// Rewards that have been allocated to a published epoch and not yet
     /// claimed. The spendable pool is `token.balance(self) - RewardsPool`,
@@ -195,7 +196,7 @@ impl VotingRewardsContract {
     }
 
     /// Claim `amount` for `claimant` from a published epoch, proving
-    /// membership of `sha256(claimant || epoch_id || amount)` in that
+    /// membership of `sha256(0x00 || claimant || epoch_id || amount)` in that
     /// epoch's Merkle tree.
     pub fn claim(
         env: Env,
@@ -385,11 +386,9 @@ impl VotingRewardsContract {
         Self::available_pool(&env)
     }
 
-    /// Set a new admin address. Admin-only.
-    ///
-    /// The new admin takes effect immediately for all subsequent operations
-    /// (publishing roots, rotating admin again, updating epoch duration).
-    pub fn set_admin(env: Env, admin: Address, new_admin: Address) {
+    /// Propose a new admin address. The current admin remains active until
+    /// the proposed address accepts the transfer.
+    pub fn propose_admin(env: Env, admin: Address, new_admin: Address) {
         admin.require_auth();
         let stored_admin: Address = env
             .storage()
@@ -400,8 +399,32 @@ impl VotingRewardsContract {
             env.panic_with_error(VotingRewardsError::NotAuthorized);
         }
 
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        events::emit_admin_proposed(&env, &new_admin);
+    }
+
+    /// Return the proposed next admin, if a transfer is in progress.
+    pub fn get_pending_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::PendingAdmin)
+    }
+
+    /// Accept an admin transfer. Only the proposed address can complete it.
+    pub fn accept_admin(env: Env, new_admin: Address) {
+        new_admin.require_auth();
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| env.panic_with_error(VotingRewardsError::NotAuthorized));
+        if new_admin != pending_admin {
+            env.panic_with_error(VotingRewardsError::NotAuthorized);
+        }
+
         env.storage().instance().set(&DataKey::Admin, &new_admin);
-        events::emit_admin_set(&env, &new_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        events::emit_admin_accepted(&env, &new_admin);
     }
 
     /// Update the epoch duration for future epochs. Admin-only.

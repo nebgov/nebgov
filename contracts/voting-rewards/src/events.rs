@@ -5,7 +5,8 @@ pub const EPOCH_ROOT_PUBLISHED_TOPIC: &str = "EpochRootPublished";
 pub const REWARD_CLAIMED_TOPIC: &str = "RewardClaimed";
 pub const POOL_FUNDED_TOPIC: &str = "PoolFunded";
 pub const EPOCH_SWEPT_TOPIC: &str = "EpochSwept";
-pub const ADMIN_SET_TOPIC: &str = "AdminSet";
+pub const ADMIN_PROPOSED_TOPIC: &str = "AdminProposed";
+pub const ADMIN_ACCEPTED_TOPIC: &str = "AdminAccepted";
 pub const EPOCH_DURATION_UPDATED_TOPIC: &str = "EpochDurationUpdated";
 
 pub fn emit_epoch_started(env: &Env, epoch_id: u64, start_ledger: u32, end_ledger: u32) {
@@ -48,9 +49,16 @@ pub fn emit_epoch_swept(env: &Env, epoch_id: u64, unclaimed_amount: i128) {
     );
 }
 
-pub fn emit_admin_set(env: &Env, new_admin: &Address) {
+pub fn emit_admin_proposed(env: &Env, new_admin: &Address) {
     env.events().publish(
-        (Symbol::new(env, ADMIN_SET_TOPIC),),
+        (Symbol::new(env, ADMIN_PROPOSED_TOPIC),),
+        new_admin.clone(),
+    );
+}
+
+pub fn emit_admin_accepted(env: &Env, new_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, ADMIN_ACCEPTED_TOPIC),),
         new_admin.clone(),
     );
 }

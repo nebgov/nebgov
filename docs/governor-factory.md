@@ -29,7 +29,7 @@ Initialize Timelock(deployer, governor, timelock_delay, 1_209_600)
           ↓
 Initialize Governor(deployer, token_votes, timelock, ...settings)
           ↓
-Store GovernorEntry under its ID, append ID to the registry list
+Store GovernorEntry under its ID and increment the governor count
           ↓
 Emit GovernorDeployed and return the governor ID
 ```
@@ -88,7 +88,7 @@ pub struct GovernorEntry {
 }
 ```
 
-The `token` field holds the **Token-Votes** address the factory created. To find the underlying governance token, read the Token-Votes contract. The registry also keeps an ordered list of IDs, which `get_all_governors` pages through.
+The `token` field holds the **Token-Votes** address the factory created. To find the underlying governance token, read the Token-Votes contract. Since IDs are sequential from `1` through `governor_count()`, `get_all_governors` derives each page directly from that count without a growing instance-storage list. Registry entries are persisted with a TTL refresh on deployment and lookup.
 
 ## Events
 

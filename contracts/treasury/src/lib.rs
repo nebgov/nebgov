@@ -3,7 +3,7 @@
 use soroban_sdk::xdr::{FromXdr, ToXdr};
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token,
-    Address, Bytes, Env, String, Symbol, Val, Vec,
+    Address, Bytes, BytesN, Env, String, Symbol, Val, Vec,
 };
 
 mod streams;
@@ -12,6 +12,14 @@ pub use streams::{BudgetStream, StreamBudgetReport, StreamSpend, TreasuryBudgetS
 
 const DEFAULT_PENDING_EXPIRY_LEDGERS: u32 = 17_280;
 const TX_STORAGE_TTL_LEDGERS: u32 = 518_400;
+pub const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
 
 /// Treasury error codes.
 #[contracterror]
@@ -136,6 +144,7 @@ pub enum DataKey {
     IsSlashed(Address),
     SlashingHistory(Address),
     PendingOwner,
+    CurrentWasmHash,
 }
 
 /// Storage keys for budget streams.
@@ -176,6 +185,7 @@ impl TreasuryContract {
         threshold: u32,
         governor: Address,
     ) {
+        extend_instance_ttl(&env);
         admin.require_auth();
         if env.storage().instance().has(&DataKey::Owners)
             || env.storage().instance().has(&DataKey::Governor)
@@ -195,6 +205,10 @@ impl TreasuryContract {
         env.storage().instance().set(&DataKey::IsExecuting, &false);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage().instance().set(&DataKey::TxCount, &0u64);
+        env.storage().instance().set(
+            &DataKey::CurrentWasmHash,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
 
         // Initialize spending limits to safe defaults (i128::MAX disables limits until set by governance).
         let default_settings = TreasurySettings {
@@ -215,6 +229,7 @@ impl TreasuryContract {
     /// Propose a new owner (governor) for the treasury.
     /// Current governor must call this.
     pub fn propose_owner(env: Env, new_owner: Address) {
+        extend_instance_ttl(&env);
         let governor: Address = env
             .storage()
             .instance()
@@ -231,6 +246,7 @@ impl TreasuryContract {
     /// Accept ownership of the treasury.
     /// New owner must call this to finalize the transfer.
     pub fn accept_ownership(env: Env) {
+        extend_instance_ttl(&env);
         let pending: Address = env
             .storage()
             .instance()
@@ -245,10 +261,36 @@ impl TreasuryContract {
 
     /// Get the current owner (governor) address.
     pub fn get_owner(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Governor)
             .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized))
+    }
+
+    /// Upgrade the treasury WASM. Only the configured governor may authorize it.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        extend_instance_ttl(&env);
+        let governor: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Governor)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryError::NotInitialized));
+        governor.require_auth();
+        let old_wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWasmHash)
+            .unwrap_or(BytesN::from_array(&env, &[0u8; 32]));
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::CurrentWasmHash, &new_wasm_hash);
+        env.events().publish(
+            (Symbol::new(&env, "Upgrade"),),
+            (old_wasm_hash, new_wasm_hash),
+        );
     }
 
     /// Configure a per-token spending cap for batch transfers.
@@ -259,6 +301,7 @@ impl TreasuryContract {
         max_amount: i128,
         period_ledgers: u32,
     ) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         let governor: Address = env
             .storage()
@@ -281,11 +324,13 @@ impl TreasuryContract {
 
     /// Get the configured spending cap for a token, if any.
     pub fn get_spending_cap(env: Env, token: Address) -> Option<SpendingCap> {
+        extend_instance_ttl(&env);
         env.storage().instance().get(&DataKey::SpendingCap(token))
     }
 
     /// Get the amount spent in the current spending period for a token.
     pub fn get_spent_this_period(env: Env, token: Address) -> i128 {
+        extend_instance_ttl(&env);
         let cap: Option<SpendingCap> = env
             .storage()
             .instance()
@@ -309,6 +354,7 @@ impl TreasuryContract {
     /// configured cap. If no cap has been configured for the token, returns
     /// `i128::MAX` to signal that spending is effectively unrestricted.
     pub fn get_spending_remaining(env: Env, token: Address) -> i128 {
+        extend_instance_ttl(&env);
         let cap: Option<SpendingCap> = env
             .storage()
             .instance()
@@ -331,6 +377,7 @@ impl TreasuryContract {
         fn_name: Symbol,
         data: Bytes,
     ) -> u64 {
+        extend_instance_ttl(&env);
         proposer.require_auth();
         Self::submit_internal(env, proposer, target, fn_name, data, 0)
     }
@@ -400,6 +447,7 @@ impl TreasuryContract {
         data: Bytes,
         amount: i128,
     ) -> u64 {
+        extend_instance_ttl(&env);
         proposer.require_auth();
         Self::require_owner(&env, &proposer);
 
@@ -457,6 +505,7 @@ impl TreasuryContract {
 
     /// Approve a pending transaction. Executes automatically when threshold reached.
     pub fn approve(env: Env, approver: Address, tx_id: u64) {
+        extend_instance_ttl(&env);
         Self::require_not_executing(&env);
         approver.require_auth();
         Self::require_owner(&env, &approver);
@@ -520,6 +569,7 @@ impl TreasuryContract {
     /// Cancel a pending transaction. Owner or governor only.
     /// If the proposal was submitted via submit_with_limit(), credits back the reserved amount to the daily accumulator.
     pub fn cancel(env: Env, caller: Address, tx_id: u64) {
+        extend_instance_ttl(&env);
         Self::require_not_executing(&env);
         caller.require_auth();
         let governor: Address = env
@@ -594,6 +644,7 @@ impl TreasuryContract {
         token: Address,
         recipients: Vec<BatchRecipient>,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         // Only the governor may issue batch disbursements.
@@ -677,6 +728,7 @@ impl TreasuryContract {
     }
 
     pub fn get_slashing_history(env: Env, signer: Address) -> Vec<SlashingEvent> {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::SlashingHistory(signer))
@@ -684,6 +736,7 @@ impl TreasuryContract {
     }
 
     pub fn is_slashed(env: Env, signer: Address) -> bool {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::IsSlashed(signer))
@@ -693,6 +746,7 @@ impl TreasuryContract {
     /// Slash (remove) a signer for malicious behavior.
     /// Only the governor may call this.
     pub fn slash_signer(env: Env, caller: Address, signer: Address, reason: Symbol) {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         let governor: Address = env
@@ -771,6 +825,7 @@ impl TreasuryContract {
     /// Restore a slashed signer.
     /// Only the governor may call this.
     pub fn unslash_signer(env: Env, caller: Address, signer: Address) {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         let governor: Address = env
@@ -801,6 +856,7 @@ impl TreasuryContract {
     }
 
     pub fn get_tx(env: Env, tx_id: u64) -> TxProposal {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Tx(tx_id))
@@ -808,6 +864,7 @@ impl TreasuryContract {
     }
 
     pub fn threshold(env: Env) -> u32 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Threshold)
@@ -815,10 +872,12 @@ impl TreasuryContract {
     }
 
     pub fn tx_count(env: Env) -> u64 {
+        extend_instance_ttl(&env);
         env.storage().instance().get(&DataKey::TxCount).unwrap_or(0)
     }
 
     pub fn has_approved(env: Env, tx_id: u64, approver: Address) -> bool {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::HasApproved(tx_id, approver))
@@ -826,6 +885,7 @@ impl TreasuryContract {
     }
 
     pub fn is_treasury_owner(env: Env, addr: Address) -> bool {
+        extend_instance_ttl(&env);
         Self::is_owner(&env, &addr)
     }
 
@@ -896,6 +956,7 @@ impl TreasuryContract {
         cooldown_ledgers: u32,
         proposal_id: u64,
     ) -> u64 {
+        extend_instance_ttl(&env);
         streams::create_stream(
             env,
             caller,
@@ -920,6 +981,7 @@ impl TreasuryContract {
         amount: i128,
         memo: String,
     ) {
+        extend_instance_ttl(&env);
         streams::stream_spend(env, owner, stream_id, recipient, amount, memo);
     }
 
@@ -932,31 +994,37 @@ impl TreasuryContract {
         amounts: Vec<i128>,
         memo: String,
     ) {
+        extend_instance_ttl(&env);
         streams::stream_batch_spend(env, owner, stream_id, recipients, amounts, memo);
     }
 
     /// Governance-gated: revoke an active stream and return unspent funds to treasury.
     pub fn revoke_stream(env: Env, caller: Address, stream_id: u64) {
+        extend_instance_ttl(&env);
         streams::revoke_stream(env, caller, stream_id);
     }
 
     /// Governance-gated: extend a stream's end_ledger.
     pub fn extend_stream(env: Env, caller: Address, stream_id: u64, new_end_ledger: u32) {
+        extend_instance_ttl(&env);
         streams::extend_stream(env, caller, stream_id, new_end_ledger);
     }
 
     /// Governance-gated: top up an existing stream's allocated budget.
     pub fn top_up_stream(env: Env, caller: Address, stream_id: u64, additional_amount: i128) {
+        extend_instance_ttl(&env);
         streams::top_up_stream(env, caller, stream_id, additional_amount);
     }
 
     /// Query: get a stream by ID.
     pub fn get_stream(env: Env, stream_id: u64) -> BudgetStream {
+        extend_instance_ttl(&env);
         streams::get_stream(env, stream_id)
     }
 
     /// Query: get paginated list of streams.
     pub fn get_streams(env: Env, offset: u64, limit: u64) -> Vec<BudgetStream> {
+        extend_instance_ttl(&env);
         streams::get_streams(env, offset, limit)
     }
 
@@ -967,6 +1035,7 @@ impl TreasuryContract {
         offset: u64,
         limit: u64,
     ) -> Vec<BudgetStream> {
+        extend_instance_ttl(&env);
         streams::get_streams_by_owner(env, owner, offset, limit)
     }
 
@@ -977,21 +1046,25 @@ impl TreasuryContract {
         offset: u32,
         limit: u32,
     ) -> Vec<StreamSpend> {
+        extend_instance_ttl(&env);
         streams::get_stream_spends(env, stream_id, offset, limit)
     }
 
     /// Query: get budget report for a specific stream.
     pub fn get_stream_report(env: Env, stream_id: u64) -> StreamBudgetReport {
+        extend_instance_ttl(&env);
         streams::get_stream_report(env, stream_id)
     }
 
     /// Query: get treasury-wide budget summary.
     pub fn get_budget_summary(env: Env) -> TreasuryBudgetSummary {
+        extend_instance_ttl(&env);
         streams::get_budget_summary(env)
     }
 
     /// Query: compute remaining budget for a stream at the current ledger.
     pub fn get_stream_remaining(env: Env, stream_id: u64) -> i128 {
+        extend_instance_ttl(&env);
         streams::get_stream_remaining(env, stream_id)
     }
 }
@@ -1001,7 +1074,7 @@ mod tests {
     use super::*;
     use soroban_sdk::{
         testutils::{Address as _, Events, Ledger as _},
-        token, Env, Vec,
+        token, Env, TryIntoVal, Vec,
     };
 
     /// Deploy treasury + a fresh SAC token.
@@ -1041,6 +1114,33 @@ mod tests {
             .unwrap_err()
             .unwrap();
         assert_eq!(err, TreasuryError::AlreadyInitialized.into());
+    }
+
+    #[test]
+    fn test_governor_can_upgrade() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, _, _governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+        let new_hash = env
+            .deployer()
+            .upload_contract_wasm(Bytes::from_array(
+                &env,
+                &[
+                    0, 97, 115, 109, 1, 0, 0, 0, 0, 30, 17, 99, 111, 110, 116, 114, 97,
+                    99, 116, 101, 110, 118, 109, 101, 116, 97, 118, 48, 0, 0, 0, 0, 0, 0, 0,
+                    22, 0, 0, 0, 0,
+                ],
+            ));
+
+        client.upgrade(&new_hash);
+
+        assert!(env.events().all().iter().any(|(_, topics, _)| {
+            topics
+                .get(0)
+                .and_then(|topic| topic.try_into_val(&env).ok())
+                == Some(Symbol::new(&env, "Upgrade"))
+        }));
     }
 
     // ── batch_transfer tests ─────────────────────────────────────────────────
@@ -2109,6 +2209,23 @@ mod tests {
         let fn_name = Symbol::new(&env, "noop");
         client.submit_with_limit(&owner, &target, &fn_name, &Bytes::new(&env), &i128::MAX);
         client.submit_with_limit(&owner, &target, &fn_name, &Bytes::new(&env), &1i128);
+    }
+    #[test]
+    fn test_instance_ttl_extended() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (treasury_id, _token, governor) = setup(&env);
+        let client = TreasuryContractClient::new(&env, &treasury_id);
+
+        // Advance ledger past default instance TTL
+        env.ledger().with_mut(|l| {
+            l.sequence_number += 10_000;
+        });
+
+        // Contract still answers queries
+        assert_eq!(client.threshold(), 1);
+        assert_eq!(client.tx_count(), 0);
+        assert_eq!(client.get_owner(), governor);
     }
 }
 

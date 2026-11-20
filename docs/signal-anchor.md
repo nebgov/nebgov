@@ -210,6 +210,37 @@ Each governance instance can tune:
 
 6. **Combine with Proposals** — Link formal proposals to their signaling poll anchors for full traceability.
 
+
+## Key Rotation
+
+In production environments, backend signing keys may need to be rotated routinely or following a key compromise without redeploying the contract. Redeploying splits poll anchors across multiple contract addresses, which complicates indexing and badge verification.
+
+The `SignalAnchorContract` supports admin rotation via both single-step and two-step flows:
+
+### Single-Step Rotation (`set_admin`)
+The current admin authorizes a direct update to `new_admin`:
+```rust
+signal_anchor.set_admin(&admin, &new_admin);
+```
+Emits `AdminChanged(old_admin, new_admin)`.
+
+### Two-Step Rotation (`propose_admin` / `accept_admin`)
+To prevent accidental assignment to an inaccessible key:
+1. Current admin proposes the successor:
+```rust
+signal_anchor.propose_admin(&admin, &new_admin);
+```
+2. The new key claims ownership by authorizing:
+```rust
+signal_anchor.accept_admin(&new_admin);
+```
+Emits `AdminChanged(old_admin, new_admin)`.
+
+### SDK Usage
+```typescript
+await signalingClient.setAdmin(currentAdminKeypair, newAdminAddress);
+```
+
 ## Related Features
 
 - **[Governor](./architecture.md)** — Formal proposal and voting system

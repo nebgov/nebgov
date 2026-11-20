@@ -261,6 +261,13 @@ export enum VotesErrorCode {
   SplitDuplicateDelegatee = 19,
   SplitZeroWeight = 20,
   SplitWeightsMustSum10000 = 21,
+  SplitTargetsBelowMin = 22,
+  SplitEmpty = 23,
+  WeightBpsOverflow = 24,
+  TokenNotSet = 25,
+  FutureLedger = 26,
+  AlreadyInitialized = 27,
+  InvalidTimeWeightScale = 28,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -295,6 +302,15 @@ const VOTES_MESSAGES: Record<VotesErrorCode, string> = {
     "Split delegation entry must have a non-zero weight",
   [VotesErrorCode.SplitWeightsMustSum10000]:
     "Split delegation weights must sum to exactly 10000 (100%)",
+  [VotesErrorCode.SplitTargetsBelowMin]:
+    "Split delegation contains a target below the minimum weight",
+  [VotesErrorCode.SplitEmpty]: "Split delegation must contain at least one target",
+  [VotesErrorCode.WeightBpsOverflow]: "Split delegation weight arithmetic overflowed",
+  [VotesErrorCode.TokenNotSet]: "The voting token is not configured",
+  [VotesErrorCode.FutureLedger]: "Snapshot ledger cannot be in the future",
+  [VotesErrorCode.AlreadyInitialized]: "TokenVotes contract is already initialized",
+  [VotesErrorCode.InvalidTimeWeightScale]:
+    "Time-weighting scale must be greater than zero",
 
   [VotesErrorCode.SimulationFailed]: "Simulation failed",
   [VotesErrorCode.TransactionFailed]: "Transaction failed",

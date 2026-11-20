@@ -50,3 +50,12 @@ describe("sep53Digest", () => {
     expect(toHex(signed)).toBe("e5e57e05abfaf71f04f847b94ea5e2ae791527fe39c9236ba42076647a23df01");
   });
 });
+
+describe("SignalingClient admin rotation", () => {
+  it("defines setAdmin, proposeAdmin, and acceptAdmin methods", () => {
+    const { SignalingClient } = require("../signaling");
+    expect(typeof SignalingClient.prototype.setAdmin).toBe("function");
+    expect(typeof SignalingClient.prototype.proposeAdmin).toBe("function");
+    expect(typeof SignalingClient.prototype.acceptAdmin).toBe("function");
+  });
+});

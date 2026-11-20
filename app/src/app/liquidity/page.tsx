@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { LiquidityClient, type Network, type Pool } from "@nebgov/sdk";
 import { useWallet } from "../../lib/wallet-context";
@@ -84,6 +84,37 @@ export default function LiquidityPage() {
   const [swapMinOut, setSwapMinOut] = useState("");
   const [swapError, setSwapError] = useState<string | null>(null);
   const [swapping, setSwapping] = useState(false);
+
+  const [quote, setQuote] = useState<{ amountOut: bigint; fee: bigint } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function updateQuote() {
+      if (!client || !snapshot || !swapAmountIn.trim()) {
+        setQuote(null);
+        return;
+      }
+      try {
+        const amountIn = parsePositiveAmount(swapAmountIn, divisor, "Amount in");
+        const outcomeIn = swapInIsLo ? snapshot.lo : snapshot.hi;
+        const outcomeOut = swapInIsLo ? snapshot.hi : snapshot.lo;
+        const res = await client.getAmountOut(outcomeIn, outcomeOut, amountIn);
+        if (active) {
+          setQuote(res);
+          if (!swapMinOut.trim()) {
+            const slippageDefault = (res.amountOut * 99n) / 100n;
+            setSwapMinOut(formatVotingPower(slippageDefault, decimals));
+          }
+        }
+      } catch {
+        if (active) setQuote(null);
+      }
+    }
+    updateQuote();
+    return () => {
+      active = false;
+    };
+  }, [client, snapshot, swapAmountIn, swapInIsLo, divisor, decimals]);
 
   const busy = loading || adding || removing || swapping;
 
@@ -411,6 +442,13 @@ export default function LiquidityPage() {
                     </label>
                     <input id="swap-in" type="text" value={swapAmountIn} onChange={(e) => setSwapAmountIn(e.target.value)} className={inputClass} />
                   </div>
+                  {quote && (
+                    <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                      <p>
+                        Estimated output: <span className="font-semibold">{formatVotingPower(quote.amountOut, decimals)}</span> (Fee: {formatVotingPower(quote.fee, decimals)})
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label htmlFor="swap-min-out" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Minimum amount out (optional)

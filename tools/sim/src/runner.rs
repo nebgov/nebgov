@@ -212,6 +212,7 @@ impl SimulationRunner {
         conviction_voting.initialize(
             &admin,
             &token_votes_id,
+            &treasury_id,
             &5000u32,        // decay_bps: 50%
             &5000u32,        // max_ratio_bps: 50%
             &10_000_000i128, // min_threshold_conviction
@@ -504,15 +505,17 @@ impl SimulationRunner {
                 let addr = self.get_actor(actor).clone();
                 token::StellarAssetClient::new(&self.env, &self.token)
                     .mint(&addr, &(*amount as i128));
-                let balance = token::TokenClient::new(&self.env, &self.token).balance(&addr);
-                self.token_votes.checkpoint(&addr, &balance);
+                if let Some(delegatee) = self.token_votes.delegates(&addr) {
+                    self.token_votes.delegate(&addr, &delegatee);
+                }
             }
             SimStep::BurnTokens { actor, amount } => {
                 let addr = self.get_actor(actor).clone();
                 token::StellarAssetClient::new(&self.env, &self.token)
                     .clawback(&addr, &(*amount as i128));
-                let balance = token::TokenClient::new(&self.env, &self.token).balance(&addr);
-                self.token_votes.checkpoint(&addr, &balance);
+                if let Some(delegatee) = self.token_votes.delegates(&addr) {
+                    self.token_votes.delegate(&addr, &delegatee);
+                }
             }
             SimStep::UpdateConfig { settings, .. } => {
                 // `update_config` requires `env.current_contract_address().require_auth()`

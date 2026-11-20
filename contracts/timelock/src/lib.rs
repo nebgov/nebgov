@@ -6,8 +6,8 @@ use events::*;
 
 use soroban_sdk::xdr::{FromXdr, ToXdr};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
-    Val, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+    Symbol, TryIntoVal, Val, Vec,
 };
 
 /// Timelock error codes.
@@ -134,10 +134,20 @@ pub enum DataKey {
     BatchDependencyGraph(Bytes),
     PartialBatchState(Bytes),
     FailedOpRetryCount(Bytes),
+    CurrentWasmHash,
 }
 
 #[contract]
 pub struct TimelockContract;
+
+pub const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
+pub const INSTANCE_EXTEND_TTL: u32 = 300_000;
+
+pub(crate) fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TTL);
+}
 
 #[contractimpl]
 impl TimelockContract {
@@ -149,6 +159,7 @@ impl TimelockContract {
         min_delay: u64,
         execution_window: u64,
     ) {
+        extend_instance_ttl(&env);
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }
@@ -156,6 +167,10 @@ impl TimelockContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Governor, &governor);
         env.storage().instance().set(&DataKey::MinDelay, &min_delay);
+        env.storage().instance().set(
+            &DataKey::CurrentWasmHash,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
         env.storage()
             .instance()
             .set(&DataKey::ExecutionWindow, &execution_window);
@@ -169,6 +184,7 @@ impl TimelockContract {
         predecessor: Bytes,
         salt: Bytes,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         let mut combined = Bytes::new(&env);
         combined.append(&target.to_xdr(&env));
         combined.append(&data);
@@ -191,6 +207,7 @@ impl TimelockContract {
         predecessor: Bytes,
         salt: Bytes,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         let mut combined = Bytes::new(&env);
         for i in 0..targets.len() {
             combined.append(&targets.get(i).unwrap().to_xdr(&env));
@@ -248,6 +265,7 @@ impl TimelockContract {
         predecessors: Vec<Bytes>,
         salt: Bytes,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -320,6 +338,7 @@ impl TimelockContract {
 
     /// Check if all predecessors of an op_id are complete.
     pub fn all_predecessors_done(env: Env, op_id: Bytes) -> bool {
+        extend_instance_ttl(&env);
         let pred_key = DataKey::OperationPredecessors(op_id.clone());
         let predecessors: Option<Vec<Bytes>> = env.storage().persistent().get(&pred_key);
 
@@ -341,6 +360,7 @@ impl TimelockContract {
 
     /// Get the full dependency graph for a batch operation.
     pub fn get_batch_dependency_graph(env: Env, batch_op_id: Bytes) -> Option<DependencyGraph> {
+        extend_instance_ttl(&env);
         let graph_key = DataKey::BatchDependencyGraph(batch_op_id);
         env.storage().persistent().get(&graph_key)
     }
@@ -359,6 +379,7 @@ impl TimelockContract {
     /// This is required for accurate cycle detection, as Kahn's algorithm only
     /// considers edges where both endpoints are present in the input set.
     pub fn validate_dependency_dag(env: Env, op_ids: Vec<Bytes>) -> DagValidationResult {
+        extend_instance_ttl(&env);
         if !Self::has_full_predecessor_closure(&env, &op_ids) {
             env.panic_with_error(TimelockError::IncompletePredecessorClosure);
         }
@@ -385,6 +406,7 @@ impl TimelockContract {
     /// Each sub-operation is attempted independently. If one fails, it is recorded in recovery state
     /// and the batch continues to the next operation.
     pub fn execute_batch_partial(env: Env, caller: Address, batch_op_id: Bytes) -> PartialBatchExecutionState {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -499,6 +521,7 @@ impl TimelockContract {
         batch_op_id: Bytes,
         op_id: Bytes,
     ) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -550,6 +573,7 @@ impl TimelockContract {
 
     /// Get current partial execution state for a batch.
     pub fn get_partial_batch_state(env: Env, batch_op_id: Bytes) -> Option<PartialBatchExecutionState> {
+        extend_instance_ttl(&env);
         let state_key = DataKey::PartialBatchState(batch_op_id);
         env.storage().persistent().get(&state_key)
     }
@@ -561,6 +585,7 @@ impl TimelockContract {
         batch_op_id: Bytes,
         op_id: Bytes,
     ) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -597,6 +622,7 @@ impl TimelockContract {
         predecessor: Bytes,
         salt: Bytes,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
         Self::schedule_operation(env, target, data, fn_name, delay, predecessor, salt)
@@ -618,6 +644,7 @@ impl TimelockContract {
         predecessor: Bytes,
         salt: Bytes,
     ) -> Bytes {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -689,6 +716,7 @@ impl TimelockContract {
 
     /// Execute a ready operation.
     pub fn execute(env: Env, caller: Address, op_id: Bytes) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -726,7 +754,18 @@ impl TimelockContract {
             .set(&DataKey::Operation(op_id.clone()), &op);
 
         let args = Self::decode_invocation_args(&env, &op.data);
-        let _: Val = env.invoke_contract(&op.target, &op.fn_name, args);
+        if op.target == env.current_contract_address()
+            && op.fn_name == Symbol::new(&env, "upgrade")
+        {
+            let new_wasm_hash: BytesN<32> = args
+                .get(0)
+                .unwrap()
+                .try_into_val(&env)
+                .expect("invalid upgrade calldata");
+            Self::upgrade_internal(&env, new_wasm_hash);
+        } else {
+            let _: Val = env.invoke_contract(&op.target, &op.fn_name, args);
+        }
 
         env.events().publish((symbol_short!("execute"),), op_id.clone());
         emit_operation_executed(&env, &op_id, &caller);
@@ -737,6 +776,7 @@ impl TimelockContract {
     /// All sub-calls run in order.  If any sub-call panics, the entire
     /// transaction reverts and none of the sub-calls take effect.
     pub fn execute_batch(env: Env, caller: Address, batch_op_id: Bytes) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
 
@@ -784,6 +824,7 @@ impl TimelockContract {
 
     /// Cancel a pending operation or batch operation.
     pub fn cancel(env: Env, caller: Address, op_id: Bytes) {
+        extend_instance_ttl(&env);
         caller.require_auth();
 
         let admin: Address = env
@@ -830,6 +871,7 @@ impl TimelockContract {
 
     /// Check whether an operation is pending.
     pub fn is_pending(env: Env, op_id: Bytes) -> bool {
+        extend_instance_ttl(&env);
         let op: Option<Operation> = env.storage().persistent().get(&DataKey::Operation(op_id));
         match op {
             Some(op) => !op.executed && !op.cancelled && env.ledger().timestamp() < op.ready_at,
@@ -839,6 +881,7 @@ impl TimelockContract {
 
     /// Check whether an operation is ready.
     pub fn is_ready(env: Env, op_id: Bytes) -> bool {
+        extend_instance_ttl(&env);
         let op: Option<Operation> = env.storage().persistent().get(&DataKey::Operation(op_id));
         match op {
             Some(op) => {
@@ -853,6 +896,7 @@ impl TimelockContract {
 
     /// Check whether an operation has been executed.
     pub fn is_done(env: Env, op_id: Bytes) -> bool {
+        extend_instance_ttl(&env);
         let op: Option<Operation> = env.storage().persistent().get(&DataKey::Operation(op_id));
         match op {
             Some(op) => op.executed,
@@ -862,6 +906,7 @@ impl TimelockContract {
 
     /// Check whether a batch operation has been executed.
     pub fn is_batch_done(env: Env, batch_op_id: Bytes) -> bool {
+        extend_instance_ttl(&env);
         let batch: Option<BatchOperation> = env
             .storage()
             .persistent()
@@ -874,6 +919,7 @@ impl TimelockContract {
 
     /// Get the configured minimum delay in seconds.
     pub fn min_delay(env: Env) -> u64 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::MinDelay)
@@ -882,6 +928,7 @@ impl TimelockContract {
 
     /// Get the configured execution window in seconds.
     pub fn execution_window(env: Env) -> u64 {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::ExecutionWindow)
@@ -890,14 +937,42 @@ impl TimelockContract {
 
     /// Get the configured governor address.
     pub fn governor(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Governor)
             .expect("not initialized")
     }
 
+    /// Upgrade the timelock WASM. Scheduled self-calls inherit governor auth
+    /// from the timelock execution entrypoint.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        extend_instance_ttl(&env);
+        let governor = Self::governor(env.clone());
+        governor.require_auth();
+        Self::upgrade_internal(&env, new_wasm_hash);
+    }
+
+    fn upgrade_internal(env: &Env, new_wasm_hash: BytesN<32>) {
+        let old_wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWasmHash)
+            .unwrap_or(BytesN::from_array(&env, &[0u8; 32]));
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::CurrentWasmHash, &new_wasm_hash);
+        env.events().publish(
+            (Symbol::new(&env, "Upgrade"),),
+            (old_wasm_hash, new_wasm_hash),
+        );
+    }
+
     /// Get the configured admin address.
     pub fn admin(env: Env) -> Address {
+        extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&DataKey::Admin)
@@ -906,6 +981,7 @@ impl TimelockContract {
 
     /// Get a single operation by its op_id.
     pub fn get_operation(env: Env, op_id: Bytes) -> Option<Operation> {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Operation(op_id))
@@ -913,6 +989,7 @@ impl TimelockContract {
 
     /// Get a batch operation by its batch_op_id.
     pub fn get_batch_operation(env: Env, batch_op_id: Bytes) -> Option<BatchOperation> {
+        extend_instance_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::BatchOperation(batch_op_id))
@@ -920,6 +997,7 @@ impl TimelockContract {
 
     /// Update the minimum delay. Only admin.
     pub fn update_delay(env: Env, caller: Address, new_delay: u64) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         assert!(caller == Self::admin(env.clone()), "only admin");
         let old_delay: u64 = env.storage().instance().get(&DataKey::MinDelay).unwrap_or(86400);
@@ -932,6 +1010,7 @@ impl TimelockContract {
 
     /// Update the execution window. Only admin.
     pub fn update_execution_window(env: Env, caller: Address, new_window: u64) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         assert!(caller == Self::admin(env.clone()), "only admin");
         let old_window: u64 = env.storage().instance().get(&DataKey::ExecutionWindow).unwrap_or(1209600);
@@ -946,6 +1025,7 @@ impl TimelockContract {
 
     /// Update the minimum delay. Only governor (governance-gated).
     pub fn update_min_delay(env: Env, caller: Address, new_delay: u64) {
+        extend_instance_ttl(&env);
         caller.require_auth();
         Self::require_governor(&env, &caller);
         assert!(new_delay > 0, "delay must be positive");

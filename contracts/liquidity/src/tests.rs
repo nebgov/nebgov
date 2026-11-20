@@ -1101,3 +1101,37 @@ fn test_pool_key_canonical_ordering_lookup() {
     assert_eq!(pool_35.reserve_b, pool_53.reserve_b);
     assert_eq!(pool_35.total_lp_supply, pool_53.total_lp_supply);
 }
+
+#[test]
+fn test_get_amount_out_matches_swap() {
+    let (env, contract_id, governor, provider, trader, token_a, token_b) = setup_liquidity();
+    let client = LiquidityContractClient::new(&env, &contract_id);
+
+    setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
+    client.add_liquidity(&provider, &0, &1, &10_000, &10_000, &0);
+
+    let (quote_amount_out, quote_fee) = client.get_amount_out(&0, &1, &1_000);
+    assert!(quote_amount_out > 0);
+    assert!(quote_fee > 0);
+
+    let actual_amount_out = client.swap(&trader, &0, &1, &1_000, &0);
+    assert_eq!(quote_amount_out, actual_amount_out);
+}
+
+#[test]
+#[should_panic]
+fn test_get_amount_out_same_outcome_panics() {
+    let (env, contract_id, governor, provider, _, token_a, token_b) = setup_liquidity();
+    let client = LiquidityContractClient::new(&env, &contract_id);
+    setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
+    client.get_amount_out(&0, &0, &1_000);
+}
+
+#[test]
+#[should_panic]
+fn test_get_amount_out_invalid_amount_panics() {
+    let (env, contract_id, governor, provider, _, token_a, token_b) = setup_liquidity();
+    let client = LiquidityContractClient::new(&env, &contract_id);
+    setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
+    client.get_amount_out(&0, &1, &0);
+}
