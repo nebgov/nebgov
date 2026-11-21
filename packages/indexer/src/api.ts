@@ -1622,6 +1622,54 @@ export function createApp(server: SorobanRpc.Server): express.Application {
   );
 
   app.get(
+    "/voting-rewards/epochs/:id/claims",
+    async (req: Request, res: Response): Promise<void> => {
+      const { id } = req.params;
+      if (!/^\d+$/.test(id)) {
+        res.status(400).json({ error: "Invalid epoch ID" });
+        return;
+      }
+      const pagination = parsePagination(
+        req.query.limit,
+        req.query.offset,
+        50,
+        200,
+      );
+      if (!pagination) {
+        res.status(400).json({ error: "Invalid pagination parameters" });
+        return;
+      }
+      const { limit, offset } = pagination;
+      try {
+        const epoch = await pool.query(
+          `SELECT epoch_id, total_reward_amount, total_claimed, swept_amount
+           FROM reward_epochs
+           WHERE epoch_id = $1`,
+          [id],
+        );
+        if (epoch.rows.length === 0) {
+          res.status(404).json({ error: "Reward epoch not found" });
+          return;
+        }
+        const result = await pool.query(
+          `SELECT * FROM reward_claims
+           WHERE epoch_id = $1
+           ORDER BY ledger DESC, event_id DESC
+           LIMIT $2 OFFSET $3`,
+          [id, limit, offset],
+        );
+        res.json({
+          epoch: epoch.rows[0],
+          data: result.rows,
+          pagination: { limit, offset, hasMore: result.rows.length === limit },
+        });
+      } catch {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  app.get(
     "/streams/:id",
     async (req: Request, res: Response): Promise<void> => {
       const { id } = req.params;

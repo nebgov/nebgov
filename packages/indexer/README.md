@@ -231,7 +231,7 @@ docker run --env-file packages/indexer/.env \
 | `TREASURY_STRATEGIES_ADDRESS` | No | - | Stellar contract address of the treasury yield-strategy allocator |
 | `OPTIMISTIC_GOVERNOR_ADDRESS` | No | - | Stellar contract address of the optimistic-governance track |
 | `VOTE_ESCROW_ADDRESS` | No | - | Stellar contract address of the vote-escrow contract (lock create, increase and withdraw events) |
-| `VOTING_REWARDS_ADDRESS` | No | - | Stellar contract address of the voting-rewards contract (not indexed yet; kept in sync with the root `.env.example`) |
+| `VOTING_REWARDS_ADDRESS` | No | - | Stellar contract address of the voting-rewards contract |
 | `STELLAR_NETWORK_PASSPHRASE` | No | Testnet passphrase | Network passphrase used for treasury read simulations |
 | `POLL_INTERVAL_MS` | No | `5000` | Milliseconds between event polling cycles |
 | `PORT` | No | `3001` | HTTP server port |
@@ -810,6 +810,14 @@ Get lifecycle history for `stream_id`. This is the endpoint used by
 
 Get stream counts and exact allocated, spent, and remaining amounts grouped by
 token. Soroban integer values are returned as decimal strings.
+
+### Voting Rewards
+
+#### GET /voting-rewards/epochs/:id/claims
+
+Get paginated claim history for an indexed epoch, together with the epoch's
+total reward, total claimed, and swept amount. `limit` defaults to 50 and is
+capped at 200.
 
 ### Configuration & Upgrades
 
