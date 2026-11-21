@@ -242,7 +242,8 @@ for the full lifecycle.
 
 - `lock_bond` takes the bond from the proposer, keyed by the proposal's `description_hash`
 - `refund_bond` returns the bond after the governor proposal resolves; `slash` sends it to a recipient instead
-- `update_bond_amount` (admin) changes the required bond; `get_bond` and `get_settings` read the state
+- `update_bond_amount` (admin) changes the required bond; `update_settings` (admin) changes the bond token, governor
+  and refund windows; `set_admin` (admin) hands over the admin role; `get_bond` and `get_settings` read the state
 
 **Depends on:** a SEP-41 bond token, and the governor, whose proposal state decides whether a bond is refunded.
 
@@ -251,6 +252,8 @@ for the full lifecycle.
 - `BondRefunded`: Bond returned to a proposer
 - `BondSlashed`: Bond confiscated
 - `BondAmountUpdated`: Required bond amount changed
+- `SettingsUpdated`: Bond token, governor or refund windows changed
+- `AdminUpdated`: Admin role handed over
 
 #### Optimistic-Governor Contract
 The optimistic proposal track (`contracts/optimistic-governor/`). A proposal passes unless enough objections are
