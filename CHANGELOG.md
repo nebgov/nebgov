@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SDK: `events.ts` parse/subscribe helpers added for the previously missing vote-escrow `EscrowConfigUpdated` and voting-rewards `EpochSwept`, `AdminSet` (legacy) / `AdminProposed` / `AdminAccepted`, and `EpochDurationUpdated` events, with regression tests in `vote-escrow-rewards-events.test.ts` (#1577).
 - SDK build: restore `ConvictionVotingConfig.indexerUrl` and export `VoteEscrowLock` / `VoteEscrowStats` from their defining module.
 - `fuzz/timelock.rs` no longer shadows `Vec` with the Soroban type, so it compiles.
 

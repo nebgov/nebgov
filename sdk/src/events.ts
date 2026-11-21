@@ -1751,6 +1751,7 @@ const VOTE_ESCROW_TOPICS = {
   lockIncreased: "LockIncreased",
   lockExtended: "LockExtended",
   lockWithdrawn: "LockWithdrawn",
+  escrowConfigUpdated: "EscrowConfigUpdated",
 } as const;
 
 export interface LockCreatedEventData {
@@ -1775,6 +1776,16 @@ export interface LockExtendedEventData {
 export interface LockWithdrawnEventData {
   owner: string;
   amount: bigint;
+}
+
+/** Decoded `EscrowConfigUpdated` event (emitted since #1509) */
+export interface EscrowConfigUpdatedEventData {
+  oldMinLockDuration: number;
+  newMinLockDuration: number;
+  oldMaxLockDuration: number;
+  newMaxLockDuration: number;
+  oldMaxMultiplierBps: number;
+  newMaxMultiplierBps: number;
 }
 
 export function parseLockCreatedEvent(event: SorobanEvent): LockCreatedEventData | null {
@@ -1822,6 +1833,34 @@ export function parseLockWithdrawnEvent(event: SorobanEvent): LockWithdrawnEvent
   return { owner: String(event.value.owner ?? event.topic[1] ?? ""), amount };
 }
 
+export function parseEscrowConfigUpdatedEvent(event: SorobanEvent): EscrowConfigUpdatedEventData | null {
+  if (event.topic[0] !== VOTE_ESCROW_TOPICS.escrowConfigUpdated || !isRecord(event.value)) return null;
+  const oldMinLockDuration = toNumber(event.value.old_min_lock_duration);
+  const newMinLockDuration = toNumber(event.value.new_min_lock_duration);
+  const oldMaxLockDuration = toNumber(event.value.old_max_lock_duration);
+  const newMaxLockDuration = toNumber(event.value.new_max_lock_duration);
+  const oldMaxMultiplierBps = toNumber(event.value.old_max_multiplier_bps);
+  const newMaxMultiplierBps = toNumber(event.value.new_max_multiplier_bps);
+  if (
+    oldMinLockDuration === null ||
+    newMinLockDuration === null ||
+    oldMaxLockDuration === null ||
+    newMaxLockDuration === null ||
+    oldMaxMultiplierBps === null ||
+    newMaxMultiplierBps === null
+  ) {
+    return null;
+  }
+  return {
+    oldMinLockDuration,
+    newMinLockDuration,
+    oldMaxLockDuration,
+    newMaxLockDuration,
+    oldMaxMultiplierBps,
+    newMaxMultiplierBps,
+  };
+}
+
 export function subscribeToLockCreated(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
   return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockCreated, callback, opts);
 }
@@ -1834,6 +1873,9 @@ export function subscribeToLockExtended(address: string, callback: (event: Sorob
 export function subscribeToLockWithdrawn(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
   return createTopicSubscription(address, VOTE_ESCROW_TOPICS.lockWithdrawn, callback, opts);
 }
+export function subscribeToEscrowConfigUpdated(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTE_ESCROW_TOPICS.escrowConfigUpdated, callback, opts);
+}
 
 // ── Voting rewards events ──────────────────────────────────────────────────
 
@@ -1842,12 +1884,24 @@ const VOTING_REWARDS_TOPICS = {
   epochRootPublished: "EpochRootPublished",
   rewardClaimed: "RewardClaimed",
   poolFunded: "PoolFunded",
+  epochSwept: "EpochSwept",
+  // Legacy single-step admin transfer emitted before #1658; current
+  // contracts emit AdminProposed/AdminAccepted instead.
+  adminSet: "AdminSet",
+  adminProposed: "AdminProposed",
+  adminAccepted: "AdminAccepted",
+  epochDurationUpdated: "EpochDurationUpdated",
 } as const;
 
 export interface EpochStartedEventData { epochId: bigint; startLedger: number; endLedger: number }
 export interface EpochRootPublishedEventData { epochId: bigint; merkleRoot: string; totalRewardAmount: bigint }
 export interface RewardClaimedEventData { claimant: string; epochId: bigint; amount: bigint }
 export interface PoolFundedEventData { funder: string; amount: bigint }
+export interface EpochSweptEventData { epochId: bigint; unclaimedAmount: bigint }
+export interface AdminSetEventData { newAdmin: string }
+export interface AdminProposedEventData { newAdmin: string }
+export interface AdminAcceptedEventData { newAdmin: string }
+export interface EpochDurationUpdatedEventData { newDurationLedgers: number }
 
 export function parseEpochStartedEvent(event: SorobanEvent): EpochStartedEventData | null {
   if (event.topic[0] !== VOTING_REWARDS_TOPICS.epochStarted || !Array.isArray(event.value) || event.value.length < 2) return null;
@@ -1878,6 +1932,34 @@ export function parsePoolFundedEvent(event: SorobanEvent): PoolFundedEventData |
   return amount === null ? null : { funder: String(event.topic[1] ?? ""), amount };
 }
 
+export function parseEpochSweptEvent(event: SorobanEvent): EpochSweptEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.epochSwept) return null;
+  const epochId = toBigInt(event.topic[1]);
+  const unclaimedAmount = toBigInt(event.value);
+  return epochId === null || unclaimedAmount === null ? null : { epochId, unclaimedAmount };
+}
+
+export function parseAdminSetEvent(event: SorobanEvent): AdminSetEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.adminSet) return null;
+  return { newAdmin: String(event.value ?? event.topic[1] ?? "") };
+}
+
+export function parseAdminProposedEvent(event: SorobanEvent): AdminProposedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.adminProposed) return null;
+  return { newAdmin: String(event.value ?? event.topic[1] ?? "") };
+}
+
+export function parseAdminAcceptedEvent(event: SorobanEvent): AdminAcceptedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.adminAccepted) return null;
+  return { newAdmin: String(event.value ?? event.topic[1] ?? "") };
+}
+
+export function parseEpochDurationUpdatedEvent(event: SorobanEvent): EpochDurationUpdatedEventData | null {
+  if (event.topic[0] !== VOTING_REWARDS_TOPICS.epochDurationUpdated) return null;
+  const newDurationLedgers = toNumber(event.value);
+  return newDurationLedgers === null ? null : { newDurationLedgers };
+}
+
 export function subscribeToEpochStarted(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
   return createTopicSubscription(address, VOTING_REWARDS_TOPICS.epochStarted, callback, opts);
 }
@@ -1889,4 +1971,19 @@ export function subscribeToRewardClaimed(address: string, callback: (event: Soro
 }
 export function subscribeToPoolFunded(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
   return createTopicSubscription(address, VOTING_REWARDS_TOPICS.poolFunded, callback, opts);
+}
+export function subscribeToEpochSwept(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.epochSwept, callback, opts);
+}
+export function subscribeToAdminSet(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.adminSet, callback, opts);
+}
+export function subscribeToAdminProposed(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.adminProposed, callback, opts);
+}
+export function subscribeToAdminAccepted(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.adminAccepted, callback, opts);
+}
+export function subscribeToEpochDurationUpdated(address: string, callback: (event: SorobanEvent) => void, opts: SubscriptionOptions): () => void {
+  return createTopicSubscription(address, VOTING_REWARDS_TOPICS.epochDurationUpdated, callback, opts);
 }
