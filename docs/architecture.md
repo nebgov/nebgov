@@ -338,6 +338,7 @@ rules and errors.
 - `create_stream` is governor-only. It sets up the stream and moves no funds
 - `execute_stream` is permissionless and pays every whole interval that has come due
 - `pause_stream`, `resume_stream` and `cancel_stream` are callable by the treasury (the admin) or the stream's creator
+- a stream that has paid its last whole interval is marked `completed` and removed from `get_active_streams`
 
 **Depends on:** a SEP-41 asset that the treasury transfers into the contract. The contract pays from its own balance.
 
@@ -348,6 +349,7 @@ rules and errors.
 - `StrmExec`: Whole intervals paid
 - `StrmPaused` / `StrmResumed`: Stream paused or resumed
 - `StrmCancel`: Stream cancelled
+- `StrmCompleted`: Last whole interval paid; stream removed from the active list
 
 ### Voting-weight sources
 
