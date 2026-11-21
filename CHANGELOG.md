@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Optimistic Governor: cancelling an objected proposal no longer refunds its bond, so the anti-spam bond is actually at risk (#1539)
 - Treasury Streams: a stream that pays its last whole interval is removed from `get_active_streams`, and the backend executor skips completed streams (#1542)
+- Voting Rewards: `publish_epoch_root` finalizes the epoch even when `total_reward_amount` is 0, so an empty epoch's root can't be overwritten (#1545)
 - SDK build: restore `ConvictionVotingConfig.indexerUrl` and export `VoteEscrowLock` / `VoteEscrowStats` from their defining module.
 - `fuzz/timelock.rs` no longer shadows `Vec` with the Soroban type, so it compiles.
 
