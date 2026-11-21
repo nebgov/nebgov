@@ -53,11 +53,13 @@ const TOPIC_MAP: Record<string, string> = {
   stream_topped_up: "stream_topped_up",
   stream_exhausted: "stream_exhausted",
   stream_expired: "stream_expired",
+  GovernorDeployed: "GovernorDeployed",
 };
 
 export interface IndexerConfig {
   rpcUrl: string;
   governorAddress: string;
+  governorFactoryAddress?: string;
   wrapperAddress?: string;
   treasuryAddress?: string;
   liquidityAddress?: string;
@@ -96,6 +98,8 @@ export async function processEvents(
 
   try {
     const contractIds = [config.governorAddress].filter(Boolean);
+    if (config.governorFactoryAddress)
+      contractIds.push(config.governorFactoryAddress);
     if (config.wrapperAddress) contractIds.push(config.wrapperAddress);
     if (config.treasuryAddress) contractIds.push(config.treasuryAddress);
     if (config.liquidityAddress) contractIds.push(config.liquidityAddress);
@@ -132,6 +136,11 @@ export async function processEvents(
         contractId &&
         config.wrapperAddress &&
         contractId === config.wrapperAddress
+      );
+      const isGovernorFactory = !!(
+        contractId &&
+        config.governorFactoryAddress &&
+        contractId === config.governorFactoryAddress
       );
       const isTreasury = !!(
         contractId &&
@@ -195,7 +204,9 @@ export async function processEvents(
       }
 
       try {
-        if (isConvictionVoting) {
+        if (isGovernorFactory) {
+          await handleGovernorDeployed(event, topics);
+        } else if (isConvictionVoting) {
           await handleConvictionEvent(event, eventType, topics);
         } else if (isTreasury) {
           switch (eventType) {
@@ -1433,6 +1444,61 @@ async function handleResultAnchored(
   broadcast({
     type: "result_anchored",
     data: { poll_id: pollId, result_hash: resultHash, anchored_ledger: anchoredLedger, anchorer },
+  });
+}
+
+async function handleGovernorDeployed(
+  event: SorobanRpc.Api.EventResponse,
+  topics: unknown[],
+): Promise<void> {
+  const data = scValToNative(event.value) as Record<string, unknown>;
+  const governorId = String(data.id ?? "");
+  const governor = String(data.governor ?? "");
+  const timelock = String(data.timelock ?? "");
+  const tokenVotes = String(data.token_votes ?? "");
+  const deployer = String(data.deployer ?? topics[1] ?? "");
+  const deployedAt = Number(data.timestamp);
+  if (
+    !governorId ||
+    !governor ||
+    !timelock ||
+    !tokenVotes ||
+    !deployer ||
+    !Number.isSafeInteger(deployedAt)
+  ) {
+    throw new Error("GovernorDeployed is missing required fields");
+  }
+
+  await pool.query(
+    `INSERT INTO factory_governors
+       (governor_id, governor, timelock, token_votes, deployer,
+        deployed_at, ledger, event_id, transaction_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (governor_id) DO NOTHING`,
+    [
+      governorId,
+      governor,
+      timelock,
+      tokenVotes,
+      deployer,
+      deployedAt,
+      event.ledger,
+      event.id,
+      event.txHash ?? null,
+    ],
+  );
+  invalidatePattern("factory:governors:");
+  broadcast({
+    type: "governor_deployed",
+    data: {
+      governor_id: governorId,
+      governor,
+      timelock,
+      token_votes: tokenVotes,
+      deployer,
+      deployed_at: deployedAt,
+      ledger: event.ledger,
+    },
   });
 }
 
