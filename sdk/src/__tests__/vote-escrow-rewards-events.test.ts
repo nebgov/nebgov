@@ -1,6 +1,12 @@
 import {
+  parseAdminAcceptedEvent,
+  parseAdminProposedEvent,
+  parseAdminSetEvent,
+  parseEpochDurationUpdatedEvent,
   parseEpochRootPublishedEvent,
   parseEpochStartedEvent,
+  parseEpochSweptEvent,
+  parseEscrowConfigUpdatedEvent,
   parseLockCreatedEvent,
   parseLockExtendedEvent,
   parseLockIncreasedEvent,
@@ -38,6 +44,42 @@ describe("vote escrow event parsers", () => {
       owner: "GOWNER", amount: "1000",
     }))).toEqual({ owner: "GOWNER", amount: 1000n });
   });
+  it("parses EscrowConfigUpdated", () => {
+    expect(parseEscrowConfigUpdatedEvent(event(["EscrowConfigUpdated"], {
+      old_min_lock_duration: 100,
+      new_min_lock_duration: 200,
+      old_max_lock_duration: 5000,
+      new_max_lock_duration: 10000,
+      old_max_multiplier_bps: 10000,
+      new_max_multiplier_bps: 20000,
+    }))).toEqual({
+      oldMinLockDuration: 100,
+      newMinLockDuration: 200,
+      oldMaxLockDuration: 5000,
+      newMaxLockDuration: 10000,
+      oldMaxMultiplierBps: 10000,
+      newMaxMultiplierBps: 20000,
+    });
+  });
+  it("returns null for EscrowConfigUpdated with missing fields", () => {
+    expect(parseEscrowConfigUpdatedEvent(event(["EscrowConfigUpdated"], {
+      old_min_lock_duration: 100,
+      new_min_lock_duration: 200,
+    }))).toBeNull();
+  });
+  it("returns null for EscrowConfigUpdated with a non-record value", () => {
+    expect(parseEscrowConfigUpdatedEvent(event(["EscrowConfigUpdated"], 123))).toBeNull();
+  });
+  it("ignores non-EscrowConfigUpdated topics", () => {
+    expect(parseEscrowConfigUpdatedEvent(event(["LockCreated", "GOWNER"], {
+      old_min_lock_duration: 100,
+      new_min_lock_duration: 200,
+      old_max_lock_duration: 5000,
+      new_max_lock_duration: 10000,
+      old_max_multiplier_bps: 10000,
+      new_max_multiplier_bps: 20000,
+    }))).toBeNull();
+  });
 });
 
 describe("voting rewards event parsers", () => {
@@ -60,5 +102,43 @@ describe("voting rewards event parsers", () => {
     expect(parsePoolFundedEvent(event(["PoolFunded", "GFUNDER"], "9000"))).toEqual({
       funder: "GFUNDER", amount: 9000n,
     });
+  });
+  it("parses EpochSwept", () => {
+    expect(parseEpochSweptEvent(event(["EpochSwept", "7"], "4242"))).toEqual({
+      epochId: 7n, unclaimedAmount: 4242n,
+    });
+  });
+  it("parses EpochSwept with bigint value (i128 decoded)", () => {
+    expect(parseEpochSweptEvent(event(["EpochSwept", "7"], 4242n))).toEqual({
+      epochId: 7n, unclaimedAmount: 4242n,
+    });
+  });
+  it("returns null for EpochSwept with a missing epoch topic", () => {
+    expect(parseEpochSweptEvent(event(["EpochSwept"], "4242"))).toBeNull();
+  });
+  it("parses AdminSet (legacy pre-#1658 admin transfer)", () => {
+    expect(parseAdminSetEvent(event(["AdminSet"], "GNEWADMIN"))).toEqual({ newAdmin: "GNEWADMIN" });
+  });
+  it("parses AdminProposed", () => {
+    expect(parseAdminProposedEvent(event(["AdminProposed"], "GNEWADMIN"))).toEqual({ newAdmin: "GNEWADMIN" });
+  });
+  it("parses AdminAccepted", () => {
+    expect(parseAdminAcceptedEvent(event(["AdminAccepted"], "GNEWADMIN"))).toEqual({ newAdmin: "GNEWADMIN" });
+  });
+  it("ignores admin events for other admin topics", () => {
+    expect(parseAdminSetEvent(event(["AdminProposed"], "GNEWADMIN"))).toBeNull();
+    expect(parseAdminProposedEvent(event(["AdminAccepted"], "GNEWADMIN"))).toBeNull();
+    expect(parseAdminAcceptedEvent(event(["AdminSet"], "GNEWADMIN"))).toBeNull();
+  });
+  it("parses EpochDurationUpdated", () => {
+    expect(parseEpochDurationUpdatedEvent(event(["EpochDurationUpdated"], 12345))).toEqual({
+      newDurationLedgers: 12345,
+    });
+  });
+  it("returns null for EpochDurationUpdated with a non-numeric value", () => {
+    expect(parseEpochDurationUpdatedEvent(event(["EpochDurationUpdated"], "soon"))).toBeNull();
+  });
+  it("ignores non-EpochDurationUpdated topics", () => {
+    expect(parseEpochDurationUpdatedEvent(event(["EpochStarted", "7"], 12345))).toBeNull();
   });
 });
