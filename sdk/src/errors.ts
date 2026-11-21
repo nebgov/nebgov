@@ -1160,6 +1160,8 @@ export enum OptimisticGovernorErrorCode {
   Unauthorized = 14,
   ArithmeticOverflow = 15,
   ProposalNotCancellable = 16,
+  BondNotFound = 18,
+  BondNotSettleable = 19,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -1184,6 +1186,9 @@ const OPTIMISTIC_GOVERNOR_MESSAGES: Record<OptimisticGovernorErrorCode, string> 
   [OptimisticGovernorErrorCode.Unauthorized]: "Caller is not authorized to perform this action",
   [OptimisticGovernorErrorCode.ArithmeticOverflow]: "Arithmetic overflow in objection calculation",
   [OptimisticGovernorErrorCode.ProposalNotCancellable]: "Proposal cannot be cancelled in its current state",
+  [OptimisticGovernorErrorCode.BondNotFound]: "No proposer bond is held for this proposal",
+  [OptimisticGovernorErrorCode.BondNotSettleable]:
+    "The bond can only be released or slashed after the proposal was objected",
   [OptimisticGovernorErrorCode.SimulationFailed]: "Simulation failed",
   [OptimisticGovernorErrorCode.TransactionFailed]: "Transaction failed",
   [OptimisticGovernorErrorCode.TransactionTimeout]: "Transaction timed out",

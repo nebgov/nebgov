@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simulation: optimistic governance scenario (propose/object/finalize/execute) and conviction voting test coverage (#1160, #1153)
 - Testing: comprehensive test suites for vote-escrow, voting-rewards, treasury-strategies, proposal bonds, and SDK clients with event coverage (#1156, #1155, #1151, #1150)
 - Proposal Bonds: admin-only `update_settings` (bond token, governor, refund grace, max lock) and `set_admin`, with `SettingsUpdated` / `AdminUpdated` events, `ProposalBondsClient.updateSettings` / `setAdmin`, and `nebgov proposal-bonds update-settings` / `set-admin`. Each bond keeps the token it was locked in (#1537)
+- Optimistic Governor: admin (governance) `release_bond` / `slash_bond` for objected proposals, with `BondReleased` / `BondSlashed` events (#1539)
 
 ### Changed
 
@@ -54,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Optimistic Governor: cancelling an objected proposal no longer refunds its bond, so the anti-spam bond is actually at risk (#1539)
 - SDK build: restore `ConvictionVotingConfig.indexerUrl` and export `VoteEscrowLock` / `VoteEscrowStats` from their defining module.
 - `fuzz/timelock.rs` no longer shadows `Vec` with the Soroban type, so it compiles.
 

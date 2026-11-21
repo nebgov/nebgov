@@ -262,7 +262,10 @@ cast during its challenge window. See [Optimistic Governance](./optimistic-gover
 - `propose` opens a proposal with a challenge window and takes a proposer bond
 - `object` records an objection; an objected proposal is blocked
 - `finalize` settles a proposal that was not blocked, and `execute` calls its target contract
-- `cancel` lets the proposer withdraw before the proposal passes, which refunds the bond; `update_config` (admin) changes the parameters
+- `cancel` lets the proposer withdraw before the proposal passes. It refunds the bond only if the proposal was not
+  objected; an objected proposal's bond stays locked
+- `release_bond` / `slash_bond` (admin, meant to be governance) return an objected proposal's bond to its proposer or
+  send it to a recipient; `update_config` (admin) changes the parameters
 
 **Depends on:** a SEP-41 bond token, the votes token used to read objector weight, and the target contract of each
 proposal it executes.
@@ -274,6 +277,7 @@ proposal it executes.
 - `ProposalPassed`: Challenge window ended without a blocking objection
 - `ProposalExecuted`: Proposal executed on its target
 - `ProposalCancelled`: Proposal withdrawn by its proposer
+- `BondReleased` / `BondSlashed`: An objected proposal's bond returned to its proposer or slashed
 - `ConfigUpdated`: Parameters changed
 
 #### Conviction-Voting Contract
