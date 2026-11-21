@@ -231,6 +231,7 @@ docker run --env-file packages/indexer/.env \
 | `TREASURY_STRATEGIES_ADDRESS` | No | - | Stellar contract address of the treasury yield-strategy allocator |
 | `OPTIMISTIC_GOVERNOR_ADDRESS` | No | - | Stellar contract address of the optimistic-governance track |
 | `VOTE_ESCROW_ADDRESS` | No | - | Stellar contract address of the vote-escrow contract (lock create, increase and withdraw events) |
+| `TREASURY_STREAMS_ADDRESS` | No | - | Stellar contract address of `contracts/treasury-streams` (events are logged to `event_log`; `StrmCompleted` is broadcast as `treasury_stream_completed`). The backend executor reads the same address as `TREASURY_STREAMS_CONTRACT_ID` |
 | `VOTING_REWARDS_ADDRESS` | No | - | Stellar contract address of the voting-rewards contract (not indexed yet; kept in sync with the root `.env.example`) |
 | `STELLAR_NETWORK_PASSPHRASE` | No | Testnet passphrase | Network passphrase used for treasury read simulations |
 | `POLL_INTERVAL_MS` | No | `5000` | Milliseconds between event polling cycles |

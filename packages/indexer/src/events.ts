@@ -70,6 +70,7 @@ export interface IndexerConfig {
   treasuryStrategiesAddress?: string;
   optimisticGovernorAddress?: string;
   voteEscrowAddress?: string;
+  treasuryStreamsAddress?: string;
   treasuryStateReader?: TreasuryStateReader;
   pollIntervalMs: number;
 }
@@ -108,6 +109,7 @@ export async function processEvents(
     if (config.optimisticGovernorAddress)
       contractIds.push(config.optimisticGovernorAddress);
     if (config.voteEscrowAddress) contractIds.push(config.voteEscrowAddress);
+    if (config.treasuryStreamsAddress) contractIds.push(config.treasuryStreamsAddress);
 
     const response = await server.getEvents({
       startLedger,
@@ -185,6 +187,11 @@ export async function processEvents(
       );
       const isVoteEscrow = !!(
         contractId && config.voteEscrowAddress && contractId === config.voteEscrowAddress
+      );
+      const isTreasuryStreams = !!(
+        contractId &&
+        config.treasuryStreamsAddress &&
+        contractId === config.treasuryStreamsAddress
       );
 
       try {
@@ -406,6 +413,8 @@ export async function processEvents(
           await handleOptimisticGovernorEvent(event, eventType, topics);
         } else if (isVoteEscrow) {
           await handleVoteEscrowEvent(event, eventType, topics);
+        } else if (isTreasuryStreams) {
+          handleTreasuryStreamsEvent(event, eventType, topics);
         } else {
           switch (eventType) {
             case "ProposalCreated":
@@ -1549,6 +1558,34 @@ async function handleStrategyWithdrawalClaimed(
   broadcast({
     type: "strategy_withdrawal_claimed",
     data: { withdrawal_id: withdrawalId, actual_amount: actualAmount, ledger: event.ledger },
+  });
+}
+
+/**
+ * `contracts/treasury-streams` events. Every one of them is already persisted
+ * to `event_log` above; there is no projection table for these streams (the
+ * `treasury_streams` table belongs to `contracts/treasury` budget streams, a
+ * different id space). `StrmCompleted` is also broadcast, so subscribers learn
+ * that a stream has paid its last interval and dropped out of
+ * `get_active_streams`.
+ */
+function handleTreasuryStreamsEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): void {
+  if (eventType !== "StrmCompleted") return;
+  const raw = scValToNative(event.value) as unknown;
+  const data = (raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw
+    : {}) as Record<string, unknown>;
+  broadcast({
+    type: "treasury_stream_completed",
+    data: {
+      stream_id: String(data.stream_id ?? topics[1]),
+      total_streamed: String(data.total_streamed ?? 0),
+      ledger: event.ledger,
+    },
   });
 }
 
