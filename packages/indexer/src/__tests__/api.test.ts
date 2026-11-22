@@ -310,6 +310,16 @@ describe("GET /proposals with cursor pagination", () => {
   });
 
   describe("GET /timelock endpoints", () => {
+    it("lists timelock operations with pagination", async () => {
+      const rows = [{ op_id: "010203", status: "scheduled", ledger: 50 }];
+      (mockPool.query as jest.Mock).mockResolvedValueOnce({ rows });
+
+      const res = await request(app).get("/timelock/operations?limit=10&offset=0");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual(rows);
+      expect(res.body.pagination).toEqual({ limit: 10, offset: 0, hasMore: false });
+    });
+
     it("GET /timelock/operations/:opId returns operation", async () => {
       const mockOp = { op_id: "010203", target: "G123", fn_name: "test", ready_at: "100", expires_at: "200", status: "scheduled", ledger: 50 };
       (mockPool.query as jest.Mock).mockResolvedValueOnce({ rows: [mockOp] });
@@ -352,6 +362,22 @@ describe("GET /proposals with cursor pagination", () => {
       const res = await request(app).get("/timelock/batches/0a0b0c/partial-state");
       expect(res.status).toBe(200);
       expect(res.body).toEqual(mockPartial);
+    });
+  });
+
+  describe("GET /liquidity endpoints", () => {
+    it("exposes indexed liquidity, swap, and fee-update rows", async () => {
+      const liquidity = [{ id: 1, event_type: "add", provider: "GPROVIDER" }];
+      const swaps = [{ id: 2, trader: "GTRADER", fee: "3" }];
+      const fees = [{ id: 3, old_fee_bps: 30, new_fee_bps: 40 }];
+      (mockPool.query as jest.Mock)
+        .mockResolvedValueOnce({ rows: liquidity })
+        .mockResolvedValueOnce({ rows: swaps })
+        .mockResolvedValueOnce({ rows: fees });
+
+      expect((await request(app).get("/liquidity/events")).body.data).toEqual(liquidity);
+      expect((await request(app).get("/liquidity/swaps")).body.data).toEqual(swaps);
+      expect((await request(app).get("/liquidity/fee-updates")).body.data).toEqual(fees);
     });
   });
 
