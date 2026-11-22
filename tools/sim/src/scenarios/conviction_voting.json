@@ -25,10 +25,11 @@
     {
       "type": "ConvictionCreateProposal",
       "actor": "alice",
-      "target": "target",
-      "fn_name": "noop",
+      "target": "treasury",
+      "fn_name": "transfer",
       "calldata": null,
-      "requested_amount": 500
+      "requested_amount": 500,
+      "description": "funding proposal: treasury.transfer(to, token, amount=500) paid to the proposer; with no explicit calldata the runner encodes the default 3-arg transfer calldata that validate_funding_action requires (amount last, equal to requested_amount)"
     },
     {
       "type": "ConvictionStake",

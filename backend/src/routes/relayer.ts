@@ -252,8 +252,15 @@ async function submitInvocation(
   prepared.sign(relayer);
   const result = await server.sendTransaction(prepared);
   if (result.status === "ERROR") {
+    const errResult: unknown = result.errorResult ?? result;
+    const code =
+      typeof errResult === "object" && errResult !== null && typeof (errResult as { code?: unknown }).code === "number"
+        ? (errResult as { code: number }).code
+        : undefined;
     throw new Error(
-      `Transaction failed: ${JSON.stringify(result.errorResult ?? result)}`,
+      `Transaction failed: ${
+        code !== undefined ? `ContractError(${code})` : JSON.stringify(errResult)
+      }`,
     );
   }
   return result.hash;

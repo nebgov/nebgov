@@ -24,8 +24,8 @@
     { "type": "AdvanceLedger", "ledgers": 300 },
     { "type": "ExpectVotingPower", "actor": "alice", "expected_power": 1250, "description": "halfway through the 600-ledger lock: boost decayed linearly from 500 to 250" },
 
-    { "type": "IncreaseVoteEscrowLock", "actor": "alice", "additional_amount": 1000, "description": "amount 1000 -> 2000; initial_voting_power recomputed over the lock's original full duration -> 3000" },
-    { "type": "ExpectVotingPower", "actor": "alice", "expected_power": 2500, "description": "same decay fraction (remaining 300 / duration 600) applied to the new 1000-unit boost" },
+    { "type": "IncreaseVoteEscrowLock", "actor": "alice", "additional_amount": 1000, "description": "amount 1000 -> 2000 at ledger 301; the existing 500 boost is kept and the 1000 top-up is priced as a fresh 300-ledger lock (applicable_bps 2000 -> 200 boost) scaled by total/remaining 600/300 -> +400 boost; initial_voting_power 2900" },
+    { "type": "ExpectVotingPower", "actor": "alice", "expected_power": 2450, "description": "at ledger 301: 2000 + (500 existing + 400 top-up) * remaining 300 / duration 600 = 2450; the top-up boost decays to zero at end_ledger with the rest" },
 
     { "type": "ExtendVoteEscrowLock", "actor": "alice", "new_end_ledger": 1101, "description": "new_duration 1100 == max_lock_duration -> full max_multiplier_bps applies -> boost 2000, initial_voting_power 4000" },
 

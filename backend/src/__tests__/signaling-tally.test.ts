@@ -122,12 +122,15 @@ describe("computeWeightedTally", () => {
     expect(results.totalVotes).toBe(2);
     expect(results.totals).toEqual(["1000", "0"]);
 
-    // The zero-power vote must still have been persisted (voting_power = 0),
-    // not silently skipped.
+    // The zero-power vote must still have been persisted (voting_power = "0"),
+    // not silently skipped. computeWeightedTally persists all resolved powers
+    // in one batched UPDATE ... FROM UNNEST($1, $2) with params (ids, powers).
     const updateCalls = mockQuery.mock.calls.filter(([sql]) =>
-      String(sql).includes("UPDATE signaling_votes SET voting_power"),
+      String(sql).includes("UPDATE signaling_votes") && String(sql).includes("voting_power"),
     );
-    expect(updateCalls).toHaveLength(2);
-    expect(updateCalls.some(([, params]) => params[0] === "0" && params[1] === 2)).toBe(true);
+    expect(updateCalls).toHaveLength(1);
+    const [, params] = updateCalls[0] as [string, unknown[]];
+    expect(params[0]).toEqual([1, 2]);
+    expect(params[1]).toEqual(["1000", "0"]);
   });
 });

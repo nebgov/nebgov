@@ -42,7 +42,8 @@
     { "type": "Vote", "actor": "bob", "proposal_id": 2, "support": "Against" },
     { "type": "Vote", "actor": "carol", "proposal_id": 2, "support": "For" },
     { "type": "AdvanceLedger", "ledgers": 10 },
-    { "type": "ExpectState", "proposal_id": 2, "expected_state": "Succeeded" },
+    { "type": "ExpectState", "proposal_id": 2, "expected_state": "Defeated",
+      "description": "bob holds the 60% majority share of alice's split delegation (plus his own 500 and dave's cascaded 200 split 60/40), so his Against outweighs carol's For and proposal #2 is Defeated" },
     { "type": "TakeAnalyticsSnapshot" }
   ]
 }

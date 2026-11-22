@@ -760,7 +760,16 @@ impl SimulationRunner {
                 let calldata_bytes = if let Some(cd) = calldata {
                     Bytes::from_slice(&self.env, cd.as_bytes())
                 } else {
-                    Bytes::new(&self.env)
+                    // No explicit calldata: default to a treasury payout of
+                    // `requested_amount` to the proposer, encoded as
+                    // `transfer(to, token, amount)` — the 3-arg shape
+                    // ConvictionVotingContract::validate_funding_action requires
+                    // (amount last, matching requested_amount).
+                    let mut args: SorobanVec<Val> = SorobanVec::new(&self.env);
+                    args.push_back(proposer.clone().into_val(&self.env));
+                    args.push_back(self.token.clone().into_val(&self.env));
+                    args.push_back((*requested_amount as i128).into_val(&self.env));
+                    args.to_xdr(&self.env)
                 };
                 self.conviction_voting.create_proposal(
                     &proposer,
@@ -1357,16 +1366,18 @@ fn reward_leaves(env: &Env, epoch_id: u64, leaves: &[(Address, i128)]) -> Vec<By
         .collect()
 }
 
-/// `sha256(min(a, b) || max(a, b))` — mirrors the crate-private
-/// `merkle::hash_pair` in `contracts/voting-rewards`. A mismatch would make
-/// every valid `ClaimReward` fail with `InvalidProof`.
+/// `sha256(0x01 || min(a, b) || max(a, b))` — mirrors the crate-private
+/// `merkle::hash_pair` in `contracts/voting-rewards` (the `0x01` internal-node
+/// domain prefix included). A mismatch would make every valid `ClaimReward`
+/// fail with `InvalidProof`.
 fn merkle_hash_pair(env: &Env, a: &BytesN<32>, b: &BytesN<32>) -> BytesN<32> {
     let (first, second) = if a.to_array() <= b.to_array() {
         (a, b)
     } else {
         (b, a)
     };
-    let mut buf = Bytes::from_array(env, &first.to_array());
+    let mut buf = Bytes::from_array(env, &[0x01]);
+    buf.append(&Bytes::from_array(env, &first.to_array()));
     buf.append(&Bytes::from_array(env, &second.to_array()));
     env.crypto().sha256(&buf).into()
 }

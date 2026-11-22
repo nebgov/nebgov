@@ -41,7 +41,7 @@ const diffParamSchema = z.object({
  * GET /proposals/:proposalId/amendments
  * List all amendments for a proposal, including the original (version 0)
  */
-router.get("/:proposalId/amendments", validate(proposalIdParamSchema, "params"), async (req, res) => {
+router.get("/:proposalId/amendments", validate({ params: proposalIdParamSchema }), async (req, res) => {
   try {
     const { proposalId } = req.params as { proposalId: string };
     const proposalIdNum = parseInt(proposalId, 10);
@@ -100,7 +100,7 @@ router.get("/:proposalId/amendments", validate(proposalIdParamSchema, "params"),
  * GET /proposals/:proposalId/amendments/:version
  * Get a specific amendment version
  */
-router.get("/:proposalId/amendments/:version", validate(versionParamSchema, "params"), async (req, res) => {
+router.get("/:proposalId/amendments/:version", validate({ params: versionParamSchema }), async (req, res) => {
   try {
     const { proposalId, version } = req.params as { proposalId: string; version: string };
     const proposalIdNum = parseInt(proposalId, 10);
@@ -159,7 +159,7 @@ router.get("/:proposalId/amendments/:version", validate(versionParamSchema, "par
  * Create a new amendment draft (proposer-only)
  * The amendment is not published until explicitly published via /publish-amendment/:version
  */
-router.post("/:proposalId/amend", validate(proposalIdParamSchema, "params"), validate(amendmentInputSchema, "body"), async (req, res) => {
+router.post("/:proposalId/amend", validate({ params: proposalIdParamSchema, body: amendmentInputSchema }), async (req, res) => {
   try {
     const { proposalId } = req.params as { proposalId: string };
     const proposalIdNum = parseInt(proposalId, 10);
@@ -235,7 +235,7 @@ router.post("/:proposalId/amend", validate(proposalIdParamSchema, "params"), val
  * POST /proposals/:proposalId/publish-amendment/:version
  * Publish an amendment as the canonical version (proposer-only, Pending state only)
  */
-router.post("/:proposalId/publish-amendment/:version", validate(versionParamSchema, "params"), async (req, res) => {
+router.post("/:proposalId/publish-amendment/:version", validate({ params: versionParamSchema }), async (req, res) => {
   try {
     const { proposalId, version } = req.params as { proposalId: string; version: string };
     const proposalIdNum = parseInt(proposalId, 10);
@@ -303,7 +303,7 @@ router.post("/:proposalId/publish-amendment/:version", validate(versionParamSche
  * GET /proposals/:proposalId/amendment-diff/:from/:to
  * Get a JSON-Merge-Patch diff between two amendment versions
  */
-router.get("/:proposalId/amendment-diff/:from/:to", validate(diffParamSchema, "params"), async (req, res) => {
+router.get("/:proposalId/amendment-diff/:from/:to", validate({ params: diffParamSchema }), async (req, res) => {
   try {
     const { proposalId, from, to } = req.params as { proposalId: string; from: string; to: string };
     const proposalIdNum = parseInt(proposalId, 10);
