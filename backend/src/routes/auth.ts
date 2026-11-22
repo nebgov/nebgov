@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import pool from "../db/pool";
 import { validate } from "../middleware/validate";
 import { logger } from "../logger";
@@ -9,9 +10,41 @@ import { requireJwtSecret } from "../config";
 
 const router = Router();
 
-const loginSchema = z.object({
+const walletSchema = z.object({
   wallet_address: z.string().trim().min(10).max(56),
 });
+
+const loginSchema = walletSchema.extend({
+  nonce: z.string().trim().min(32).max(128),
+  signature: z.string().trim().min(1),
+});
+
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const AUTH_DOMAIN = "NebGov wallet login";
+
+function loginMessage(walletAddress: string, nonce: string): string {
+  return `${AUTH_DOMAIN}\nWallet: ${walletAddress}\nNonce: ${nonce}`;
+}
+
+function sep53Digest(message: string): Buffer {
+  return crypto
+    .createHash("sha256")
+    .update(`Stellar Signed Message:\n${message}`, "utf8")
+    .digest();
+}
+
+function verifyLoginSignature(walletAddress: string, nonce: string, signature: string): boolean {
+  try {
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) return false;
+    const keypair = Keypair.fromPublicKey(walletAddress);
+    return keypair.verify(
+      sep53Digest(loginMessage(walletAddress, nonce)),
+      Buffer.from(signature, "base64"),
+    );
+  } catch {
+    return false;
+  }
+}
 
 const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -26,14 +59,57 @@ function generateRefreshToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+// POST /auth/challenge - issue a short-lived, one-time wallet login challenge.
+router.post(
+  "/challenge",
+  validate({ body: walletSchema }),
+  async (req, res) => {
+    const walletAddress = (req.body.wallet_address as string).trim();
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+
+    const nonce = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
+    await pool.query(
+      "INSERT INTO auth_challenges (nonce, wallet_address, expires_at) VALUES ($1, $2, $3)",
+      [nonce, walletAddress, expiresAt],
+    );
+    return res.json({
+      nonce,
+      message: loginMessage(walletAddress, nonce),
+      expires_at: expiresAt.toISOString(),
+    });
+  },
+);
+
 // POST /auth/login - Wallet-signature-based login
 router.post(
   "/login",
   validate({ body: loginSchema }),
   async (req, res) => {
     const walletAddress = (req.body.wallet_address as string).trim();
+    const { nonce, signature } = req.body as { nonce: string; signature: string };
 
     try {
+      if (!verifyLoginSignature(walletAddress, nonce, signature)) {
+        return res.status(401).json({ error: "Invalid wallet signature" });
+      }
+
+      const challenge = await pool.query(
+        `UPDATE auth_challenges
+            SET used_at = NOW()
+          WHERE nonce = $1
+            AND wallet_address = $2
+            AND used_at IS NULL
+            AND expires_at > NOW()
+          RETURNING nonce`,
+        [nonce, walletAddress],
+      );
+      if (challenge.rowCount !== 1) {
+        return res.status(401).json({ error: "Invalid or expired login challenge" });
+      }
+
       // Find or create user
       const existing = await pool.query<{ id: number; wallet_address: string }>(
         "SELECT id, wallet_address FROM users WHERE wallet_address = $1",
