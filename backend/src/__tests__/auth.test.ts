@@ -3,9 +3,29 @@ import app from "../index";
 import pool from "../db/pool";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import { Keypair } from "@stellar/stellar-sdk";
 
 describe("Auth Routes", () => {
-  const testWallet = "GTEST123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+  const keypair = Keypair.random();
+  const testWallet = keypair.publicKey();
+
+  async function loginRequest() {
+    const challenge = await request(app)
+      .post("/auth/challenge")
+      .send({ wallet_address: keypair.publicKey() })
+      .expect(200);
+    const digest = crypto
+      .createHash("sha256")
+      .update(`Stellar Signed Message:\n${challenge.body.message}`, "utf8")
+      .digest();
+    return request(app)
+      .post("/auth/login")
+      .send({
+        wallet_address: keypair.publicKey(),
+        nonce: challenge.body.nonce,
+        signature: keypair.sign(digest).toString("base64"),
+      });
+  }
 
   beforeEach(async () => {
     // Clean up test data
@@ -25,10 +45,7 @@ describe("Auth Routes", () => {
 
   describe("POST /auth/login", () => {
     it("should create a new user and return access token with refresh cookie", async () => {
-      const response = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet })
-        .expect(200);
+      const response = await loginRequest().expect(200);
 
       expect(response.body).toHaveProperty("accessToken");
       expect(response.body).toHaveProperty("user_id");
@@ -58,18 +75,12 @@ describe("Auth Routes", () => {
 
     it("should return existing user on subsequent login", async () => {
       // First login
-      const firstResponse = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet })
-        .expect(200);
+      const firstResponse = await loginRequest().expect(200);
 
       const firstUserId = firstResponse.body.user_id;
 
       // Second login
-      const secondResponse = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet })
-        .expect(200);
+      const secondResponse = await loginRequest().expect(200);
 
       expect(secondResponse.body.user_id).toBe(firstUserId);
 
@@ -88,6 +99,13 @@ describe("Auth Routes", () => {
         .expect(400);
     });
 
+    it("should reject a wallet login without a valid proof of key ownership", async () => {
+      await request(app)
+        .post("/auth/login")
+        .send({ wallet_address: keypair.publicKey(), nonce: "a".repeat(64), signature: "invalid" })
+        .expect(401);
+    });
+
     it("should reject missing wallet address", async () => {
       await request(app).post("/auth/login").send({}).expect(400);
     });
@@ -99,9 +117,7 @@ describe("Auth Routes", () => {
 
     beforeEach(async () => {
       // Create a user and get refresh token
-      const response = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet });
+      const response = await loginRequest();
 
       userId = response.body.user_id;
       const cookies = response.headers["set-cookie"];
@@ -196,9 +212,7 @@ describe("Auth Routes", () => {
 
     beforeEach(async () => {
       // Create a user and get refresh token
-      const response = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet });
+      const response = await loginRequest();
 
       userId = response.body.user_id;
       const cookies = response.headers["set-cookie"];
@@ -240,9 +254,7 @@ describe("Auth Routes", () => {
 
   describe("Token expiry", () => {
     it("should set access token to expire in 15 minutes", async () => {
-      const response = await request(app)
-        .post("/auth/login")
-        .send({ wallet_address: testWallet });
+      const response = await loginRequest();
 
       const decoded = jwt.decode(response.body.accessToken) as any;
       const expiryTime = decoded.exp - decoded.iat;
