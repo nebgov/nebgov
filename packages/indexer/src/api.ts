@@ -2145,6 +2145,77 @@ export function createApp(server: SorobanRpc.Server): express.Application {
 
   // --- Timelock endpoints (#906) ---
 
+  // --- Liquidity event endpoints ---
+  // These tables are populated by the liquidity contract handlers in events.ts.
+  app.get("/liquidity/events", async (req: Request, res: Response): Promise<void> => {
+    const limit = parsePagination(req.query.limit, req.query.offset, 50, 200);
+    if (!limit) {
+      res.status(400).json({ error: "Invalid pagination parameters" });
+      return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT * FROM liquidity_events ORDER BY ledger DESC, id DESC LIMIT $1 OFFSET $2`,
+        [limit.limit, limit.offset],
+      );
+      res.json({ data: result.rows, pagination: { ...limit, hasMore: result.rows.length === limit.limit } });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/liquidity/swaps", async (req: Request, res: Response): Promise<void> => {
+    const limit = parsePagination(req.query.limit, req.query.offset, 50, 200);
+    if (!limit) {
+      res.status(400).json({ error: "Invalid pagination parameters" });
+      return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT * FROM swap_events ORDER BY ledger DESC, id DESC LIMIT $1 OFFSET $2`,
+        [limit.limit, limit.offset],
+      );
+      res.json({ data: result.rows, pagination: { ...limit, hasMore: result.rows.length === limit.limit } });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/liquidity/fee-updates", async (req: Request, res: Response): Promise<void> => {
+    const limit = parsePagination(req.query.limit, req.query.offset, 50, 200);
+    if (!limit) {
+      res.status(400).json({ error: "Invalid pagination parameters" });
+      return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT * FROM pool_fee_updates ORDER BY ledger DESC, id DESC LIMIT $1 OFFSET $2`,
+        [limit.limit, limit.offset],
+      );
+      res.json({ data: result.rows, pagination: { ...limit, hasMore: result.rows.length === limit.limit } });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /timelock/operations lists scheduled, executed, and cancelled operations.
+  app.get("/timelock/operations", async (req: Request, res: Response): Promise<void> => {
+    const limit = parsePagination(req.query.limit, req.query.offset, 50, 200);
+    if (!limit) {
+      res.status(400).json({ error: "Invalid pagination parameters" });
+      return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT * FROM timelock_operations ORDER BY ledger DESC, id DESC LIMIT $1 OFFSET $2`,
+        [limit.limit, limit.offset],
+      );
+      res.json({ data: result.rows, pagination: { ...limit, hasMore: result.rows.length === limit.limit } });
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // GET /timelock/operations/:opId
   app.get(
     "/timelock/operations/:opId",
