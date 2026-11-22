@@ -893,6 +893,11 @@ The timelock endpoints return the latest indexed state for an operation or
 batch. IDs are lowercase hexadecimal encodings of the contract's `Bytes`
 identifiers.
 
+#### GET /timelock/operations
+
+List indexed timelock operations. Supports `limit` (default 50, max 200) and
+`offset` pagination and returns the same rows as the single-operation endpoint.
+
 #### GET /timelock/operations/:opId
 
 Get a scheduled, executed, or cancelled timelock operation.
@@ -910,6 +915,17 @@ Get the batch's latest dependency-DAG validation result.
 Get the latest partial-execution or recovery state for a batch.
 
 Each endpoint returns `404` when no indexed record exists for the supplied ID.
+
+### Liquidity
+
+The indexer exposes the event history written by the liquidity contract:
+
+- `GET /liquidity/events` — liquidity additions and removals.
+- `GET /liquidity/swaps` — swaps with input/output amounts and fees.
+- `GET /liquidity/fee-updates` — pool fee changes.
+
+All three endpoints support `limit` (default 50, max 200) and `offset`
+pagination and return `{ data, pagination }`.
 
 ### Leaderboard
 
