@@ -89,7 +89,7 @@ const publicRoute = (path: string, method: 'get' | 'post' | 'put' | 'delete', de
 // Keep this inventory alongside backend/src/index.ts. The route coverage test
 // makes omissions fail loudly when a router gains a new public endpoint.
 const documentedRoutes: Array<[string, 'get' | 'post' | 'put' | 'delete', boolean]> = [
-  ['/auth/login', 'post', false], ['/auth/refresh', 'post', false], ['/auth/logout', 'post', true],
+  ['/auth/challenge', 'post', false], ['/auth/login', 'post', false], ['/auth/refresh', 'post', false], ['/auth/logout', 'post', true],
   ['/competitions', 'get', false], ['/competitions', 'post', true], ['/competitions/{id}', 'get', false],
   ['/competitions/{id}', 'delete', true], ['/competitions/{id}/join', 'post', true], ['/competitions/{id}/leave', 'post', true],
   ['/competitions/{id}/participants', 'get', false], ['/leaderboard/history', 'get', false], ['/leaderboard', 'get', false],
