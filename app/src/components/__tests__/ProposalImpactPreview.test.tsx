@@ -1,4 +1,6 @@
 import React from "react";
+import { NextIntlClientProvider } from "next-intl";
+import messages from "../../messages/en.json";
 import renderer from "react-test-renderer";
 import { render, screen } from "@testing-library/react";
 import type { SimulationResult } from "@nebgov/sdk";
@@ -11,11 +13,19 @@ jest.mock("../TreasuryImpactSummary", () => ({
 
 import { ProposalImpactPreview } from "../ProposalImpactPreview";
 
+function withIntl(ui: React.ReactElement) {
+  return (
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
+
 describe("ProposalImpactPreview", () => {
   it("renders loading state", () => {
     const tree = renderer
       .create(
-        <ProposalImpactPreview results={null} loading={true} error={null} />
+        withIntl(<ProposalImpactPreview results={null} loading={true} error={null} />)
       )
       .toJSON();
     expect(tree).toMatchSnapshot();
@@ -23,7 +33,7 @@ describe("ProposalImpactPreview", () => {
 
   it("displays loading message", () => {
     render(
-      <ProposalImpactPreview results={null} loading={true} error={null} />
+      withIntl(<ProposalImpactPreview results={null} loading={true} error={null} />)
     );
 
     expect(
@@ -34,11 +44,11 @@ describe("ProposalImpactPreview", () => {
   it("renders error state", () => {
     const tree = renderer
       .create(
-        <ProposalImpactPreview
+        withIntl(<ProposalImpactPreview
           results={null}
           loading={false}
           error="Contract call failed"
-        />
+        />)
       )
       .toJSON();
     expect(tree).toMatchSnapshot();
@@ -46,11 +56,11 @@ describe("ProposalImpactPreview", () => {
 
   it("displays error message", () => {
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={null}
         loading={false}
         error="Contract call failed"
-      />
+      />)
     );
 
     expect(
@@ -60,11 +70,11 @@ describe("ProposalImpactPreview", () => {
 
   it("renders no actions message when results empty", () => {
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={[]}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -74,11 +84,11 @@ describe("ProposalImpactPreview", () => {
 
   it("renders no actions message when results null", () => {
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={null}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -97,11 +107,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -120,11 +130,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -150,11 +160,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -181,11 +191,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(
@@ -204,11 +214,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(screen.getByTestId("treasury-impact")).toBeInTheDocument();
@@ -237,11 +247,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(screen.getByText("Action 1")).toBeInTheDocument();
@@ -267,11 +277,11 @@ describe("ProposalImpactPreview", () => {
 
     const tree = renderer
       .create(
-        <ProposalImpactPreview
+        withIntl(<ProposalImpactPreview
           results={results}
           loading={false}
           error={null}
-        />
+        />)
       )
       .toJSON();
     expect(tree).toMatchSnapshot();
@@ -291,11 +301,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(screen.getByText(longSummary)).toBeInTheDocument();
@@ -315,11 +325,11 @@ describe("ProposalImpactPreview", () => {
     ];
 
     render(
-      <ProposalImpactPreview
+      withIntl(<ProposalImpactPreview
         results={results}
         loading={false}
         error={null}
-      />
+      />)
     );
 
     expect(screen.getByText(longRevertReason)).toBeInTheDocument();

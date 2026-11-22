@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { SimulationResult } from "@nebgov/sdk";
 import { TreasuryImpactSummary } from "./TreasuryImpactSummary";
 
@@ -17,11 +18,12 @@ interface Props {
  * looked like at submission time.
  */
 export function ProposalImpactPreview({ results, loading, error }: Props) {
+  const t = useTranslations("impactPreview");
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-gray-500 text-sm py-2">
         <Loader2 className="w-4 h-4 animate-spin" />
-        Simulating proposal actions against current chain state...
+        {t("simulating")}
       </div>
     );
   }
@@ -30,14 +32,14 @@ export function ProposalImpactPreview({ results, loading, error }: Props) {
     return (
       <div className="flex items-center gap-2 text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400 p-3 rounded-lg text-sm">
         <AlertTriangle className="w-4 h-4 shrink-0" />
-        Could not simulate this proposal: {error}
+        {t("simulationError", { error })}
       </div>
     );
   }
 
   if (!results || results.length === 0) {
     return (
-      <p className="text-sm text-gray-500 italic">No on-chain actions to preview.</p>
+      <p className="text-sm text-gray-500 italic">{t("noActions")}</p>
     );
   }
 
@@ -48,7 +50,7 @@ export function ProposalImpactPreview({ results, loading, error }: Props) {
       {anyActionWouldRevert && (
         <div className="flex items-center gap-2 text-rose-700 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 p-3 rounded-lg text-sm font-medium">
           <XCircle className="w-4 h-4 shrink-0" />
-          At least one action would fail to execute — this proposal cannot succeed as written.
+          {t("wouldRevert")}
         </div>
       )}
       <ul className="space-y-3">

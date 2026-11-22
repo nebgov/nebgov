@@ -1,5 +1,6 @@
 "use client";
 
+import { useFormatter, useTranslations } from "next-intl";
 import type { SimulationResult } from "@nebgov/sdk";
 
 interface Props {
@@ -8,13 +9,15 @@ interface Props {
 
 /** Before/after spending-cap bar for a treasury-touching action. */
 export function TreasuryImpactSummary({ impact }: Props) {
+  const t = useTranslations("impactPreview");
+  const format = useFormatter();
   const before = impact.capRemainingBefore;
   const after = impact.capRemainingAfter;
 
   if (before === null || after === null) {
     return (
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-        Spending cap: unrestricted for {impact.token}.
+        {t("capUnrestricted", { token: impact.token })}
       </p>
     );
   }
@@ -28,9 +31,9 @@ export function TreasuryImpactSummary({ impact }: Props) {
   return (
     <div className="mt-3 text-xs">
       <div className="flex justify-between text-gray-500 dark:text-gray-400 mb-1">
-        <span>Spending cap remaining ({impact.token})</span>
+        <span>{t("capRemaining", { token: impact.token })}</span>
         <span className={overCap ? "text-rose-600 font-semibold" : "font-medium"}>
-          {before.toString()} → {after.toString()}
+          {format.number(before)} → {format.number(after)}
         </span>
       </div>
       <div className="relative h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
@@ -44,7 +47,7 @@ export function TreasuryImpactSummary({ impact }: Props) {
         />
       </div>
       {overCap && (
-        <p className="text-rose-600 mt-1">This action would exceed the current period&apos;s spending cap.</p>
+        <p className="text-rose-600 mt-1">{t("capExceeded")}</p>
       )}
     </div>
   );

@@ -1,6 +1,16 @@
 import React from "react";
+import { NextIntlClientProvider } from "next-intl";
+import messages from "../../messages/en.json";
 import renderer from "react-test-renderer";
 import { TreasuryImpactSummary } from "../TreasuryImpactSummary";
+
+function withIntl(ui: React.ReactElement) {
+  return (
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      {ui}
+    </NextIntlClientProvider>
+  );
+}
 
 describe("TreasuryImpactSummary", () => {
   it("renders unrestricted message when before cap is null", () => {
@@ -10,7 +20,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: null,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
@@ -22,7 +32,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: 5000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
@@ -34,7 +44,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: 5000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .root;
 
     const text = tree.findByType("span").children;
@@ -48,7 +58,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: 5000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .root;
 
     const bars = tree.findAllByType("div");
@@ -65,7 +75,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: -1000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
@@ -77,7 +87,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: -1000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .root;
 
     expect(tree.findByType("p").props.children).toContain("exceed");
@@ -90,7 +100,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: -100n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
@@ -102,7 +112,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: -5000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
@@ -114,7 +124,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: 5000n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .root;
 
     const text = tree.findAllByType("span")[0].children;
@@ -128,7 +138,7 @@ describe("TreasuryImpactSummary", () => {
       capRemainingAfter: 500n,
     };
     const tree = renderer
-      .create(<TreasuryImpactSummary impact={impact} />)
+      .create(withIntl(<TreasuryImpactSummary impact={impact} />))
       .toJSON();
     expect(tree).toMatchSnapshot();
   });
