@@ -17,6 +17,8 @@ import { bootstrapTreasuryProjection } from "./treasuryProjection";
 dotenv.config();
 
 const GOVERNOR_ADDRESS = process.env.GOVERNOR_ADDRESS ?? "";
+const GOVERNOR_FACTORY_ADDRESS =
+  process.env.GOVERNOR_FACTORY_ADDRESS ?? process.env.FACTORY_ADDRESS ?? "";
 const WRAPPER_ADDRESS = process.env.WRAPPER_ADDRESS ?? "";
 const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS ?? "";
 const LIQUIDITY_ADDRESS = process.env.LIQUIDITY_ADDRESS ?? "";
@@ -31,6 +33,8 @@ const TREASURY_STRATEGIES_ADDRESS =
 const OPTIMISTIC_GOVERNOR_ADDRESS =
   process.env.OPTIMISTIC_GOVERNOR_ADDRESS ?? "";
 const VOTE_ESCROW_ADDRESS = process.env.VOTE_ESCROW_ADDRESS ?? "";
+const GUARDIAN_COUNCIL_ADDRESS =
+  process.env.GUARDIAN_COUNCIL_ADDRESS ?? "";
 const TREASURY_SIMULATION_ACCOUNT =
   process.env.TREASURY_SIMULATION_ACCOUNT ?? "";
 const NETWORK_PASSPHRASE =
@@ -41,6 +45,7 @@ const PORT = Number(process.env.PORT ?? 3001);
 
 export const INDEXED_CONTRACTS = {
   GOVERNOR_ADDRESS,
+  GOVERNOR_FACTORY_ADDRESS,
   WRAPPER_ADDRESS,
   TREASURY_ADDRESS,
   LIQUIDITY_ADDRESS,
@@ -53,6 +58,7 @@ export const INDEXED_CONTRACTS = {
   TREASURY_STRATEGIES_ADDRESS,
   OPTIMISTIC_GOVERNOR_ADDRESS,
   VOTE_ESCROW_ADDRESS,
+  GUARDIAN_COUNCIL_ADDRESS,
 };
 
 for (const [name, address] of Object.entries(INDEXED_CONTRACTS)) {
@@ -110,6 +116,7 @@ async function runIndexer(): Promise<void> {
   const config = {
     rpcUrl: RPC_URL,
     governorAddress: GOVERNOR_ADDRESS,
+    governorFactoryAddress: GOVERNOR_FACTORY_ADDRESS,
     wrapperAddress: WRAPPER_ADDRESS,
     treasuryAddress: TREASURY_ADDRESS,
     liquidityAddress: LIQUIDITY_ADDRESS,
@@ -122,6 +129,7 @@ async function runIndexer(): Promise<void> {
     treasuryStrategiesAddress: TREASURY_STRATEGIES_ADDRESS,
     optimisticGovernorAddress: OPTIMISTIC_GOVERNOR_ADDRESS,
     voteEscrowAddress: VOTE_ESCROW_ADDRESS,
+    guardianCouncilAddress: GUARDIAN_COUNCIL_ADDRESS,
     treasuryStateReader,
     pollIntervalMs: POLL_INTERVAL_MS,
   };

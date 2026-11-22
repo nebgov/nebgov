@@ -53,13 +53,22 @@ const TOPIC_MAP: Record<string, string> = {
   stream_topped_up: "stream_topped_up",
   stream_exhausted: "stream_exhausted",
   stream_expired: "stream_expired",
+  ActionProposed: "ActionProposed",
+  ActionApproved: "ActionApproved",
+  ApprovalRevoked: "ApprovalRevoked",
+  ActionExecuted: "ActionExecuted",
+  MembershipRotated: "MembershipRotated",
+  ThresholdUpdated: "ThresholdUpdated",
+  ActionTtlUpdated: "ActionTtlUpdated",
 };
 
 export interface IndexerConfig {
   rpcUrl: string;
   governorAddress: string;
+  governorFactoryAddress?: string;
   wrapperAddress?: string;
   treasuryAddress?: string;
+  votingRewardsAddress?: string;
   liquidityAddress?: string;
   coSponsorshipAddress?: string;
   proposalBondsAddress?: string;
@@ -70,6 +79,7 @@ export interface IndexerConfig {
   treasuryStrategiesAddress?: string;
   optimisticGovernorAddress?: string;
   voteEscrowAddress?: string;
+  guardianCouncilAddress?: string;
   treasuryStateReader?: TreasuryStateReader;
   pollIntervalMs: number;
 }
@@ -96,8 +106,12 @@ export async function processEvents(
 
   try {
     const contractIds = [config.governorAddress].filter(Boolean);
+    if (config.governorFactoryAddress)
+      contractIds.push(config.governorFactoryAddress);
     if (config.wrapperAddress) contractIds.push(config.wrapperAddress);
     if (config.treasuryAddress) contractIds.push(config.treasuryAddress);
+    if (config.votingRewardsAddress)
+      contractIds.push(config.votingRewardsAddress);
     if (config.liquidityAddress) contractIds.push(config.liquidityAddress);
     if (config.coSponsorshipAddress) contractIds.push(config.coSponsorshipAddress);
     if (config.proposalBondsAddress) contractIds.push(config.proposalBondsAddress);
@@ -108,6 +122,8 @@ export async function processEvents(
     if (config.optimisticGovernorAddress)
       contractIds.push(config.optimisticGovernorAddress);
     if (config.voteEscrowAddress) contractIds.push(config.voteEscrowAddress);
+    if (config.guardianCouncilAddress)
+      contractIds.push(config.guardianCouncilAddress);
 
     const response = await server.getEvents({
       startLedger,
@@ -133,10 +149,20 @@ export async function processEvents(
         config.wrapperAddress &&
         contractId === config.wrapperAddress
       );
+      const isGovernorFactory = !!(
+        contractId &&
+        config.governorFactoryAddress &&
+        contractId === config.governorFactoryAddress
+      );
       const isTreasury = !!(
         contractId &&
         config.treasuryAddress &&
         contractId === config.treasuryAddress
+      );
+      const isVotingRewards = !!(
+        contractId &&
+        config.votingRewardsAddress &&
+        contractId === config.votingRewardsAddress
       );
       const isLiquidity = !!(
         contractId &&
@@ -186,6 +212,11 @@ export async function processEvents(
       const isVoteEscrow = !!(
         contractId && config.voteEscrowAddress && contractId === config.voteEscrowAddress
       );
+      const isGuardianCouncil = !!(
+        contractId &&
+        config.guardianCouncilAddress &&
+        contractId === config.guardianCouncilAddress
+      );
 
       try {
         await logToEventLog(eventType, ledger, contractId, event, topics);
@@ -195,7 +226,9 @@ export async function processEvents(
       }
 
       try {
-        if (isConvictionVoting) {
+        if (isVotingRewards) {
+          await handleVotingRewardsEvent(event, eventType, topics);
+        } else if (isConvictionVoting) {
           await handleConvictionEvent(event, eventType, topics);
         } else if (isTreasury) {
           switch (eventType) {
@@ -406,6 +439,8 @@ export async function processEvents(
           await handleOptimisticGovernorEvent(event, eventType, topics);
         } else if (isVoteEscrow) {
           await handleVoteEscrowEvent(event, eventType, topics);
+        } else if (isGuardianCouncil) {
+          await handleGuardianCouncilEvent(event, eventType, topics);
         } else {
           switch (eventType) {
             case "ProposalCreated":
@@ -1436,6 +1471,161 @@ async function handleResultAnchored(
   });
 }
 
+async function handleVotingRewardsEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): Promise<void> {
+  const raw = scValToNative(event.value) as unknown;
+  const values = Array.isArray(raw) ? raw : [raw];
+
+  switch (eventType) {
+    case "EpochStarted": {
+      const epochId = String(topics[1] ?? "");
+      if (values.length !== 2 || !epochId || epochId === "undefined") {
+        throw new Error(
+          "EpochStarted expected epoch_id, start_ledger, and end_ledger",
+        );
+      }
+      const startLedger = Number(values[0]);
+      const endLedger = Number(values[1]);
+      await pool.query(
+        `INSERT INTO reward_epochs
+           (epoch_id, start_ledger, end_ledger, total_reward_amount, total_claimed,
+            swept_amount, started_ledger, updated_ledger)
+         VALUES ($1, $2, $3, 0, 0, 0, $4, $4)
+         ON CONFLICT (epoch_id) DO NOTHING`,
+        [epochId, startLedger, endLedger, event.ledger],
+      );
+      invalidatePattern("voting-rewards:");
+      broadcast({
+        type: "reward_epoch_started",
+        data: { epoch_id: epochId, start_ledger: startLedger, end_ledger: endLedger },
+      });
+      break;
+    }
+    case "EpochRootPublished": {
+      const epochId = String(topics[1] ?? "");
+      if (values.length !== 2 || !epochId || epochId === "undefined") {
+        throw new Error(
+          "EpochRootPublished expected epoch_id, merkle_root, and total_reward_amount",
+        );
+      }
+      const merkleRoot = Buffer.from(values[0] as Uint8Array).toString("hex");
+      const totalRewardAmount = String(values[1]);
+      await pool.query(
+        `UPDATE reward_epochs
+         SET merkle_root = $2, total_reward_amount = $3,
+             root_published_ledger = $4, updated_ledger = $4
+         WHERE epoch_id = $1`,
+        [epochId, merkleRoot, totalRewardAmount, event.ledger],
+      );
+      invalidatePattern("voting-rewards:");
+      broadcast({
+        type: "reward_epoch_root_published",
+        data: {
+          epoch_id: epochId,
+          merkle_root: merkleRoot,
+          total_reward_amount: totalRewardAmount,
+        },
+      });
+      break;
+    }
+    case "RewardClaimed": {
+      if (values.length !== 2) {
+        throw new Error("RewardClaimed expected epoch_id and amount");
+      }
+      const epochId = String(values[0]);
+      const claimant = String(topics[1] ?? "");
+      const amount = String(values[1]);
+      if (!claimant || claimant === "undefined") {
+        throw new Error("RewardClaimed is missing claimant");
+      }
+      const inserted = await pool.query(
+        `INSERT INTO reward_claims
+           (event_id, epoch_id, claimant, amount, ledger, transaction_hash)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (event_id) DO NOTHING
+         RETURNING event_id`,
+        [
+          event.id,
+          epochId,
+          claimant,
+          amount,
+          event.ledger,
+          event.txHash ?? null,
+        ],
+      );
+      if (inserted.rowCount) {
+        await pool.query(
+          `UPDATE reward_epochs
+           SET total_claimed = total_claimed + $2, updated_ledger = $3
+           WHERE epoch_id = $1`,
+          [epochId, amount, event.ledger],
+        );
+      }
+      invalidatePattern("voting-rewards:");
+      broadcast({
+        type: "reward_claimed",
+        data: { epoch_id: epochId, claimant, amount, ledger: event.ledger },
+      });
+      break;
+    }
+    case "PoolFunded": {
+      const funder = String(topics[1] ?? "");
+      if (
+        values.length !== 1 ||
+        values[0] === undefined ||
+        !funder ||
+        funder === "undefined"
+      ) {
+        throw new Error("PoolFunded expected funder and amount");
+      }
+      const amount = String(values[0]);
+      const inserted = await pool.query(
+        `INSERT INTO reward_pool_fundings
+           (event_id, funder, amount, ledger, transaction_hash)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (event_id) DO NOTHING
+         RETURNING event_id`,
+        [event.id, funder, amount, event.ledger, event.txHash ?? null],
+      );
+      if (inserted.rowCount) {
+        invalidatePattern("voting-rewards:");
+        broadcast({
+          type: "reward_pool_funded",
+          data: { funder, amount, ledger: event.ledger },
+        });
+      }
+      break;
+    }
+    case "EpochSwept": {
+      const epochId = String(topics[1] ?? "");
+      if (
+        values.length !== 1 ||
+        values[0] === undefined ||
+        !epochId ||
+        epochId === "undefined"
+      ) {
+        throw new Error("EpochSwept expected epoch_id and unclaimed_amount");
+      }
+      const sweptAmount = String(values[0]);
+      await pool.query(
+        `UPDATE reward_epochs
+         SET swept_amount = $2, swept_ledger = $3, updated_ledger = $3
+         WHERE epoch_id = $1`,
+        [epochId, sweptAmount, event.ledger],
+      );
+      invalidatePattern("voting-rewards:");
+      broadcast({
+        type: "reward_epoch_swept",
+        data: { epoch_id: epochId, swept_amount: sweptAmount, ledger: event.ledger },
+      });
+      break;
+    }
+  }
+}
+
 async function handleStrategyRegistered(
   event: SorobanRpc.Api.EventResponse,
   topics: unknown[],
@@ -1552,6 +1742,34 @@ async function handleStrategyWithdrawalClaimed(
   });
 }
 
+/**
+ * `contracts/treasury-streams` events. Every one of them is already persisted
+ * to `event_log` above; there is no projection table for these streams (the
+ * `treasury_streams` table belongs to `contracts/treasury` budget streams, a
+ * different id space). `StrmCompleted` is also broadcast, so subscribers learn
+ * that a stream has paid its last interval and dropped out of
+ * `get_active_streams`.
+ */
+function handleTreasuryStreamsEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): void {
+  if (eventType !== "StrmCompleted") return;
+  const raw = scValToNative(event.value) as unknown;
+  const data = (raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw
+    : {}) as Record<string, unknown>;
+  broadcast({
+    type: "treasury_stream_completed",
+    data: {
+      stream_id: String(data.stream_id ?? topics[1]),
+      total_streamed: String(data.total_streamed ?? 0),
+      ledger: event.ledger,
+    },
+  });
+}
+
 async function handleVoteEscrowEvent(
   event: SorobanRpc.Api.EventResponse,
   eventType: string,
@@ -1589,6 +1807,181 @@ async function handleVoteEscrowEvent(
     [owner, amount, startLedger, endLedger, initialVotingPower, event.ledger],
   );
   invalidatePattern("vote-escrow:");
+}
+
+// --- Guardian Council event handlers (#995) ---
+//
+// The guardian council tables are defined in migrations/021_add_guardian_council.sql:
+// - guardian_council_actions: pending actions with their kind, proposer, ledger info, etc.
+// - guardian_council_approvals: member approvals for each action
+// - guardian_council_members: current member rotation history
+
+async function handleGuardianCouncilEvent(
+  event: SorobanRpc.Api.EventResponse,
+  eventType: string,
+  topics: unknown[],
+): Promise<void> {
+  // Parse action_id based on event type
+  // ActionProposed, ActionApproved: value is [action_id, additional_data]
+  // ActionExecuted, ApprovalRevoked: value is just action_id (not wrapped in array)
+  let actionId: string;
+  switch (eventType) {
+    case "ActionExecuted":
+    case "ApprovalRevoked":
+      // These events emit just the action_id directly
+      actionId = String(scValToNative(event.value) as bigint);
+      break;
+    case "ActionProposed":
+    case "ActionApproved":
+      // These events emit [action_id, ...]
+      const data = scValToNative(event.value) as unknown[];
+      actionId = String(data[0] as bigint);
+      break;
+    default:
+      actionId = "";
+  }
+
+  switch (eventType) {
+    case "ActionProposed": {
+      const data = scValToNative(event.value) as unknown[];
+      const actionKind = String((data[1] as { sym?: string })?.sym ?? data[1]);
+
+      await pool.query(
+        `INSERT INTO guardian_council_actions
+           (action_id, action_kind, proposer, created_at_ledger, executed)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [actionId, actionKind, String(topics[1]), event.ledger],
+      );
+      invalidatePattern("guardian-council:");
+      broadcast({
+        type: "action_proposed",
+        data: { action_id: actionId, proposer: String(topics[1]), action_kind: actionKind, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "ActionApproved": {
+      const data = scValToNative(event.value) as unknown[];
+      const member = String(topics[1]);
+      const approvalsCount = Number(data[1] as bigint | number);
+
+      // Upsert approval record
+      await pool.query(
+        `INSERT INTO guardian_council_approvals (action_id, member, approved, approved_at_ledger)
+         VALUES ($1, $2, TRUE, $3)
+         ON CONFLICT (action_id, member) DO UPDATE SET
+           approved = TRUE, revoked_at_ledger = NULL`,
+        [actionId, member, event.ledger],
+      );
+
+      invalidatePattern("guardian-council:");
+      broadcast({
+        type: "action_approved",
+        data: { action_id: actionId, member, approvals_count: approvalsCount, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "ApprovalRevoked": {
+      const member = String(topics[1]);
+
+      await pool.query(
+        `UPDATE guardian_council_approvals
+         SET approved = FALSE, revoked_at_ledger = $1
+         WHERE action_id = $2 AND member = $3`,
+        [event.ledger, actionId, member],
+      );
+
+      invalidatePattern("guardian-council:");
+      broadcast({
+        type: "approval_revoked",
+        data: { action_id: actionId, member, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "ActionExecuted": {
+      const actionKindResult = await pool.query(
+        "SELECT action_kind FROM guardian_council_actions WHERE action_id = $1",
+        [actionId],
+      );
+      const actionKind = actionKindResult.rows[0]?.action_kind ?? "Unknown";
+
+      await pool.query(
+        `UPDATE guardian_council_actions
+         SET executed = TRUE, executed_at_ledger = $1
+         WHERE action_id = $2`,
+        [event.ledger, actionId],
+      );
+
+      invalidatePattern("guardian-council:");
+      broadcast({
+        type: "action_executed",
+        data: { action_id: actionId, action_kind: actionKind, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "MembershipRotated": {
+      const data = scValToNative(event.value) as unknown[];
+      // data is [old_address, new_address] as Address objects
+      const oldMember = String((data[0] as unknown as { address?: string })?.address ?? data[0]);
+      const newMember = String((data[1] as unknown as { address?: string })?.address ?? data[1]);
+
+      // Mark old member as removed if they exist
+      await pool.query(
+        `UPDATE guardian_council_members
+         SET removed_at_ledger = $1
+         WHERE member = $2 AND removed_at_ledger IS NULL`,
+        [event.ledger, oldMember],
+      );
+
+      // Add new member
+      await pool.query(
+        `INSERT INTO guardian_council_members (member, added_at_ledger)
+         VALUES ($1, $2)
+         ON CONFLICT (member) DO UPDATE SET
+           removed_at_ledger = NULL, added_at_ledger = LEAST(added_at_ledger, $2)`,
+        [newMember, event.ledger],
+      );
+
+      invalidatePattern("guardian-council:");
+      broadcast({
+        type: "membership_rotated",
+        data: { old_member: oldMember, new_member: newMember, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "ThresholdUpdated": {
+      const data = scValToNative(event.value) as unknown[];
+      const oldThreshold = Number(data[0]);
+      const newThreshold = Number(data[1]);
+
+      broadcast({
+        type: "threshold_updated",
+        data: { old_threshold: oldThreshold, new_threshold: newThreshold, ledger: event.ledger },
+      });
+      break;
+    }
+
+    case "ActionTtlUpdated": {
+      const data = scValToNative(event.value) as unknown[];
+      const oldTtl = Number(data[0]);
+      const newTtl = Number(data[1]);
+
+      broadcast({
+        type: "action_ttl_updated",
+        data: { old_ttl: oldTtl, new_ttl: newTtl, ledger: event.ledger },
+      });
+      break;
+    }
+
+    default:
+      return;
+  }
+
+  invalidatePattern("guardian-council:");
 }
 
 async function handleCoSponsorshipWithdrawn(

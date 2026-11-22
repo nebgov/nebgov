@@ -221,6 +221,7 @@ docker run --env-file packages/indexer/.env \
 | `DATABASE_URL` | Yes | `postgres://nebgov:nebgov@localhost:5432/nebgov` | PostgreSQL connection string |
 | `STELLAR_RPC_URL` | Yes | `https://soroban-testnet.stellar.org` | Stellar Soroban RPC endpoint |
 | `GOVERNOR_ADDRESS` | Yes | - | Stellar contract address of the governor |
+| `GOVERNOR_FACTORY_ADDRESS` | No | - | Governor-factory address; falls back to `FACTORY_ADDRESS` when set by the deployment scripts |
 | `TIMELOCK_ADDRESS` | No | - | Stellar contract address of the timelock |
 | `WRAPPER_ADDRESS` | No | - | Stellar contract address of the token wrapper |
 | `TOKEN_VOTES_ADDRESS` | No | - | Stellar contract address of the token-votes contract (delegation registry events) |
@@ -231,6 +232,7 @@ docker run --env-file packages/indexer/.env \
 | `TREASURY_STRATEGIES_ADDRESS` | No | - | Stellar contract address of the treasury yield-strategy allocator |
 | `OPTIMISTIC_GOVERNOR_ADDRESS` | No | - | Stellar contract address of the optimistic-governance track |
 | `VOTE_ESCROW_ADDRESS` | No | - | Stellar contract address of the vote-escrow contract (lock create, increase and withdraw events) |
+| `GUARDIAN_COUNCIL_ADDRESS` | No | - | Stellar contract address of the guardian council (action proposals, approvals, membership rotations) |
 | `VOTING_REWARDS_ADDRESS` | No | - | Stellar contract address of the voting-rewards contract (not indexed yet; kept in sync with the root `.env.example`) |
 | `STELLAR_NETWORK_PASSPHRASE` | No | Testnet passphrase | Network passphrase used for treasury read simulations |
 | `POLL_INTERVAL_MS` | No | `5000` | Milliseconds between event polling cycles |
@@ -256,6 +258,8 @@ LIQUIDITY_ADDRESS=CC3D5KRYM6CB7OQ4O5K3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
 SIGNAL_ANCHOR_ADDRESS=CDSIGNALANCHORZ3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
 TREASURY_STRATEGIES_ADDRESS=CETREASURYSTRATEGIESZ3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
 OPTIMISTIC_GOVERNOR_ADDRESS=CFOPTIMISTICGOVZ3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
+VOTE_ESCROW_ADDRESS=CVOTEESCROWZ3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
+GUARDIAN_COUNCIL_ADDRESS=CGUARDIANCOUNZ3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3Z3
 
 # Indexer Configuration
 POLL_INTERVAL_MS=5000
@@ -613,6 +617,14 @@ Returns aggregate governance statistics.
 }
 ```
 
+### Governor Factory
+
+#### GET /factory/governors
+
+List indexed DAO deployments. Use `deployer` to filter by the address that
+deployed them. `limit` defaults to 20 and is capped at 100; `offset` defaults
+to 0.
+
 ### Proposals
 
 #### GET /proposals
@@ -810,6 +822,14 @@ Get lifecycle history for `stream_id`. This is the endpoint used by
 
 Get stream counts and exact allocated, spent, and remaining amounts grouped by
 token. Soroban integer values are returned as decimal strings.
+
+### Voting Rewards
+
+#### GET /voting-rewards/epochs/:id/claims
+
+Get paginated claim history for an indexed epoch, together with the epoch's
+total reward, total claimed, and swept amount. `limit` defaults to 50 and is
+capped at 200.
 
 ### Configuration & Upgrades
 
