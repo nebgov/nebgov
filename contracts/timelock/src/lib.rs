@@ -958,14 +958,14 @@ impl TimelockContract {
             .storage()
             .instance()
             .get(&DataKey::CurrentWasmHash)
-            .unwrap_or(BytesN::from_array(&env, &[0u8; 32]));
+            .unwrap_or(BytesN::from_array(env, &[0u8; 32]));
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
         env.storage()
             .instance()
             .set(&DataKey::CurrentWasmHash, &new_wasm_hash);
         env.events().publish(
-            (Symbol::new(&env, "Upgrade"),),
+            (Symbol::new(env, "Upgrade"),),
             (old_wasm_hash, new_wasm_hash),
         );
     }

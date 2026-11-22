@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 
 mod error;
 mod events;
@@ -477,13 +478,6 @@ impl ConvictionVotingContract {
         env.storage()
             .persistent()
             .remove(&DataKey::StakeByStaker(staker.clone()));
-    }
-
-    fn total_staked(env: &Env, proposal_id: u64) -> i128 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::TotalStakedByProposal(proposal_id))
-            .unwrap_or(0)
     }
 
     fn effective_total_staked(env: &Env, proposal_id: u64) -> i128 {

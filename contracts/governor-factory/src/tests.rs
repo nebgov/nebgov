@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, token, Address, BytesN, Env};
+use soroban_sdk::{testutils::{storage::Persistent as _, Address as _, Ledger as _}, token, Address, BytesN, Env};
 
 use sorogov_governor::GovernorContract;
 use sorogov_timelock::TimelockContract;
@@ -133,6 +133,14 @@ fn test_deploy_full_stack() {
 
     factory.initialize(&admin, &governor_hash, &timelock_hash, &token_votes_hash);
     assert_eq!(factory.governor_count(), 0);
+
+    // Keep the factory's own instance storage alive across the large ledger
+    // jump below (the test env archives instance entries past their TTL).
+    env.as_contract(&factory_id, || {
+        env.storage()
+            .instance()
+            .extend_ttl(GOVERNOR_TTL_LEDGERS, GOVERNOR_TTL_LEDGERS);
+    });
 
     // Deploy a governance stack
     let guardian = Address::generate(&env);
@@ -552,10 +560,11 @@ fn test_set_native_token_before_initialize_returns_typed_error() {
     let factory_id = env.register(GovernorFactoryContract, ());
     let factory = GovernorFactoryContractClient::new(&env, &factory_id);
 
-    assert!(matches!(
-        factory.try_set_native_token(&admin, &native_token),
-        Err(Ok(FactoryError::NotInitialized))
-    ));
+    let err = factory
+        .try_set_native_token(&admin, &native_token)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, FactoryError::NotInitialized.into());
 }
 
 #[test]
@@ -632,10 +641,8 @@ fn test_get_governor_unknown_id_returns_typed_error() {
     let factory = GovernorFactoryContractClient::new(&env, &factory_id);
     factory.initialize(&admin, &hash, &hash, &hash);
 
-    assert!(matches!(
-        factory.try_get_governor(&42u64),
-        Err(Ok(FactoryError::GovernorNotFound))
-    ));
+    let err = factory.try_get_governor(&42u64).err().unwrap().unwrap();
+    assert_eq!(err, FactoryError::GovernorNotFound.into());
 }
 
 #[test]
@@ -664,8 +671,8 @@ fn test_deploy_missing_wasm_returns_typed_error() {
             env.storage().instance().remove(&key);
         });
 
-        assert!(matches!(
-            factory.try_deploy(
+        let err = factory
+            .try_deploy(
                 &deployer,
                 &token,
                 &100u32,
@@ -676,8 +683,9 @@ fn test_deploy_missing_wasm_returns_typed_error() {
                 &guardian,
                 &1u32,
                 &120_960u32,
-            ),
-            Err(Ok(FactoryError::WasmNotFound))
-        ));
+            )
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, FactoryError::WasmNotFound.into());
     }
 }

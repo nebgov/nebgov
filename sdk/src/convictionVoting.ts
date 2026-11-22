@@ -3,6 +3,7 @@ import {
   Contract,
   Keypair,
   SorobanRpc,
+  StrKey,
   TransactionBuilder,
   nativeToScVal,
   scValToNative,
@@ -22,6 +23,12 @@ export class ConvictionVotingClient {
   private readonly passphrase: string;
 
   constructor(private readonly config: ConvictionVotingConfig) {
+    if (
+      typeof config.convictionVotingAddress !== "string" ||
+      !StrKey.isValidContract(config.convictionVotingAddress)
+    ) {
+      throw new Error("ConvictionVotingClient requires convictionVotingAddress");
+    }
     this.server = new SorobanRpc.Server(getRpcUrl(config.network, config.rpcUrl));
     this.contract = new Contract(config.convictionVotingAddress);
     this.passphrase = getNetworkPassphrase(config.network);

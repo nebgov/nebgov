@@ -532,9 +532,6 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ConvictionVotingClient({
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           convictionVotingAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
@@ -551,9 +548,6 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new ConvictionVotingClient({
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           convictionVotingAddress: process.env.NEBGOV_CONVICTION_VOTING_ADDRESS || "",
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
@@ -574,9 +568,6 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
@@ -593,9 +584,6 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
@@ -611,9 +599,6 @@ program
         const global = program.opts<GlobalOptions>();
         const cfg = await loadConfig(global.config);
         const client = new OptimisticGovernorClient({
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           optimisticGovernorAddress: process.env.NEBGOV_OPTIMISTIC_GOVERNOR_ADDRESS || "",
           network: cfg.network,
           rpcUrl: cfg.rpcUrl,
@@ -942,9 +927,6 @@ program
           cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
         const voteEscrow = new VoteEscrowClient({
           network: cfg.network,
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
           rpcUrl: cfg.rpcUrl,
         });
@@ -975,9 +957,6 @@ program
           cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
         const voteEscrow = new VoteEscrowClient({
           network: cfg.network,
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
           rpcUrl: cfg.rpcUrl,
         });
@@ -1007,9 +986,6 @@ program
           cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
         const voteEscrow = new VoteEscrowClient({
           network: cfg.network,
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
           rpcUrl: cfg.rpcUrl,
         });
@@ -1038,9 +1014,6 @@ program
           cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
         const voteEscrow = new VoteEscrowClient({
           network: cfg.network,
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
           rpcUrl: cfg.rpcUrl,
         });
@@ -1068,9 +1041,6 @@ program
           cfg.voteEscrowAddress ?? process.env.NEBGOV_VOTE_ESCROW_ADDRESS;
         const voteEscrow = new VoteEscrowClient({
           network: cfg.network,
-          governorAddress: cfg.governorAddress ?? "",
-          timelockAddress: cfg.timelockAddress ?? "",
-          votesAddress: cfg.votesAddress ?? "",
           voteEscrowAddress: required(voteEscrowAddress, "voteEscrowAddress"),
           rpcUrl: cfg.rpcUrl,
         });

@@ -333,39 +333,49 @@ fn test_batch_predecessor_enforcement() {
 /// Test that operation ID generation includes all components.
 fn test_compute_op_id() {
     let env = Env::default();
+    let contract_id = env.register(TimelockContract, ());
     let target = Address::generate(&env);
     let data = Bytes::from_slice(&env, b"test data");
     let predecessor = Bytes::from_slice(&env, b"pred");
     let salt = Bytes::from_slice(&env, b"salt");
 
-    let op_id1 = TimelockContract::compute_op_id(
-        env.clone(),
-        target.clone(),
-        data.clone(),
-        Bytes::new(&env),
-        Bytes::new(&env),
-    );
-    let op_id2 = TimelockContract::compute_op_id(
-        env.clone(),
-        target.clone(),
-        data.clone(),
-        predecessor.clone(),
-        salt.clone(),
-    );
-    let op_id3 = TimelockContract::compute_op_id(
-        env.clone(),
-        target.clone(),
-        data.clone(),
-        predecessor.clone(),
-        salt.clone(),
-    );
-    let op_id4 = TimelockContract::compute_op_id(
-        env.clone(),
-        target.clone(),
-        data.clone(),
-        Bytes::new(&env),
-        salt.clone(),
-    );
+    // compute_op_id extends the instance TTL, so it must run in contract context.
+    let op_id1 = env.as_contract(&contract_id, || {
+        TimelockContract::compute_op_id(
+            env.clone(),
+            target.clone(),
+            data.clone(),
+            Bytes::new(&env),
+            Bytes::new(&env),
+        )
+    });
+    let op_id2 = env.as_contract(&contract_id, || {
+        TimelockContract::compute_op_id(
+            env.clone(),
+            target.clone(),
+            data.clone(),
+            predecessor.clone(),
+            salt.clone(),
+        )
+    });
+    let op_id3 = env.as_contract(&contract_id, || {
+        TimelockContract::compute_op_id(
+            env.clone(),
+            target.clone(),
+            data.clone(),
+            predecessor.clone(),
+            salt.clone(),
+        )
+    });
+    let op_id4 = env.as_contract(&contract_id, || {
+        TimelockContract::compute_op_id(
+            env.clone(),
+            target.clone(),
+            data.clone(),
+            Bytes::new(&env),
+            salt.clone(),
+        )
+    });
 
     // Different predecessor/salt produces different ID
     assert_ne!(op_id1, op_id2);
@@ -709,14 +719,14 @@ fn test_predecessor_changes_id() {
     let pred1 = Bytes::from_slice(&env, b"pred1");
     let pred2 = Bytes::from_slice(&env, b"pred2");
 
-    let op_id1 = TimelockContract::compute_op_id(
-        env.clone(),
-        target.clone(),
-        data.clone(),
-        pred1,
-        salt.clone(),
-    );
-    let op_id2 = TimelockContract::compute_op_id(env.clone(), target, data, pred2, salt);
+    // compute_op_id extends the instance TTL, so it must run in contract context.
+    let op_id1 = env.as_contract(&_contract_id, || {
+        TimelockContract::compute_op_id(env.clone(), target.clone(), data.clone(), pred1, salt.clone())
+    });
+    let op_id2 =
+        env.as_contract(&_contract_id, || {
+            TimelockContract::compute_op_id(env.clone(), target, data, pred2, salt)
+        });
 
     assert_ne!(op_id1, op_id2);
 }

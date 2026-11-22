@@ -337,6 +337,7 @@ fn initialize_rejects_reinitialization() {
         &OBJECTION_THRESHOLD_BPS,
         &0,
         &f.bond_token,
+        &EXECUTION_WINDOW,
     );
 }
 

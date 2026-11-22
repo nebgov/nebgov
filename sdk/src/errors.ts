@@ -337,7 +337,7 @@ export class VotesError extends Error {
 /**
  * Error codes for the vote-escrow contract + SDK transport layer.
  *
- * Codes 1-10 mirror the on-chain `VoteEscrowError` enum
+ * Codes 1-11 mirror the on-chain `VoteEscrowError` enum
  * (contracts/vote-escrow/src/error.rs). SDK-level codes start at 100.
  */
 export enum VoteEscrowErrorCode {
@@ -352,6 +352,7 @@ export enum VoteEscrowErrorCode {
   ArithmeticOverflow = 8,
   Unauthorized = 9,
   LockAlreadyExists = 10,
+  AlreadyInitialized = 11,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -370,6 +371,7 @@ const VOTE_ESCROW_MESSAGES: Record<VoteEscrowErrorCode, string> = {
   [VoteEscrowErrorCode.Unauthorized]: "Caller is not authorized to perform this action",
   [VoteEscrowErrorCode.ArithmeticOverflow]: "Arithmetic overflow in voting power calculation",
   [VoteEscrowErrorCode.LockAlreadyExists]: "An active lock already exists for this account",
+  [VoteEscrowErrorCode.AlreadyInitialized]: "Vote escrow contract is already initialized",
 
   [VoteEscrowErrorCode.SimulationFailed]: "Simulation failed",
   [VoteEscrowErrorCode.TransactionFailed]: "Transaction failed",

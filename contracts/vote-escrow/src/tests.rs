@@ -340,23 +340,12 @@ fn test_increase_lock_amount() {
     let additional_amount = 500;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock1 = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock1 = client.create_lock(&f.user, &amount, &duration);
+    let lock2 = client.increase_lock_amount(&f.user, &additional_amount);
 
-        let lock2 = VoteEscrowContract::increase_lock_amount(
-            f.env.clone(),
-            f.user.clone(),
-            additional_amount,
-        );
-
-        assert_eq!(lock2.amount, amount + additional_amount);
-        assert!(lock2.initial_voting_power > lock1.initial_voting_power);
-    });
+    assert_eq!(lock2.amount, amount + additional_amount);
+    assert!(lock2.initial_voting_power > lock1.initial_voting_power);
 }
 
 #[test]
@@ -366,28 +355,18 @@ fn test_increase_lock_amount_updates_total() {
     let additional_amount = 500;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    client.create_lock(&f.user, &amount, &duration);
+    client.increase_lock_amount(&f.user, &additional_amount);
 
-        VoteEscrowContract::increase_lock_amount(
-            f.env.clone(),
-            f.user.clone(),
-            additional_amount,
-        );
-
-        let total_locked: i128 = f
-            .env
+    let total_locked: i128 = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .instance()
             .get(&DataKey::TotalLocked)
-            .unwrap_or(0);
-        assert_eq!(total_locked, amount + additional_amount);
+            .unwrap_or(0)
     });
+    assert_eq!(total_locked, amount + additional_amount);
 }
 
 #[test]
@@ -439,24 +418,13 @@ fn test_extend_lock() {
     let duration = 1_000;
     let _new_duration = 2_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock1 = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock1 = client.create_lock(&f.user, &amount, &duration);
+    let new_end_ledger = lock1.end_ledger.checked_add(1_000).unwrap();
+    let lock2 = client.extend_lock(&f.user, &new_end_ledger);
 
-        let new_end_ledger = lock1.end_ledger.checked_add(1_000).unwrap();
-        let lock2 = VoteEscrowContract::extend_lock(
-            f.env.clone(),
-            f.user.clone(),
-            new_end_ledger,
-        );
-
-        assert_eq!(lock2.end_ledger, new_end_ledger);
-        assert!(lock2.initial_voting_power > lock1.initial_voting_power);
-    });
+    assert_eq!(lock2.end_ledger, new_end_ledger);
+    assert!(lock2.initial_voting_power > lock1.initial_voting_power);
 }
 
 #[test]
@@ -490,23 +458,12 @@ fn test_extend_lock_to_min_duration() {
     let amount = 1_000;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock = client.create_lock(&f.user, &amount, &duration);
+    let new_duration = lock.end_ledger.checked_add(MIN_LOCK_DURATION).unwrap();
+    let extended_lock = client.extend_lock(&f.user, &new_duration);
 
-        let new_duration = lock.end_ledger.checked_add(MIN_LOCK_DURATION).unwrap();
-        let extended_lock = VoteEscrowContract::extend_lock(
-            f.env.clone(),
-            f.user.clone(),
-            new_duration,
-        );
-
-        assert_eq!(extended_lock.end_ledger, new_duration);
-    });
+    assert_eq!(extended_lock.end_ledger, new_duration);
 }
 
 #[test]
@@ -515,32 +472,23 @@ fn test_withdraw() {
     let amount = 1_000;
     let duration = 100; // short duration
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock = client.create_lock(&f.user, &amount, &duration);
 
-        // Advance ledger past lock maturity
-        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+    // Advance ledger past lock maturity
+    f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
-        let withdrawn_amount = VoteEscrowContract::withdraw(
-            f.env.clone(),
-            f.user.clone(),
-        );
+    let withdrawn_amount = client.withdraw(&f.user);
+    assert_eq!(withdrawn_amount, amount);
 
-        assert_eq!(withdrawn_amount, amount);
-
-        // Verify lock is marked withdrawn
-        let stored_lock: Option<Lock> = f
-            .env
+    // Verify lock is marked withdrawn
+    let stored_lock: Option<Lock> = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .persistent()
-            .get(&DataKey::Lock(f.user.clone()));
-        assert!(stored_lock.is_none());
+            .get(&DataKey::Lock(f.user.clone()))
     });
+    assert!(stored_lock.is_none());
 }
 
 #[test]
@@ -549,44 +497,38 @@ fn test_withdraw_updates_total_checked() {
     let amount = 1_000;
     let duration = 100;
 
-    f.env.as_contract(&f.contract_id, || {
-        VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    client.create_lock(&f.user, &amount, &duration);
 
-        let total_before: i128 = f
-            .env
+    let total_before: i128 = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .instance()
             .get(&DataKey::TotalLocked)
-            .unwrap_or(0);
-        assert_eq!(total_before, amount);
+            .unwrap_or(0)
+    });
+    assert_eq!(total_before, amount);
 
-        // Advance ledger past lock maturity
-        let lock: Lock = f
-            .env
+    // Advance ledger past lock maturity
+    let lock: Lock = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .persistent()
             .get(&DataKey::Lock(f.user.clone()))
-            .unwrap();
-        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+            .unwrap()
+    });
+    f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
-        VoteEscrowContract::withdraw(
-            f.env.clone(),
-            f.user.clone(),
-        );
+    client.withdraw(&f.user);
 
-        let total_after: i128 = f
-            .env
+    let total_after: i128 = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .instance()
             .get(&DataKey::TotalLocked)
-            .unwrap_or(0);
-        assert_eq!(total_after, 0);
+            .unwrap_or(0)
     });
+    assert_eq!(total_after, 0);
 }
 
 #[test]
@@ -596,7 +538,7 @@ fn test_withdraw_before_maturity() {
     let duration = 1_000;
 
     f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
+        let _lock = VoteEscrowContract::create_lock(
             f.env.clone(),
             f.user.clone(),
             amount,
@@ -620,31 +562,19 @@ fn test_withdraw_already_withdrawn() {
     let amount = 1_000;
     let duration = 100;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock = client.create_lock(&f.user, &amount, &duration);
 
-        // Advance ledger past lock maturity
-        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+    // Advance ledger past lock maturity
+    f.env.ledger().set_sequence_number(lock.end_ledger + 1);
 
-        VoteEscrowContract::withdraw(
-            f.env.clone(),
-            f.user.clone(),
-        );
+    client.withdraw(&f.user);
 
-        // Try to withdraw again
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            VoteEscrowContract::withdraw(
-                f.env.clone(),
-                f.user.clone(),
-            );
-        }));
-        assert!(result.is_err());
-    });
+    // Try to withdraw again
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.withdraw(&f.user);
+    }));
+    assert!(result.is_err());
 }
 
 #[test]
@@ -752,21 +682,12 @@ fn test_get_past_votes_before_lock() {
     let amount = 1_000;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
-
-        let votes = VoteEscrowContract::get_past_votes(
-            f.env.clone(),
-            f.user.clone(),
-            lock.start_ledger - 1,
-        );
-        assert_eq!(votes, 0);
-    });
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    f.env.ledger().set_sequence_number(100);
+    let lock = client.create_lock(&f.user, &amount, &duration);
+    // One ledger before the lock started there is no voting power yet.
+    let votes = client.get_past_votes(&f.user, &(lock.start_ledger - 1));
+    assert_eq!(votes, 0);
 }
 
 #[test]
@@ -775,39 +696,23 @@ fn test_get_lock_history() {
     let amount = 1_000;
     let duration = 100;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock1 = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock1 = client.create_lock(&f.user, &amount, &duration);
 
-        // Withdraw first lock
-        f.env.ledger().set_sequence_number(lock1.end_ledger + 1);
-        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+    // Withdraw first lock
+    f.env.ledger().set_sequence_number(lock1.end_ledger + 1);
+    client.withdraw(&f.user);
 
-        // Create second lock
-        f.env.ledger().set_sequence_number(lock1.end_ledger + 2);
-        let lock2 = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount * 2,
-            duration,
-        );
+    // Create second lock
+    f.env.ledger().set_sequence_number(lock1.end_ledger + 2);
+    let lock2 = client.create_lock(&f.user, &(amount * 2), &duration);
 
-        // Withdraw second lock
-        f.env.ledger().set_sequence_number(lock2.end_ledger + 1);
-        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+    // Withdraw second lock
+    f.env.ledger().set_sequence_number(lock2.end_ledger + 1);
+    client.withdraw(&f.user);
 
-        let history = VoteEscrowContract::get_lock_history(
-            f.env.clone(),
-            f.user.clone(),
-            0,
-            10,
-        );
-        assert_eq!(history.len(), 2);
-    });
+    let history = client.get_lock_history(&f.user, &0, &10);
+    assert_eq!(history.len(), 2);
 }
 
 #[test]
@@ -984,24 +889,18 @@ fn test_increase_lock_amount_emits_lock_increased_event() {
     let additional_amount = 500;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    client.create_lock(&f.user, &amount, &duration);
+    let lock2 = client.increase_lock_amount(&f.user, &additional_amount);
 
-        let lock2 = VoteEscrowContract::increase_lock_amount(
-            f.env.clone(),
-            f.user.clone(),
-            additional_amount,
-        );
+    let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_INCREASED_TOPIC);
+    let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+    assert_eq!(owner_topic, f.user);
 
-        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_INCREASED_TOPIC);
-        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
-        assert_eq!(owner_topic, f.user);
-
-        let decoded: LockIncreasedEvent = data.try_into_val(&f.env).unwrap();
-        assert_eq!(decoded.owner, f.user);
-        assert_eq!(decoded.added_amount, additional_amount);
-        assert_eq!(decoded.new_voting_power, lock2.initial_voting_power);
-    });
+    let decoded: LockIncreasedEvent = data.try_into_val(&f.env).unwrap();
+    assert_eq!(decoded.owner, f.user);
+    assert_eq!(decoded.added_amount, additional_amount);
+    assert_eq!(decoded.new_voting_power, lock2.initial_voting_power);
 }
 
 #[test]
@@ -1010,21 +909,19 @@ fn test_extend_lock_emits_lock_extended_event() {
     let amount = 1_000;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock1 = VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
-        let new_end_ledger = lock1.end_ledger.checked_add(1_000).unwrap();
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock1 = client.create_lock(&f.user, &amount, &duration);
+    let new_end_ledger = lock1.end_ledger.checked_add(1_000).unwrap();
+    client.extend_lock(&f.user, &new_end_ledger);
 
-        VoteEscrowContract::extend_lock(f.env.clone(), f.user.clone(), new_end_ledger);
+    let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_EXTENDED_TOPIC);
+    let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+    assert_eq!(owner_topic, f.user);
 
-        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_EXTENDED_TOPIC);
-        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
-        assert_eq!(owner_topic, f.user);
-
-        let decoded: LockExtendedEvent = data.try_into_val(&f.env).unwrap();
-        assert_eq!(decoded.owner, f.user);
-        assert_eq!(decoded.old_end_ledger, lock1.end_ledger);
-        assert_eq!(decoded.new_end_ledger, new_end_ledger);
-    });
+    let decoded: LockExtendedEvent = data.try_into_val(&f.env).unwrap();
+    assert_eq!(decoded.owner, f.user);
+    assert_eq!(decoded.old_end_ledger, lock1.end_ledger);
+    assert_eq!(decoded.new_end_ledger, new_end_ledger);
 }
 
 #[test]
@@ -1033,20 +930,18 @@ fn test_withdraw_emits_lock_withdrawn_event() {
     let amount = 1_000;
     let duration = 100;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(f.env.clone(), f.user.clone(), amount, duration);
-        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock = client.create_lock(&f.user, &amount, &duration);
+    f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+    client.withdraw(&f.user);
 
-        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+    let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_WITHDRAWN_TOPIC);
+    let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
+    assert_eq!(owner_topic, f.user);
 
-        let (topics, data) = find_event(&f.env, &f.contract_id, LOCK_WITHDRAWN_TOPIC);
-        let owner_topic: Address = topics.get(1).unwrap().try_into_val(&f.env).unwrap();
-        assert_eq!(owner_topic, f.user);
-
-        let decoded: LockWithdrawnEvent = data.try_into_val(&f.env).unwrap();
-        assert_eq!(decoded.owner, f.user);
-        assert_eq!(decoded.amount, amount);
-    });
+    let decoded: LockWithdrawnEvent = data.try_into_val(&f.env).unwrap();
+    assert_eq!(decoded.owner, f.user);
+    assert_eq!(decoded.amount, amount);
 }
 
 #[test]
@@ -1101,50 +996,41 @@ fn test_lock_history_is_bounded_across_many_cycles() {
     let duration = MIN_LOCK_DURATION;
     let cycles = MAX_LOCK_HISTORY_ENTRIES + 8;
 
-    f.env.as_contract(&f.contract_id, || {
-        let mut ledger = 10;
-        for _ in 0..cycles {
-            f.env.ledger().set_sequence_number(ledger);
-            let lock = VoteEscrowContract::create_lock(
-                f.env.clone(),
-                f.user.clone(),
-                amount,
-                duration,
-            );
-            f.env.ledger().set_sequence_number(lock.end_ledger + 1);
-            VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
-            ledger = lock.end_ledger + 2;
-        }
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let mut ledger = 10;
+    for _ in 0..cycles {
+        f.env.ledger().set_sequence_number(ledger);
+        let lock = client.create_lock(&f.user, &amount, &duration);
+        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+        client.withdraw(&f.user);
+        ledger = lock.end_ledger + 2;
+    }
 
-        // The append counter is monotonic, but only a bounded window is retained.
-        let count: u32 = f
-            .env
+    // The append counter is monotonic, but only a bounded window is retained.
+    let count: u32 = f.env.as_contract(&f.contract_id, || {
+        f.env
             .storage()
             .persistent()
             .get(&DataKey::LockHistoryCount(f.user.clone()))
-            .unwrap_or(0);
-        assert_eq!(count, cycles);
-
-        let all =
-            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), 0, 1_000);
-        assert_eq!(all.len(), MAX_LOCK_HISTORY_ENTRIES);
-
-        // Pagination is clamped to the retained window instead of walking history.
-        let first_page =
-            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), 0, 5);
-        assert_eq!(first_page.len(), 5);
-        let past_end =
-            VoteEscrowContract::get_lock_history(f.env.clone(), f.user.clone(), cycles, 5);
-        assert_eq!(past_end.len(), 0);
-
-        // Historical queries still resolve from the bounded window: the most
-        // recent withdrawn record covers the ledger we advance past below.
-        let last = all.get(all.len() - 1).unwrap();
-        let probe = last.end_ledger.saturating_sub(1);
-        let votes =
-            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), probe);
-        assert!(votes > 0);
+            .unwrap_or(0)
     });
+    assert_eq!(count, cycles);
+
+    let all = client.get_lock_history(&f.user, &0, &1_000);
+    assert_eq!(all.len(), MAX_LOCK_HISTORY_ENTRIES);
+
+    // Pagination is clamped to the retained window instead of walking history.
+    let first_page = client.get_lock_history(&f.user, &0, &5);
+    assert_eq!(first_page.len(), 5);
+    let past_end = client.get_lock_history(&f.user, &cycles, &5);
+    assert_eq!(past_end.len(), 0);
+
+    // Historical queries still resolve from the bounded window: the most
+    // recent withdrawn record covers the ledger we advance past below.
+    let last = all.get(all.len() - 1).unwrap();
+    f.env.ledger().set_sequence_number(last.end_ledger + 1);
+    let past = client.get_past_votes(&f.user, &(last.end_ledger - 1));
+    assert!(past > 0);
 }
 
 #[test]
@@ -1153,27 +1039,20 @@ fn test_get_past_votes_reads_bounded_history_after_withdraw() {
     let amount = 1_000;
     let duration = 1_000;
 
-    f.env.as_contract(&f.contract_id, || {
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            amount,
-            duration,
-        );
-        let probe = lock.start_ledger + 250;
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    let lock = client.create_lock(&f.user, &amount, &duration);
+    let probe = lock.start_ledger + 250;
 
-        f.env.ledger().set_sequence_number(lock.end_ledger + 1);
-        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
+    f.env.ledger().set_sequence_number(lock.end_ledger + 1);
+    client.withdraw(&f.user);
 
-        // The live record is gone; the historical answer must come from the
-        // indexed history entry.
-        assert!(VoteEscrowContract::get_lock(f.env.clone(), f.user.clone()).is_none());
+    // The live record is gone; the historical answer must come from the
+    // indexed history entry.
+    assert!(client.get_lock(&f.user).is_none());
 
-        let votes =
-            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), probe);
-        assert!(votes > 0);
-        assert!(votes <= lock.initial_voting_power);
-    });
+    let votes = client.get_past_votes(&f.user, &probe);
+    assert!(votes > 0);
+    assert!(votes <= lock.initial_voting_power);
 }
 
 #[test]
@@ -1210,72 +1089,43 @@ fn test_uninitialized_contract_returns_typed_error() {
 fn test_late_top_up_does_not_restore_decayed_boost() {
     let f = setup();
 
-    f.env.as_contract(&f.contract_id, || {
-        f.env.ledger().set_sequence_number(1_000);
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            1_000,
-            MAX_LOCK_DURATION,
-        );
-        // Full-length lock: a 2.5x boost on 1_000 tokens, so 1_000 + 2_500.
-        assert_eq!(lock.initial_voting_power, 3_500);
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    f.env.ledger().set_sequence_number(1_000);
+    let lock = client.create_lock(&f.user, &1_000, &MAX_LOCK_DURATION);
+    // Full-length lock: a 2.5x boost on 1_000 tokens, so 1_000 + 2_500.
+    assert_eq!(lock.initial_voting_power, 3_500);
 
-        // Halfway through, the boost has decayed to 1_250, so power is 2_250.
-        f.env.ledger().set_sequence_number(6_000);
-        assert_eq!(VoteEscrowContract::get_votes(f.env.clone(), f.user.clone()), 2_250);
+    // Halfway through, the boost has decayed to 1_250, so power is 2_250.
+    f.env.ledger().set_sequence_number(6_000);
+    assert_eq!(client.get_votes(&f.user), 2_250);
 
-        // The top-up is priced as a fresh lock for the 5_000 ledgers left: a boost
-        // of 1_237 on 1_000 tokens, so 2_237. Total 2_250 + 2_237 = 4_487. Pricing it
-        // on the full 10_000-ledger duration would have given 4_500.
-        let topped_up = VoteEscrowContract::increase_lock_amount(
-            f.env.clone(),
-            f.user.clone(),
-            1_000,
-        );
-        assert_eq!(topped_up.amount, 2_000);
-        assert_eq!(topped_up.end_ledger, lock.end_ledger);
-        assert_eq!(VoteEscrowContract::get_votes(f.env.clone(), f.user.clone()), 4_487);
-    });
+    // The top-up is priced as a fresh lock for the 5_000 ledgers left: a boost
+    // of 1_237 on 1_000 tokens, so 2_237. Total 2_250 + 2_237 = 4_487. Pricing it
+    // on the full 10_000-ledger duration would have given 4_500.
+    let topped_up = client.increase_lock_amount(&f.user, &1_000);
+    assert_eq!(topped_up.amount, 2_000);
+    assert_eq!(topped_up.end_ledger, lock.end_ledger);
+    assert_eq!(client.get_votes(&f.user), 4_487);
 }
 
 #[test]
 fn test_withdrawn_lock_counts_inside_its_original_window() {
     let f = setup();
 
-    f.env.as_contract(&f.contract_id, || {
-        f.env.ledger().set_sequence_number(100);
-        // At the minimum duration there is no boost, so power is exactly the deposit.
-        let lock = VoteEscrowContract::create_lock(
-            f.env.clone(),
-            f.user.clone(),
-            1_000,
-            MIN_LOCK_DURATION,
-        );
+    let client = VoteEscrowContractClient::new(&f.env, &f.contract_id);
+    f.env.ledger().set_sequence_number(100);
+    // At the minimum duration there is no boost, so power is exactly the deposit.
+    let lock = client.create_lock(&f.user, &1_000, &MIN_LOCK_DURATION);
 
-        f.env.ledger().set_sequence_number(lock.end_ledger);
-        VoteEscrowContract::withdraw(f.env.clone(), f.user.clone());
-        assert!(VoteEscrowContract::get_lock(f.env.clone(), f.user.clone()).is_none());
+    f.env.ledger().set_sequence_number(lock.end_ledger);
+    client.withdraw(&f.user);
+    assert!(client.get_lock(&f.user).is_none());
 
-        // Inside [start_ledger, end_ledger) the withdrawn record still carries power.
-        assert_eq!(
-            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), lock.start_ledger),
-            1_000
-        );
-        assert_eq!(
-            VoteEscrowContract::get_past_votes(
-                f.env.clone(),
-                f.user.clone(),
-                lock.end_ledger - 1
-            ),
-            1_000
-        );
-        // At end_ledger the window has closed.
-        assert_eq!(
-            VoteEscrowContract::get_past_votes(f.env.clone(), f.user.clone(), lock.end_ledger),
-            0
-        );
-    });
+    // Inside [start_ledger, end_ledger) the withdrawn record still carries power.
+    assert_eq!(client.get_past_votes(&f.user, &lock.start_ledger), 1_000);
+    assert_eq!(client.get_past_votes(&f.user, &(lock.end_ledger - 1)), 1_000);
+    // At end_ledger the window has closed.
+    assert_eq!(client.get_past_votes(&f.user, &lock.end_ledger), 0);
 }
 
 #[test]

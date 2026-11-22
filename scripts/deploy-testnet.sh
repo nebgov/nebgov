@@ -193,15 +193,18 @@ SEP41_TOKEN="${SEP41_TOKEN_ADDRESS:-$NATIVE_TOKEN}"
 
 # -- Initialize token-votes ------------------------------------------
 info "Initializing token-votes ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TOKEN_VOTES_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- initialize \
   --admin "$DEPLOYER_ADDR" \
   --token "$SEP41_TOKEN" \
-  2>/dev/null && ok "token-votes initialized" \
-  || warn "token-votes already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "token-votes initialized"
+else
+  warn "token-votes already initialized (or init failed — check manually)"
+fi
 
 # -- Initialize timelock (use governor address or deployer as placeholder) -
 TIMELOCK_GOVERNOR="${GOVERNOR_ADDRESS:-$DEPLOYER_ADDR}"
@@ -209,7 +212,7 @@ TIMELOCK_DELAY="${TIMELOCK_MIN_DELAY:-3600}"
 TIMELOCK_WINDOW="${TIMELOCK_EXECUTION_WINDOW:-86400}"
 
 info "Initializing timelock ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TIMELOCK_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -218,8 +221,11 @@ stellar contract invoke \
   --governor "$TIMELOCK_GOVERNOR" \
   --min_delay "$TIMELOCK_DELAY" \
   --execution_window "$TIMELOCK_WINDOW" \
-  2>/dev/null && ok "timelock initialized" \
-  || warn "timelock already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "timelock initialized"
+else
+  warn "timelock already initialized (or init failed — check manually)"
+fi
 
 # Persist timelock parameters
 persist "TIMELOCK_MIN_DELAY" "$TIMELOCK_DELAY"
@@ -234,7 +240,7 @@ GUARDIAN="${GUARDIAN_ADDRESS:-$DEPLOYER_ADDR}"
 VOTE_TYPE="${VOTE_TYPE:-Extended}"
 
 info "Initializing governor ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$GOVERNOR_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -248,14 +254,17 @@ stellar contract invoke \
   --proposal_threshold "$THRESHOLD" \
   --guardian "$GUARDIAN" \
   --vote_type "$VOTE_TYPE" \
-  2>/dev/null && ok "governor initialized" \
-  || warn "governor already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "governor initialized"
+else
+  warn "governor already initialized (or init failed — check manually)"
+fi
 
 # -- Initialize treasury -----------------------------------------------
 TREASURY_THRESH="${TREASURY_THRESHOLD:-1}"
 
 info "Initializing treasury ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TREASURY_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -264,8 +273,11 @@ stellar contract invoke \
   --owners "[\"$DEPLOYER_ADDR\"]" \
   --threshold "$TREASURY_THRESH" \
   --governor "$GOVERNOR_ADDRESS" \
-  2>/dev/null && ok "treasury initialized" \
-  || warn "treasury already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "treasury initialized"
+else
+  warn "treasury already initialized (or init failed — check manually)"
+fi
 
 # -- Initialize factory ------------------------------------------------
 info "Initializing factory ..."
@@ -286,7 +298,7 @@ TOKEN_VOTES_HASH="$(stellar contract install \
   --source "$IDENTITY" \
   --network "$NETWORK")"
 
-stellar contract invoke \
+if stellar contract invoke \
   --id "$FACTORY_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -295,30 +307,39 @@ stellar contract invoke \
   --governor_wasm "$GOVERNOR_HASH" \
   --timelock_wasm "$TIMELOCK_HASH" \
   --token_votes_wasm "$TOKEN_VOTES_HASH" \
-  2>/dev/null && ok "factory initialized" \
-  || warn "factory already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "factory initialized"
+else
+  warn "factory already initialized (or init failed — check manually)"
+fi
 
 info "Configuring factory native token preflight ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$FACTORY_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- set_native_token \
   --admin "$DEPLOYER_ADDR" \
   --native_token "$NATIVE_TOKEN" \
-  2>/dev/null && ok "factory native token configured" \
-  || warn "factory native token already configured (or update failed — check manually)"
+  2>/dev/null; then
+  ok "factory native token configured"
+else
+  warn "factory native token already configured (or update failed — check manually)"
+fi
 
 # -- Initialize signal-anchor -----------------------------------------
 info "Initializing signal-anchor ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$SIGNAL_ANCHOR_CONTRACT_ID" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- initialize \
   --admin "$DEPLOYER_ADDR" \
-  2>/dev/null && ok "signal-anchor initialized" \
-  || warn "signal-anchor already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "signal-anchor initialized"
+else
+  warn "signal-anchor already initialized (or init failed — check manually)"
+fi
 
 # -- Initialize voting-rewards ----------------------------------------
 # The admin must end up as the governor's address so that publishing an epoch
@@ -330,7 +351,7 @@ VOTING_REWARDS_EPOCH_DURATION="${VOTING_REWARDS_EPOCH_DURATION:-17280}"
 VOTING_REWARDS_TOKEN="${VOTING_REWARDS_TOKEN:-$SEP41_TOKEN}"
 
 info "Initializing voting-rewards ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$VOTING_REWARDS_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -338,19 +359,25 @@ stellar contract invoke \
   --admin "$DEPLOYER_ADDR" \
   --reward_token "$VOTING_REWARDS_TOKEN" \
   --epoch_duration_ledgers "$VOTING_REWARDS_EPOCH_DURATION" \
-  2>/dev/null && ok "voting-rewards initialized" \
-  || warn "voting-rewards already initialized (or init failed — check manually)"
+  2>/dev/null; then
+  ok "voting-rewards initialized"
+else
+  warn "voting-rewards already initialized (or init failed — check manually)"
+fi
 
 info "Setting voting-rewards admin to governor ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$VOTING_REWARDS_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- set_admin \
   --admin "$DEPLOYER_ADDR" \
   --new_admin "$GOVERNOR_ADDRESS" \
-  2>/dev/null && ok "voting-rewards admin set to governor" \
-  || warn "voting-rewards admin already rotated (or set_admin failed — run verify-deployment.sh)"
+  2>/dev/null; then
+  ok "voting-rewards admin set to governor"
+else
+  warn "voting-rewards admin already rotated (or set_admin failed — run verify-deployment.sh)"
+fi
 
 # Persist voting-rewards parameters
 persist "VOTING_REWARDS_EPOCH_DURATION" "$VOTING_REWARDS_EPOCH_DURATION"

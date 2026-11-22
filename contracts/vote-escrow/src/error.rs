@@ -14,4 +14,5 @@ pub enum VoteEscrowError {
     ArithmeticOverflow = 8,
     Unauthorized = 9,
     LockAlreadyExists = 10,
+    AlreadyInitialized = 11,
 }

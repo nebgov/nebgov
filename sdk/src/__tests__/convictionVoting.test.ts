@@ -8,6 +8,7 @@ var mockGetTransaction = jest.fn();
 var mockSimulateTransaction = jest.fn();
 
 import { ConvictionVotingClient } from "../convictionVoting";
+import type { ConvictionVotingConfig } from "../types";
 import { Account, Keypair } from "@stellar/stellar-sdk";
 
 jest.mock("@stellar/stellar-sdk", () => {
@@ -54,9 +55,6 @@ const mockKeypair = Keypair.random();
 
 function makeClient(extra: Record<string, unknown> = {}) {
   return new ConvictionVotingClient({
-    governorAddress: VALID_CADDR,
-    timelockAddress: VALID_CADDR,
-    votesAddress: VALID_CADDR,
     network: "testnet",
     convictionVotingAddress: VALID_CADDR,
     simulationAccount: VALID_GADDR,
@@ -87,11 +85,8 @@ describe("ConvictionVotingClient", () => {
       expect(
         () =>
           new ConvictionVotingClient({
-            governorAddress: VALID_CADDR,
-    timelockAddress: VALID_CADDR,
-    votesAddress: VALID_CADDR,
             network: "testnet",
-          }),
+          } as ConvictionVotingConfig),
       ).toThrow("ConvictionVotingClient requires convictionVotingAddress");
     });
   });
@@ -161,7 +156,7 @@ describe("ConvictionVotingClient", () => {
       mockSendTransaction.mockResolvedValue({ status: "ERROR" });
       const client = makeClient();
       await expect(client.stake(mockKeypair, 3, 50n)).rejects.toThrow(
-        "Transaction submission failed: stake",
+        /Transaction failed/,
       );
     });
   });

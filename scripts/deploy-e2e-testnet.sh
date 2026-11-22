@@ -121,34 +121,40 @@ SEP41_TOKEN="${SEP41_TOKEN_ADDRESS:-CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RM
 
 # -- Initialize token-votes ------------------------------------------
 info "Initializing token-votes ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TOKEN_VOTES_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- initialize \
   --admin "$DEPLOYER_ADDR" \
   --token "$SEP41_TOKEN" \
-  2>/dev/null && ok "token-votes initialized" \
-  || warn "token-votes already initialized"
+  2>/dev/null; then
+  ok "token-votes initialized"
+else
+  warn "token-votes already initialized"
+fi
 
 # -- Delegate to self so the test identity has voting power -----------
 info "Delegating voting power to deployer ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TOKEN_VOTES_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
   -- delegate \
   --delegator "$DEPLOYER_ADDR" \
   --delegatee "$DEPLOYER_ADDR" \
-  2>/dev/null && ok "Delegation set" \
-  || warn "Delegation already set or failed"
+  2>/dev/null; then
+  ok "Delegation set"
+else
+  warn "Delegation already set or failed"
+fi
 
 # -- Initialize timelock (min_delay=0 for instant execution) ----------
 TIMELOCK_GOVERNOR="${GOVERNOR_ADDRESS:-$DEPLOYER_ADDR}"
 TIMELOCK_DELAY="${TIMELOCK_MIN_DELAY:-0}"
 
 info "Initializing timelock (min_delay=$TIMELOCK_DELAY) ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$TIMELOCK_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -156,8 +162,11 @@ stellar contract invoke \
   --admin "$DEPLOYER_ADDR" \
   --governor "$TIMELOCK_GOVERNOR" \
   --min_delay "$TIMELOCK_DELAY" \
-  2>/dev/null && ok "timelock initialized" \
-  || warn "timelock already initialized"
+  2>/dev/null; then
+  ok "timelock initialized"
+else
+  warn "timelock already initialized"
+fi
 
 # -- Initialize governor with minimal E2E-friendly settings -----------
 # voting_delay=1 (≈5s), voting_period=10 (≈50s), quorum_numerator=0, proposal_threshold=0
@@ -167,7 +176,7 @@ QUORUM="${QUORUM_NUMERATOR:-0}"
 THRESHOLD="${PROPOSAL_THRESHOLD:-0}"
 
 info "Initializing governor (delay=$DELAY, period=$PERIOD, quorum=$QUORUM, threshold=$THRESHOLD) ..."
-stellar contract invoke \
+if stellar contract invoke \
   --id "$GOVERNOR_ADDRESS" \
   --source "$IDENTITY" \
   --network "$NETWORK" \
@@ -179,8 +188,11 @@ stellar contract invoke \
   --voting_period "$PERIOD" \
   --quorum_numerator "$QUORUM" \
   --proposal_threshold "$THRESHOLD" \
-  2>/dev/null && ok "governor initialized" \
-  || warn "governor already initialized"
+  2>/dev/null; then
+  ok "governor initialized"
+else
+  warn "governor already initialized"
+fi
 
 # ====================================================================
 # Persist NEXT_PUBLIC_* vars for the frontend

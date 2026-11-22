@@ -291,8 +291,9 @@ fn test_full_proposal_lifecycle() {
     // The calldata uniquely identifies this operation in the timelock.
     // Encode realistic argument data representing a governance action payload
     // (e.g., protocol upgrade parameters or treasury operation details).
-    let mut calldata = Bytes::new(&env);
-    calldata.append(&Bytes::from_slice(&env, b"protocol_version_3.2"));
+    // Empty XDR calldata: exec_gov takes no arguments. The timelock op is
+    // still unique because queue() salts the op_id with the proposal_id.
+    let calldata = Bytes::new(&env);
     let description = soroban_sdk::String::from_str(&env, "Execute mock governance action");
 
     // Create Vec with single target, fn_name, and calldata
@@ -303,7 +304,7 @@ fn test_full_proposal_lifecycle() {
     fn_names.push_back(fn_name);
 
     let mut calldatas = soroban_sdk::Vec::new(&env);
-    calldatas.push_back(calldata);
+    calldatas.push_back(calldata.clone());
 
     // Ledger starts at 0; start_ledger = 0 + 10 = 10, end_ledger = 0 + 30.
     let description_hash = env
@@ -398,12 +399,14 @@ fn test_full_proposal_lifecycle() {
     });
 
     // Verify the timelock operation ID matches the expected hash.
-    // compute_op_id hashes: target | calldata | predecessor (empty) | salt (empty)
+    // compute_op_id hashes: target | calldata | predecessor (empty) | salt,
+    // where the governor salts with proposal_id (see queue()).
+    let salt = Bytes::from_slice(&env, &proposal_id.to_be_bytes());
     let expected_op_id = timelock_client.compute_op_id(
         &mock_target_id,
         &calldata,
         &Bytes::new(&env),
-        &Bytes::new(&env),
+        &salt,
     );
     assert_eq!(
         op_id, expected_op_id,

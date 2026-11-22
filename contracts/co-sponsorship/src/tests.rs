@@ -697,14 +697,14 @@ fn test_withdraw_co_sponsorship_succeeds_after_expiry() {
 
 #[test]
 fn test_instance_ttl_extended() {
-    let (env, client, _votes, _admin) = setup();
+    let (env, client, _votes, _admin) = setup(1_000);
 
     // Advance ledger past default instance TTL
     env.ledger().with_mut(|l| {
         l.sequence_number += 10_000;
     });
 
-    // Contract still answers queries
-    let drafts = client.get_active_drafts(&0, &10);
-    assert_eq!(drafts.len(), 0);
+    // Instance-backed view still answers: initialize() extended the
+    // instance TTL, so the Admin key must not be archived.
+    client.check_not_initialized();
 }

@@ -155,32 +155,70 @@ describe("GuardianCouncilClient RPC", () => {
     retval = nativeToScVal(120, { type: "u32" });
     expect(await client().getActionTtl()).toBe(120);
   });
-  it("lists actions until the contract reports ActionNotFound", async () => {
+  it("lists actions via the get_actions view and maps rows", async () => {
     const c = client();
-    const action = (id: bigint): GuardianAction => ({
-      tag: "CancelActive",
-      proposalId: id,
+    const row = (id: bigint) =>
+      xdr.ScVal.scvMap(
+        (
+          [
+            ["id", nativeToScVal(id, { type: "u64" })],
+            ["action", encodeGuardianAction({ tag: "CancelActive", proposalId: id })],
+            ["proposer", nativeToScVal(signer.publicKey(), { type: "address" })],
+            ["created_ledger", nativeToScVal(1, { type: "u32" })],
+            ["expires_ledger", nativeToScVal(0, { type: "u32" })],
+            ["approvals", xdr.ScVal.scvVec([])],
+            ["cancellation_approvals", xdr.ScVal.scvVec([])],
+            ["executed", nativeToScVal(false)],
+            ["cancelled", nativeToScVal(false)],
+          ] as Array<[string, xdr.ScVal]>
+        )
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(
+            ([key, val]) =>
+              new xdr.ScMapEntry({
+                key: nativeToScVal(key, { type: "symbol" }),
+                val,
+              }),
+          ),
+      );
+    retval = xdr.ScVal.scvVec([row(0n), row(1n), row(2n)]);
+    const listed = await c.listActions();
+    expect(listed.map((a) => a.id)).toEqual([0n, 1n, 2n]);
+    expect(listed[0]).toEqual({
+      id: 0n,
+      action: { tag: "CancelActive", proposalId: 0n },
+      proposer: signer.publicKey(),
+      createdLedger: 1,
+      expiresLedger: 0,
+      approvals: [],
+      cancellationApprovals: [],
+      executed: false,
+      cancelled: false,
     });
-    jest.spyOn(c, "getAction").mockImplementation(async (id) => {
-      if (id >= 3n)
-        throw new Error(
-          "Guardian council simulation failed: HostError: Error(Contract, #4)",
-        );
-      return {
-        id,
-        action: action(id),
-        proposer: signer.publicKey(),
-        createdLedger: 1,
-        approvals: [],
-        executed: false,
-      };
-    });
-    expect((await c.listActions()).map((a) => a.id)).toEqual([0n, 1n, 2n]);
+
+    const seen: xdr.ScVal[][] = [];
+    jest
+      .spyOn(SorobanRpc.Server.prototype, "simulateTransaction")
+      .mockImplementation(async (tx) => {
+        const op = (tx as unknown as { operations: unknown[] }).operations[0] as {
+          func: xdr.HostFunction;
+        };
+        const args = op.func.invokeContract();
+        seen.push(args.args());
+        return { result: { retval } } as Awaited<
+          ReturnType<SorobanRpc.Server["simulateTransaction"]>
+        >;
+      });
+    retval = xdr.ScVal.scvVec([row(1n)]);
     expect((await c.listActions(1n, 1)).map((a) => a.id)).toEqual([1n]);
+    expect(scValToNative(seen[0][0])).toBe(1n);
+    expect(scValToNative(seen[0][1])).toBe(1);
   });
   it("rethrows unexpected failures while listing actions", async () => {
     const c = client();
-    jest.spyOn(c, "getAction").mockRejectedValue(new Error("rpc offline"));
+    jest
+      .spyOn(SorobanRpc.Server.prototype, "simulateTransaction")
+      .mockRejectedValue(new Error("rpc offline"));
     await expect(c.listActions()).rejects.toThrow("rpc offline");
   });
   it("maps views and full-width IDs", async () => {
@@ -210,8 +248,11 @@ describe("GuardianCouncilClient RPC", () => {
       action: actions[2],
       proposer: signer.publicKey(),
       createdLedger: 12,
+      expiresLedger: 0,
       approvals: [signer.publicKey()],
+      cancellationApprovals: [],
       executed: false,
+      cancelled: false,
     });
     retval = xdr.ScVal.scvVec([
       nativeToScVal(signer.publicKey(), { type: "address" }),

@@ -824,10 +824,11 @@ fn test_remove_liquidity_missing_pool_tokens_returns_typed_error() {
             .remove(&DataKey::PoolTokens(0, 1));
     });
 
-    assert!(matches!(
-        client.try_remove_liquidity(&provider, &0, &1, &10_000),
-        Err(Ok(LiquidityError::PoolTokensNotFound))
-    ));
+    let err = client
+        .try_remove_liquidity(&provider, &0, &1, &10_000)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, LiquidityError::PoolTokensNotFound.into());
 }
 
 #[test]
@@ -844,10 +845,11 @@ fn test_swap_missing_pool_tokens_returns_typed_error() {
             .remove(&DataKey::PoolTokens(0, 1));
     });
 
-    assert!(matches!(
-        client.try_swap(&trader, &0, &1, &100, &0),
-        Err(Ok(LiquidityError::PoolTokensNotFound))
-    ));
+    let err = client
+        .try_swap(&trader, &0, &1, &100, &0)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, LiquidityError::PoolTokensNotFound.into());
 }
 
 // ============================================================================
@@ -1121,7 +1123,7 @@ fn test_get_amount_out_matches_swap() {
 #[test]
 #[should_panic]
 fn test_get_amount_out_same_outcome_panics() {
-    let (env, contract_id, governor, provider, _, token_a, token_b) = setup_liquidity();
+    let (env, contract_id, governor, _provider, _, token_a, token_b) = setup_liquidity();
     let client = LiquidityContractClient::new(&env, &contract_id);
     setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
     client.get_amount_out(&0, &0, &1_000);
@@ -1130,7 +1132,7 @@ fn test_get_amount_out_same_outcome_panics() {
 #[test]
 #[should_panic]
 fn test_get_amount_out_invalid_amount_panics() {
-    let (env, contract_id, governor, provider, _, token_a, token_b) = setup_liquidity();
+    let (env, contract_id, governor, _provider, _, token_a, token_b) = setup_liquidity();
     let client = LiquidityContractClient::new(&env, &contract_id);
     setup_pool(&client, &governor, 0, 1, &token_a, &token_b);
     client.get_amount_out(&0, &1, &0);

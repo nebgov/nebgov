@@ -333,7 +333,7 @@ impl TokenVotesWrapperContract {
             .persistent()
             .set(&DataKey::Delegate(delegator.clone()), &delegatee);
         let delegate_key = DataKey::Delegate(delegator.clone());
-        Self::extend_ttl(env, &delegate_key);
+        Self::extend_ttl(&env, &delegate_key);
 
         if old_delegatee != delegatee {
             Self::move_voting_power(&env, Some(&old_delegatee), Some(&delegatee), balance);
@@ -368,7 +368,7 @@ impl TokenVotesWrapperContract {
         env.storage()
             .persistent()
             .set(&DataKey::LockedUntil(from.clone()), &extended_ledger);
-        Self::extend_ttl(env, &DataKey::LockedUntil(from.clone()));
+        Self::extend_ttl(&env, &DataKey::LockedUntil(from.clone()));
         env.events().publish(
             (symbol_short!("lock_wd"),),
             (from, extended_ledger, env.ledger().sequence()),
@@ -725,10 +725,8 @@ mod tests {
         let wrapper_id = env.register(TokenVotesWrapperContract, ());
         let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
 
-        assert!(matches!(
-            wrapper.try_underlying_token(),
-            Err(Ok(WrapperError::NotInitialized))
-        ));
+        let err = wrapper.try_underlying_token().unwrap_err().unwrap();
+        assert_eq!(err, WrapperError::NotInitialized.into());
     }
 
     #[test]
@@ -740,10 +738,8 @@ mod tests {
         let wrapper_id = env.register(TokenVotesWrapperContract, ());
         let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
 
-        assert!(matches!(
-            wrapper.try_deposit(&user, &100_i128),
-            Err(Ok(WrapperError::NotInitialized))
-        ));
+        let err = wrapper.try_deposit(&user, &100_i128).unwrap_err().unwrap();
+        assert_eq!(err, WrapperError::NotInitialized.into());
     }
 
     #[test]
@@ -756,9 +752,10 @@ mod tests {
         let wrapper_id = env.register(TokenVotesWrapperContract, ());
         let wrapper = TokenVotesWrapperContractClient::new(&env, &wrapper_id);
 
-        assert!(matches!(
-            wrapper.try_lock_withdrawal(&admin, &user, &1000_u32),
-            Err(Ok(WrapperError::NotInitialized))
-        ));
+        let err = wrapper
+            .try_lock_withdrawal(&admin, &user, &1000_u32)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, WrapperError::NotInitialized.into());
     }
 }

@@ -1,0 +1,10 @@
+# cargo-audit configuration.
+#
+# RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing variability) is pulled in
+# transitively via soroban-sdk -> soroban-env-host -> k256 0.13 ->
+# elliptic-curve 0.13 -> crypto-bigint ^0.5. The advisory is only patched in
+# crypto-bigint >=0.7.6, which is not semver-compatible with the ^0.5 range
+# required by elliptic-curve 0.13, so no lockfile update can resolve it.
+# Ignored until soroban-sdk upgrades its elliptic-curve/k256 dependency.
+[advisories]
+ignore = ["RUSTSEC-2026-0387"]

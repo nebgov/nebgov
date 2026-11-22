@@ -187,9 +187,10 @@ impl VotingRewardsContract {
 
         epoch.merkle_root = Some(merkle_root.clone());
         epoch.total_reward_amount = total_reward_amount;
-        if total_reward_amount > 0 {
-            epoch.finalized = true;
-        }
+        // A published epoch is finalized even when the allocation is zero:
+        // the backend publishes a zero root rather than skipping the epoch,
+        // so the on-chain epoch history stays contiguous.
+        epoch.finalized = true;
         Self::store_epoch(&env, &epoch);
 
         events::emit_epoch_root_published(&env, epoch_id, &merkle_root, total_reward_amount);

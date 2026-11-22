@@ -320,6 +320,12 @@ fn test_single_100_weight_delegate_split_collapses_to_legacy_delegate_key() {
     client.delegate_split(&delegator, &splits(&env, &[(delegatee.clone(), 10000)]));
 
     assert_eq!(client.get_votes(&delegatee), 1000);
-    assert_eq!(client.delegates(&delegator), Some(delegatee));
-    assert_eq!(client.get_split_delegations(&delegator).len(), 0);
+    // Collapsed onto the legacy Delegate key ...
+    assert_eq!(client.delegates(&delegator), Some(delegatee.clone()));
+    // ... which get_split_delegations reports as a single 100% entry via the
+    // documented legacy fallback (read side stays interoperable).
+    let splits = client.get_split_delegations(&delegator);
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits.get(0).unwrap().delegatee, delegatee);
+    assert_eq!(splits.get(0).unwrap().weight_bps, 10_000);
 }
