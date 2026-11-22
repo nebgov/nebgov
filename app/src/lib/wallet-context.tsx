@@ -96,11 +96,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const login = await backendFetch<{ token: string }>("/auth/login", {
+      const challenge = await backendFetch<{ nonce: string; message: string }>("/auth/challenge", {
         method: "POST",
         body: JSON.stringify({ wallet_address: rawAddress }),
       });
-      setAuthToken(login.token);
+      const kit = kitRef.current;
+      if (!kit) throw new Error("Wallet is not ready.");
+      const { signedMessage } = await kit.signMessage(challenge.message, {
+        address: rawAddress,
+        networkPassphrase: appNetworkPassphrase(),
+      });
+      const login = await backendFetch<{ accessToken: string }>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          wallet_address: rawAddress,
+          nonce: challenge.nonce,
+          signature: signedMessage,
+        }),
+      });
+      setAuthToken(login.accessToken);
       await syncNotificationsFromBackend();
     } catch {
       // Backend is optional; localStorage notifications still work.
