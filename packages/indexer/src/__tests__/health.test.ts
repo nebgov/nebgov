@@ -9,6 +9,10 @@ jest.mock("../db");
 jest.mock("../events");
 jest.mock("../index", () => ({
   startTime: Date.now() - 3600000, // 1 hour ago
+  INDEXED_CONTRACTS: {
+    GOVERNOR_ADDRESS: "CGOVERNOR",
+    VOTE_ESCROW_ADDRESS: "CVOTEESCROW",
+  },
 }));
 
 const mockPool = pool as jest.Mocked<typeof pool>;

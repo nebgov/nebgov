@@ -405,7 +405,27 @@ export async function processEvents(
         } else if (isOptimisticGovernor) {
           await handleOptimisticGovernorEvent(event, eventType, topics);
         } else if (isVoteEscrow) {
-          await handleVoteEscrowEvent(event, eventType, topics);
+          // The lifecycle events carry per-action payloads (added_amount,
+          // new_voting_power, old/new_end_ledger, ...), so route them to the
+          // dedicated handlers; anything else falls back to the generic
+          // upsert.
+          switch (eventType) {
+            case "LockCreated":
+              await handleLockCreated(event, topics);
+              break;
+            case "LockIncreased":
+              await handleLockIncreased(event, topics);
+              break;
+            case "LockExtended":
+              await handleLockExtended(event, topics);
+              break;
+            case "LockWithdrawn":
+              await handleLockWithdrawn(event, topics);
+              break;
+            default:
+              await handleVoteEscrowEvent(event, eventType, topics);
+              break;
+          }
         } else {
           switch (eventType) {
             case "ProposalCreated":
