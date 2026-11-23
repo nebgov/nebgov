@@ -4,6 +4,19 @@ import { AnchorVerifiedBadge } from "../AnchorVerifiedBadge";
 import { SignalingClient } from "@nebgov/sdk";
 import * as nebgovEnv from "../../lib/nebgov-env";
 
+jest.mock("next-intl", () => {
+  const en = require("../../messages/en.json");
+  const lookup = (ns: string, key: string) =>
+    ns.split(".").concat(key).reduce((o, k) => o?.[k], en);
+  return {
+    useTranslations: (ns?: string) => (key: string, values?: Record<string, unknown>) => {
+      const template = lookup(ns ?? "", key);
+      if (typeof template !== "string") return key;
+      return template.replace(/\{(\w+)\}/g, (_, k) => String(values?.[k] ?? `{${k}}`));
+    },
+  };
+});
+
 jest.mock("@nebgov/sdk", () => ({
   SignalingClient: jest.fn(),
 }));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { SignalingClient } from "@nebgov/sdk";
 import { readGovernorConfig } from "../lib/nebgov-env";
 
@@ -14,6 +15,7 @@ type Status = "loading" | "unanchored" | "verified" | "mismatch" | "unavailable"
 
 /** Shown once `getAnchor()` confirms the backend's published result_hash matches the on-chain anchor. */
 export function AnchorVerifiedBadge({ pollId, resultHash }: Props) {
+  const t = useTranslations("signals.anchor");
   const [status, setStatus] = useState<Status>("loading");
 
   useEffect(() => {
@@ -50,9 +52,9 @@ export function AnchorVerifiedBadge({ pollId, resultHash }: Props) {
     return (
       <span
         className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800"
-        title="The published result hash does not match the on-chain anchor."
+        title={t("mismatchTitle")}
       >
-        ⚠️ Anchor mismatch
+        ⚠️ {t("mismatch")}
       </span>
     );
   }
@@ -60,9 +62,9 @@ export function AnchorVerifiedBadge({ pollId, resultHash }: Props) {
   return (
     <span
       className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800"
-      title="This poll's result hash matches its on-chain anchor — it cannot have been edited after publication."
+      title={t("verifiedTitle")}
     >
-      ✅ Anchor verified
+      ✅ {t("verified")}
     </span>
   );
 }
