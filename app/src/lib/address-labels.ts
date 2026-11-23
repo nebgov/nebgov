@@ -1,4 +1,11 @@
+import { StrKey } from "@stellar/stellar-sdk";
+
 const LS_ADDRESS_LABELS = "nebgov_address_labels";
+
+/** Labels can name accounts (G...) or contracts (C...); anything else is not a labelable address. */
+function isLabelableAddress(value: string): boolean {
+  return StrKey.isValidEd25519PublicKey(value) || StrKey.isValidContract(value);
+}
 
 export interface AddressLabel {
   address: string;
@@ -105,12 +112,15 @@ export function exportCustomLabels(): string {
 export function importCustomLabels(jsonString: string): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const imported = JSON.parse(jsonString) as Record<string, unknown>;
+    const imported: unknown = JSON.parse(jsonString);
+    if (!imported || typeof imported !== "object" || Array.isArray(imported)) {
+      return false;
+    }
     const existing = getCustomLabels();
     const merged: Record<string, string> = { ...existing };
 
     for (const [address, label] of Object.entries(imported)) {
-      if (typeof label === "string") {
+      if (typeof label === "string" && isLabelableAddress(address)) {
         merged[address] = label;
       }
     }
