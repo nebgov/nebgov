@@ -1,0 +1,62 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`CoSponsorModal matches snapshot 1`] = `
+<div
+  aria-labelledby="co-sponsor-modal-title"
+  aria-modal="true"
+  className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+  role="dialog"
+>
+  <div
+    className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-xl"
+  >
+    <div
+      className="flex items-start justify-between mb-3"
+    >
+      <div>
+        <h2
+          className="text-lg font-bold text-gray-900 dark:text-gray-100"
+          id="co-sponsor-modal-title"
+        >
+          Co-Sponsor Draft #123
+        </h2>
+        <p
+          className="text-sm text-gray-500 dark:text-gray-300"
+        >
+          Pledge your current voting power toward this draft.
+        </p>
+      </div>
+      <button
+        aria-label="Close"
+        className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        onClick={[MockFunction]}
+      >
+        ✕
+      </button>
+    </div>
+    <p
+      className="text-sm text-gray-600 dark:text-gray-300 mb-4"
+    >
+      Once the draft's accumulated co-sponsor power meets the governor's proposal threshold, the creator can finalize it into a real governance proposal.
+    </p>
+    <div
+      className="flex justify-end gap-3"
+    >
+      <button
+        className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+        disabled={false}
+        onClick={[MockFunction]}
+      >
+        Cancel
+      </button>
+      <button
+        className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+        disabled={false}
+        onClick={[Function]}
+      >
+        Co-Sponsor
+      </button>
+    </div>
+  </div>
+</div>
+`;

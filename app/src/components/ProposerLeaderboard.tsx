@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { ProposerLeaderboardEntry } from "@nebgov/sdk";
 import { AddressDisplay } from "./AddressDisplay";
 
@@ -20,6 +21,7 @@ interface ProposerLeaderboardProps {
  * unnecessarily expensive (gas and contract size) on it.
  */
 export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLeaderboardProps) {
+  const t = useTranslations("proposerLeaderboard");
   const [entries, setEntries] = useState<ProposerLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,8 +83,8 @@ export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLead
   }, [entries, sortKey, sortAsc]);
 
   const columns: { key: SortKey; label: string }[] = [
-    { key: "rank", label: "Rank" },
-    { key: "reputationScore", label: "Score" },
+    { key: "rank", label: t("rank") },
+    { key: "reputationScore", label: t("score") },
   ];
 
   if (loading) {
@@ -100,7 +102,7 @@ export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLead
   }
 
   if (entries.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No ranked proposers yet.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">{t("noRankedProposersYet")}</p>;
   }
 
   return (
@@ -109,7 +111,7 @@ export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLead
         <thead>
           <tr className="border-b border-gray-200 dark:border-gray-700 text-left">
             <th className="pb-2 pr-4 font-medium text-gray-500 dark:text-gray-400">
-              Proposer
+              {t("proposer")}
             </th>
             {columns.map((col) => (
               <th
@@ -132,7 +134,7 @@ export function ProposerLeaderboard({ className = "", limit = 50 }: ProposerLead
               </th>
             ))}
             <th className="pb-2 px-4 font-medium text-gray-500 dark:text-gray-400">
-              Last Updated
+              {t("lastUpdated")}
             </th>
           </tr>
         </thead>

@@ -15,13 +15,10 @@
 //!   `pause_stream`, `resume_stream` and `cancel_stream`
 //! - `execute_stream` is permissionless while the stream is live
 //!
-//! A stream completes when `execute_stream` pays its last whole interval: it
-//! is marked `completed`, removed from `get_active_streams`, and can no longer
-//! be executed, paused, resumed or cancelled.
-//!
 //! Only whole intervals are paid. A trailing partial interval before
 //! `end_ledger` is not paid. A paused stream pays nothing while paused, and
-//! intervals that came due during the pause are paid once it resumes.
+//! intervals due before a pause remain payable after resume. The paused span
+//! extends the schedule without accruing new intervals.
 
 mod error;
 mod events;
@@ -49,9 +46,6 @@ pub struct Stream {
     pub total_streamed: i128,
     pub paused: bool,
     pub cancelled: bool,
-    /// Set once `execute_stream` has paid the last whole interval before
-    /// `end_ledger`. A completed stream pays nothing more.
-    pub completed: bool,
     /// The address that created the stream. Creation is governor-only, so
     /// this is the governor, recorded so it can later pause or cancel.
     pub created_by: Address,
@@ -63,9 +57,9 @@ enum DataKey {
     Governor,
     NextStreamId,
     Stream(u64),
+    PausedAt(u64),
     StreamsByRecipient(Address),
-    /// Ids of streams that are neither cancelled nor completed, in creation
-    /// order.
+    /// Ids of streams that have not been cancelled, in creation order.
     ActiveStreams,
 }
 
@@ -108,7 +102,10 @@ impl TreasuryStreamsContract {
         if interval_ledgers == 0 {
             env.panic_with_error(TreasuryStreamsError::InvalidInterval);
         }
-        if end_ledger <= start_ledger || end_ledger <= env.ledger().sequence() {
+        if end_ledger <= start_ledger
+            || end_ledger - start_ledger < interval_ledgers
+            || end_ledger <= env.ledger().sequence()
+        {
             env.panic_with_error(TreasuryStreamsError::InvalidSchedule);
         }
 
@@ -133,7 +130,6 @@ impl TreasuryStreamsContract {
             total_streamed: 0,
             paused: false,
             cancelled: false,
-            completed: false,
             created_by: requester,
         };
         Self::save_stream(&env, &stream);
@@ -166,13 +162,11 @@ impl TreasuryStreamsContract {
 
     /// Pay every whole interval that has come due since the last payment.
     /// Permissionless: anyone may trigger payment once an interval is due.
-    ///
-    /// When this pays the stream's last whole interval (no further interval
-    /// fits before `end_ledger`), the stream is marked `completed`, removed
-    /// from `ActiveStreams`, and `StrmCompleted` is emitted.
     pub fn execute_stream(env: Env, stream_id: u64) {
         let mut stream = Self::load_stream(&env, stream_id);
-        Self::require_live(&env, &stream);
+        if stream.cancelled {
+            env.panic_with_error(TreasuryStreamsError::StreamCancelled);
+        }
         if stream.paused {
             env.panic_with_error(TreasuryStreamsError::StreamPaused);
         }
@@ -198,22 +192,10 @@ impl TreasuryStreamsContract {
             .total_streamed
             .checked_add(amount)
             .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
-        // No further whole interval fits before `end_ledger` (an overflowing
-        // next boundary is past it by definition).
-        stream.completed = stream
-            .last_streamed_ledger
-            .checked_add(stream.interval_ledgers)
-            .is_none_or(|next| next > stream.end_ledger);
         Self::save_stream(&env, &stream);
-        if stream.completed {
-            Self::remove_active_id(&env, stream_id);
-        }
 
         asset.transfer(&this_contract, &stream.recipient, &amount);
         emit_stream_executed(&env, stream_id, amount, env.ledger().sequence());
-        if stream.completed {
-            emit_stream_completed(&env, stream_id, stream.total_streamed);
-        }
     }
 
     /// Stop payments on a stream without cancelling it.
@@ -222,12 +204,19 @@ impl TreasuryStreamsContract {
         let mut stream = Self::load_stream(&env, stream_id);
         Self::require_admin_or_creator(&env, &requester, &stream);
 
-        Self::require_live(&env, &stream);
+        if stream.cancelled {
+            env.panic_with_error(TreasuryStreamsError::StreamCancelled);
+        }
         if stream.paused {
             env.panic_with_error(TreasuryStreamsError::AlreadyPaused);
         }
 
         stream.paused = true;
+        let pause_key = DataKey::PausedAt(stream_id);
+        env.storage().persistent().set(&pause_key, &env.ledger().sequence());
+        env.storage()
+            .persistent()
+            .extend_ttl(&pause_key, TTL_LEDGERS, TTL_LEDGERS);
         Self::save_stream(&env, &stream);
         emit_stream_paused(&env, stream_id);
     }
@@ -237,30 +226,82 @@ impl TreasuryStreamsContract {
         let mut stream = Self::load_stream(&env, stream_id);
         Self::require_admin_or_creator(&env, &requester, &stream);
 
-        Self::require_live(&env, &stream);
+        if stream.cancelled {
+            env.panic_with_error(TreasuryStreamsError::StreamCancelled);
+        }
         if !stream.paused {
             env.panic_with_error(TreasuryStreamsError::NotPaused);
         }
 
+        let pause_key = DataKey::PausedAt(stream_id);
+        let paused_at: u32 = env
+            .storage()
+            .persistent()
+            .get(&pause_key)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::PauseCheckpointMissing));
+        let paused_span = env.ledger().sequence().saturating_sub(paused_at);
+        stream.last_streamed_ledger = stream
+            .last_streamed_ledger
+            .checked_add(paused_span)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+        stream.end_ledger = stream
+            .end_ledger
+            .checked_add(paused_span)
+            .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
         stream.paused = false;
         Self::save_stream(&env, &stream);
+        env.storage().persistent().remove(&pause_key);
         emit_stream_resumed(&env, stream_id);
     }
 
-    /// Cancel a stream permanently. Intervals that are due but not yet
-    /// executed are forfeited, so execute them before cancelling.
+    /// Cancel a stream permanently, paying all whole intervals already due.
     pub fn cancel_stream(env: Env, requester: Address, stream_id: u64) {
         requester.require_auth();
         let mut stream = Self::load_stream(&env, stream_id);
         Self::require_admin_or_creator(&env, &requester, &stream);
 
-        Self::require_live(&env, &stream);
+        if stream.cancelled {
+            env.panic_with_error(TreasuryStreamsError::StreamCancelled);
+        }
+
+        let (intervals, settled_amount) = Self::accrued(&env, &stream);
+        if settled_amount > 0 {
+            let this_contract = env.current_contract_address();
+            let asset = token::TokenClient::new(&env, &stream.asset);
+            if asset.balance(&this_contract) < settled_amount {
+                env.panic_with_error(TreasuryStreamsError::InsufficientBalance);
+            }
+            let span = intervals
+                .checked_mul(stream.interval_ledgers)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+            stream.last_streamed_ledger = stream.last_streamed_ledger
+                .checked_add(span)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+            stream.total_streamed = stream.total_streamed
+                .checked_add(settled_amount)
+                .unwrap_or_else(|| env.panic_with_error(TreasuryStreamsError::ArithmeticOverflow));
+        }
 
         stream.cancelled = true;
         Self::save_stream(&env, &stream);
-        Self::remove_active_id(&env, stream_id);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PausedAt(stream_id));
 
-        emit_stream_cancelled(&env, stream_id, stream.total_streamed);
+        let mut remaining: Vec<u64> = Vec::new(&env);
+        for id in Self::active_ids(&env).iter() {
+            if id != stream_id {
+                remaining.push_back(id);
+            }
+        }
+        Self::save_active_ids(&env, &remaining);
+
+        if settled_amount > 0 {
+            let asset = token::TokenClient::new(&env, &stream.asset);
+            asset.transfer(&env.current_contract_address(), &stream.recipient, &settled_amount);
+        }
+
+        emit_stream_cancelled(&env, stream_id, stream.total_streamed, settled_amount);
     }
 
     pub fn get_stream(env: Env, stream_id: u64) -> Stream {
@@ -273,8 +314,7 @@ impl TreasuryStreamsContract {
         Self::accrued(&env, &stream).1
     }
 
-    /// One page of the streams created for `recipient`, including cancelled
-    /// and completed ones.
+    /// One page of the streams created for `recipient`, including cancelled ones.
     pub fn get_streams_for_recipient(
         env: Env,
         recipient: Address,
@@ -289,16 +329,15 @@ impl TreasuryStreamsContract {
         Self::page(&env, ids, offset, limit)
     }
 
-    /// One page of streams that are neither cancelled nor completed, in
-    /// creation order.
+    /// One page of streams that have not been cancelled, in creation order.
     pub fn get_active_streams(env: Env, offset: u32, limit: u32) -> Vec<Stream> {
         Self::page(&env, Self::active_ids(&env), offset, limit)
     }
 
-    /// Intervals that have come due, and the amount they pay. Paused,
-    /// cancelled and completed streams accrue nothing.
+    /// Intervals that have come due, and the amount they pay. Paused and
+    /// cancelled streams accrue nothing.
     fn accrued(env: &Env, stream: &Stream) -> (u32, i128) {
-        if stream.paused || stream.cancelled || stream.completed {
+        if stream.paused || stream.cancelled {
             return (0, 0);
         }
 
@@ -364,26 +403,6 @@ impl TreasuryStreamsContract {
         env.storage()
             .persistent()
             .extend_ttl(&DataKey::ActiveStreams, TTL_LEDGERS, TTL_LEDGERS);
-    }
-
-    fn remove_active_id(env: &Env, stream_id: u64) {
-        let mut remaining: Vec<u64> = Vec::new(env);
-        for id in Self::active_ids(env).iter() {
-            if id != stream_id {
-                remaining.push_back(id);
-            }
-        }
-        Self::save_active_ids(env, &remaining);
-    }
-
-    /// Reject a stream that has ended, by cancellation or completion.
-    fn require_live(env: &Env, stream: &Stream) {
-        if stream.cancelled {
-            env.panic_with_error(TreasuryStreamsError::StreamCancelled);
-        }
-        if stream.completed {
-            env.panic_with_error(TreasuryStreamsError::StreamCompleted);
-        }
     }
 
     fn require_governor(env: &Env, caller: &Address) {

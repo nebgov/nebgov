@@ -7,6 +7,7 @@
  * estimation — see `lib/utils/ledgerTime.ts`.
  */
 import { CountdownTimer } from "./CountdownTimer";
+import { useTranslations } from "next-intl";
 
 interface ChallengeCountdownProps {
   challengeEndLedger: number;
@@ -14,10 +15,11 @@ interface ChallengeCountdownProps {
 }
 
 export function ChallengeCountdown({ challengeEndLedger, isElapsed }: ChallengeCountdownProps) {
+  const t = useTranslations("optimistic");
   if (isElapsed) {
-    return <span className="text-sm text-slate-500">Challenge window closed</span>;
+    return <span className="text-sm text-slate-500">{t("challengeWindowClosed")}</span>;
   }
   return (
-    <CountdownTimer label="Challenge window closes in" targetLedger={challengeEndLedger} />
+    <CountdownTimer label={t("challengeWindowClosesIn")} targetLedger={challengeEndLedger} />
   );
 }

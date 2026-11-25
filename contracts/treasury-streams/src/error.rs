@@ -18,6 +18,5 @@ pub enum TreasuryStreamsError {
     StreamNotDue = 12,
     InsufficientBalance = 13,
     ArithmeticOverflow = 14,
-    /// The stream has paid its last whole interval and is finished.
-    StreamCompleted = 15,
+    PauseCheckpointMissing = 15,
 }

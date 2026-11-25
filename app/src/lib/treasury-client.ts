@@ -527,6 +527,62 @@ export class TreasuryClient {
     return BigInt(scValToNative(rv) as number | bigint);
   }
 
+  /** Read an interval-payment stream from the separate treasury-streams contract. */
+  async getRecurringStream(streamsAddress: string, viewer: string, streamId: bigint) {
+    const rv = await this.simulate(
+      viewer,
+      new Contract(streamsAddress).call("get_stream", nativeToScVal(streamId, { type: "u64" })),
+    );
+    if (!rv) throw new Error("Unable to load recurring stream");
+    const raw = scValToNative(rv) as Record<string, unknown>;
+    return {
+      id: BigInt(raw.id as string | number | bigint),
+      recipient: String(raw.recipient),
+      asset: String(raw.asset),
+      amountPerInterval: BigInt(raw.amount_per_interval as string | number | bigint),
+      intervalLedgers: Number(raw.interval_ledgers),
+      startLedger: Number(raw.start_ledger),
+      endLedger: Number(raw.end_ledger),
+      lastStreamedLedger: Number(raw.last_streamed_ledger),
+      totalStreamed: BigInt(raw.total_streamed as string | number | bigint),
+      paused: Boolean(raw.paused),
+      cancelled: Boolean(raw.cancelled),
+      createdBy: String(raw.created_by),
+    };
+  }
+
+  async getRecurringClaimable(streamsAddress: string, viewer: string, streamId: bigint): Promise<bigint> {
+    const rv = await this.simulate(
+      viewer,
+      new Contract(streamsAddress).call("get_claimable_amount", nativeToScVal(streamId, { type: "u64" })),
+    );
+    if (!rv) throw new Error("Unable to calculate accrued payment");
+    return BigInt(scValToNative(rv) as string | number | bigint);
+  }
+
+  async cancelRecurringStream(
+    streamsAddress: string,
+    signerPublicKey: string,
+    streamId: bigint,
+    signUnsignedXdr: (xdr: string) => Promise<string>,
+  ): Promise<string> {
+    const account = await this.server.getAccount(signerPublicKey);
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    }).addOperation(new Contract(streamsAddress).call(
+      "cancel_stream",
+      nativeToScVal(signerPublicKey, { type: "address" }),
+      nativeToScVal(streamId, { type: "u64" }),
+    )).setTimeout(30).build();
+    const prepared = await this.server.prepareTransaction(tx);
+    const signed = TransactionBuilder.fromXDR(await signUnsignedXdr(prepared.toXDR()), this.networkPassphrase);
+    const submitted = await this.server.sendTransaction(signed);
+    if (submitted.status === "ERROR") throw new Error(`cancel_stream failed: ${JSON.stringify(submitted)}`);
+    await this.pollSuccess(submitted.hash);
+    return submitted.hash;
+  }
+
   async streamSpend(
     signerPublicKey: string,
     streamId: number,

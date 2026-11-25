@@ -29,6 +29,7 @@ pub struct StreamExecutedEvent {
 pub struct StreamCancelledEvent {
     pub stream_id: u64,
     pub total_streamed: i128,
+    pub settled_amount: i128,
 }
 
 #[derive(Clone)]
@@ -77,12 +78,13 @@ pub fn emit_stream_resumed(env: &Env, stream_id: u64) {
         .publish((Symbol::new(env, STREAM_RESUMED_TOPIC), stream_id), ());
 }
 
-pub fn emit_stream_cancelled(env: &Env, stream_id: u64, total_streamed: i128) {
+pub fn emit_stream_cancelled(env: &Env, stream_id: u64, total_streamed: i128, settled_amount: i128) {
     env.events().publish(
         (Symbol::new(env, STREAM_CANCELLED_TOPIC), stream_id),
         StreamCancelledEvent {
             stream_id,
             total_streamed,
+            settled_amount,
         },
     );
 }

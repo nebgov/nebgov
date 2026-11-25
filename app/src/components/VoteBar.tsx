@@ -1,6 +1,7 @@
 "use client";
 
 import { useGovernorConfig } from "@/hooks/useGovernorConfig";
+import { useTranslations, useFormatter } from "next-intl";
 
 interface Props {
   votesFor: bigint;
@@ -10,9 +11,11 @@ interface Props {
 
 export function VoteBar({ votesFor, votesAgainst, votesAbstain }: Props) {
   const { divisor } = useGovernorConfig();
+  const t = useTranslations("proposal");
+  const format = useFormatter();
   
   const fmt = (n: bigint) => {
-    return (Number(n) / divisor).toLocaleString();
+    return format.number(Number(n) / divisor);
   };
 
   const total = votesFor + votesAgainst + votesAbstain;
@@ -29,15 +32,15 @@ export function VoteBar({ votesFor, votesAgainst, votesAbstain }: Props) {
       </div>
       <div className="grid grid-cols-3 gap-2 text-sm">
         <div>
-          <span className="text-gray-500">For: </span>
+          <span className="text-gray-500">{t("for")}: </span>
           <span className="font-medium text-emerald-600">{fmt(votesFor)}</span>
         </div>
         <div>
-          <span className="text-gray-500">Against: </span>
+          <span className="text-gray-500">{t("against")}: </span>
           <span className="font-medium text-rose-600">{fmt(votesAgainst)}</span>
         </div>
         <div>
-          <span className="text-gray-500">Abstain: </span>
+          <span className="text-gray-500">{t("abstain")}: </span>
           <span className="font-medium text-slate-500">{fmt(votesAbstain)}</span>
         </div>
       </div>

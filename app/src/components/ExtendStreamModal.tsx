@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import type { TreasuryClient, TreasuryBudgetStream } from "../lib/treasury-client";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -26,6 +27,7 @@ export function ExtendStreamModal({
   onClose,
   onExtended,
 }: ExtendStreamModalProps) {
+  const t = useTranslations("extendStreamModal");
   const [newEndLedger, setNewEndLedger] = useState(String(stream.endLedger + 50000));
   const [error, setError] = useState("");
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -34,22 +36,22 @@ export function ExtendStreamModal({
     e.preventDefault();
     const parsed = Number(newEndLedger);
     if (!newEndLedger || !Number.isInteger(parsed) || parsed <= 0) {
-      setError("Enter a valid whole ledger number.");
+      setError(t("invalidLedgerNumber"));
       return;
     }
     if (parsed <= stream.endLedger) {
-      setError(`New end ledger must be greater than the current end ledger (${stream.endLedger}).`);
+      setError(t("ledgerMustBeGreater", { currentLedger: stream.endLedger }));
       return;
     }
 
     setBusy(true);
     try {
       await client.extendStream(signerPublicKey, Number(stream.id), parsed, signUnsignedXdr);
-      toast.success("Stream extended");
+      toast.success(t("streamExtended"));
       onExtended();
       onClose();
     } catch (err) {
-      toast.error(`Extend failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t("extendFailed")}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -67,22 +69,22 @@ export function ExtendStreamModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex items-start justify-between mb-1">
           <h2 id="extend-stream-modal-title" className="text-lg font-semibold">
-            Extend Stream
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("closeLabel")}
           >
             ✕
           </button>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          {stream.name} — Current End Ledger: {stream.endLedger}
+          {stream.name} — {t("currentEndLedger")}: {stream.endLedger}
         </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500">New End Ledger</label>
+            <label className="text-xs text-gray-500">{t("newEndLedgerLabel")}</label>
             <input
               type="number"
               value={newEndLedger}
@@ -101,14 +103,14 @@ export function ExtendStreamModal({
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 rounded-md py-2 text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="submit"
               disabled={busy || !!error}
               className="flex-1 bg-indigo-600 text-white rounded-md py-2 text-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              {busy ? "Extending..." : "Extend Stream"}
+              {busy ? t("extending") : t("extendStream")}
             </button>
           </div>
         </form>

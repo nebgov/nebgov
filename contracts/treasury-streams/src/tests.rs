@@ -164,6 +164,22 @@ fn test_create_stream_rejects_end_before_start() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_create_stream_rejects_schedule_shorter_than_interval() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    client.create_stream(
+        &f.governor,
+        &f.recipient,
+        &f.asset,
+        &AMOUNT_PER_INTERVAL,
+        &100,
+        &100,
+        &150,
+    );
+}
+
+#[test]
 fn test_execute_pays_each_whole_interval_that_came_due() {
     let f = setup();
     let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
@@ -260,6 +276,71 @@ fn test_resume_rejects_stream_that_is_not_paused() {
 }
 
 #[test]
+fn test_pause_skips_paused_intervals_but_preserves_pre_pause_dues() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = create_default_stream(&f);
+
+    f.env.ledger().set_sequence_number(25);
+    assert_eq!(client.get_claimable_amount(&stream_id), 2 * AMOUNT_PER_INTERVAL);
+    client.pause_stream(&f.governor, &stream_id);
+    f.env.ledger().set_sequence_number(55);
+    assert_eq!(client.get_claimable_amount(&stream_id), 0);
+    client.resume_stream(&f.governor, &stream_id);
+    assert_eq!(client.get_stream(&stream_id).end_ledger, END_LEDGER + 30);
+    assert_eq!(client.get_claimable_amount(&stream_id), 2 * AMOUNT_PER_INTERVAL);
+    client.execute_stream(&stream_id);
+    assert_eq!(recipient_balance(&f), 2 * AMOUNT_PER_INTERVAL);
+    f.env.ledger().set_sequence_number(60);
+    assert_eq!(client.get_claimable_amount(&stream_id), 0);
+}
+
+#[test]
+fn test_pause_without_pre_pause_dues_resumes_with_nothing_due() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = create_default_stream(&f);
+
+    f.env.ledger().set_sequence_number(5);
+    client.pause_stream(&f.governor, &stream_id);
+    f.env.ledger().set_sequence_number(35);
+    client.resume_stream(&f.governor, &stream_id);
+    assert_eq!(client.get_claimable_amount(&stream_id), 0);
+    assert_eq!(recipient_balance(&f), 0);
+}
+
+#[test]
+fn test_resume_after_original_end_preserves_pre_pause_dues() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = create_default_stream(&f);
+
+    f.env.ledger().set_sequence_number(25);
+    client.pause_stream(&f.governor, &stream_id);
+    f.env.ledger().set_sequence_number(105);
+    client.resume_stream(&f.governor, &stream_id);
+    assert_eq!(client.get_stream(&stream_id).end_ledger, END_LEDGER + 80);
+    assert_eq!(client.get_claimable_amount(&stream_id), 2 * AMOUNT_PER_INTERVAL);
+}
+
+#[test]
+fn test_legacy_paused_stream_can_backfill_its_pause_checkpoint() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = create_default_stream(&f);
+
+    f.env.ledger().set_sequence_number(25);
+    client.pause_stream(&f.governor, &stream_id);
+    f.env.as_contract(&f.contract_id, || {
+        f.env.storage().persistent().remove(&DataKey::PausedAt(stream_id));
+    });
+    f.env.ledger().set_sequence_number(55);
+    client.backfill_pause_checkpoint(&f.governor, &stream_id, &25);
+    client.resume_stream(&f.governor, &stream_id);
+    assert_eq!(client.get_claimable_amount(&stream_id), 2 * AMOUNT_PER_INTERVAL);
+}
+
+#[test]
 fn test_cancel_removes_stream_from_active_list() {
     let f = setup();
     let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
@@ -276,6 +357,41 @@ fn test_cancel_removes_stream_from_active_list() {
             .len(),
         1
     );
+}
+
+#[test]
+fn test_cancel_settles_due_intervals_without_prior_execute() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = create_default_stream(&f);
+    f.env.ledger().set_sequence_number(25);
+
+    client.cancel_stream(&f.governor, &stream_id);
+
+    assert_eq!(recipient_balance(&f), 200);
+    let stream = client.get_stream(&stream_id);
+    assert_eq!(stream.total_streamed, 200);
+    assert_eq!(stream.last_streamed_ledger, 21);
+    assert!(stream.cancelled);
+    assert_eq!(client.get_claimable_amount(&stream_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_cancel_insufficient_balance_does_not_forfeit_due_amount() {
+    let f = setup();
+    let client = TreasuryStreamsContractClient::new(&f.env, &f.contract_id);
+    let stream_id = client.create_stream(
+        &f.governor,
+        &f.recipient,
+        &f.asset,
+        &6_000,
+        &INTERVAL_LEDGERS,
+        &START_LEDGER,
+        &END_LEDGER,
+    );
+    f.env.ledger().set_sequence_number(25);
+    client.cancel_stream(&f.governor, &stream_id);
 }
 
 #[test]

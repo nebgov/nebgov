@@ -7,6 +7,24 @@ jest.mock("../CountdownTimer", () => ({
   CountdownTimer: jest.fn(() => <div data-testid="countdown-timer">Countdown</div>),
 }));
 
+// Return real en.json values for the keys used in this component.
+jest.mock("next-intl", () => ({
+  useTranslations: (ns: string) => (key: string) => {
+    const map: Record<string, Record<string, string>> = {
+      optimistic: {
+        challengeWindowClosed: "Challenge window closed",
+        challengeWindowClosesIn: "Challenge window closes in",
+      },
+    };
+    return map[ns]?.[key] ?? key;
+  },
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
+jest.mock("../CountdownTimer", () => ({
+  CountdownTimer: jest.fn(() => <div data-testid="countdown-timer">Countdown</div>),
+}));
+
 const mockCountdownTimer = CountdownTimer as jest.Mock;
 
 describe("ChallengeCountdown", () => {

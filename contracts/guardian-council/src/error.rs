@@ -17,4 +17,5 @@ pub enum GuardianCouncilError {
     DuplicateMember = 11,
     MemberNotFound = 12,
     NotAuthorized = 13,
+    ActionCancelled = 14,
 }

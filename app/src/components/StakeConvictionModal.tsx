@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useTranslations } from "next-intl";
 
 interface StakeConvictionModalProps {
   open: boolean;
@@ -18,6 +19,9 @@ export function StakeConvictionModal(props: StakeConvictionModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
+  const t = useTranslations("conviction");
+  const tCommon = useTranslations("common");
+  const tForms = useTranslations("forms");
 
   useEffect(() => {
     if (props.open) setAmount(props.currentStake?.toString() ?? "");
@@ -51,24 +55,24 @@ export function StakeConvictionModal(props: StakeConvictionModalProps) {
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
     >
       <div className="w-full max-w-md rounded-xl bg-white p-6 text-slate-950 shadow-xl dark:bg-slate-900 dark:text-white">
-        <h2 id="stake-title" className="text-xl font-semibold">Support proposal #{props.proposalId}</h2>
+        <h2 id="stake-title" className="text-xl font-semibold">{t("supportProposalTitle", { id: props.proposalId })}</h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          Your voting power remains yours. Conviction grows while it stays committed.
+          {t("modalDescription")}
         </p>
         {moving && (
           <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">
-            You currently support proposal #{props.activeProposalId}. Staking here automatically withdraws that stake first.
+            {t("movingStakeWarning", { activeId: props.activeProposalId })}
           </p>
         )}
-        <label className="mt-5 block text-sm font-medium" htmlFor="stake-amount">Voting power</label>
+        <label className="mt-5 block text-sm font-medium" htmlFor="stake-amount">{tForms("yourVotingPower")}</label>
         <input id="stake-amount" inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2" />
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-6 flex flex-wrap justify-end gap-2">
           {props.currentStake && props.currentStake > 0n && (
-            <button disabled={submitting} onClick={() => void run(props.onWithdraw)} className="rounded-lg border px-4 py-2">Withdraw</button>
+            <button disabled={submitting} onClick={() => void run(props.onWithdraw)} className="rounded-lg border px-4 py-2">{t("withdrawButton")}</button>
           )}
-          <button onClick={props.onClose} className="rounded-lg border px-4 py-2">Cancel</button>
-          <button disabled={submitting || !/^\d+$/.test(amount) || BigInt(amount || 0) <= 0n} onClick={() => void run(() => props.onStake(BigInt(amount)))} className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">Stake</button>
+          <button onClick={props.onClose} className="rounded-lg border px-4 py-2">{tCommon("cancel")}</button>
+          <button disabled={submitting || !/^\d+$/.test(amount) || BigInt(amount || 0) <= 0n} onClick={() => void run(() => props.onStake(BigInt(amount)))} className="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{t("stakeButton")}</button>
         </div>
       </div>
     </div>

@@ -375,7 +375,7 @@ export class SignalingClient {
       if (res.status === "ERROR") {
         throw new SignalingError(
           SignalingErrorCode.TransactionFailed,
-          `Failed to set admin: ${JSON.stringify(res.errorResultXdr)}`,
+          `Failed to set admin: ${JSON.stringify(res.errorResult)}`,
         );
       }
       return res.hash;
@@ -418,7 +418,7 @@ export class SignalingClient {
       if (res.status === "ERROR") {
         throw new SignalingError(
           SignalingErrorCode.TransactionFailed,
-          `Failed to propose admin: ${JSON.stringify(res.errorResultXdr)}`,
+          `Failed to propose admin: ${JSON.stringify(res.errorResult)}`,
         );
       }
       return res.hash;
@@ -459,7 +459,7 @@ export class SignalingClient {
       if (res.status === "ERROR") {
         throw new SignalingError(
           SignalingErrorCode.TransactionFailed,
-          `Failed to accept admin: ${JSON.stringify(res.errorResultXdr)}`,
+          `Failed to accept admin: ${JSON.stringify(res.errorResult)}`,
         );
       }
       return res.hash;

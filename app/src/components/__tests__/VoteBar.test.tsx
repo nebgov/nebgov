@@ -2,6 +2,15 @@ import React from "react";
 import renderer from "react-test-renderer";
 import { VoteBar } from "../VoteBar";
 
+jest.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
+jest.mock("../../hooks/useGovernorConfig", () => ({
+  useGovernorConfig: () => ({ divisor: 10_000_000 }),
+}));
+
 describe("VoteBar", () => {
   it("matches snapshot with all-for votes", () => {
     const tree = renderer

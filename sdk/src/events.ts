@@ -1891,7 +1891,6 @@ export function subscribeToPoolFunded(address: string, callback: (event: Soroban
   return createTopicSubscription(address, VOTING_REWARDS_TOPICS.poolFunded, callback, opts);
 }
 
- feat/issues-1575-1577-1578-1583
 export interface EpochSweptEventData { epochId: bigint; remaining: bigint }
 export interface AdminSetEventData { admin: string }
 export interface EpochDurationUpdatedEventData { oldDuration: number; newDuration: number }
@@ -1921,7 +1920,6 @@ export const subscribeToPoolFeeUpdated = (a:string,c:(e:SorobanEvent)=>void,o:Su
 
 
 
- main
 // ── Standalone governance and treasury contract events ───────────────────────
 // Event names are namespaced to avoid collisions with core governor/budget streams.
 // Soroban contracttype structs decode to snake_case objects; tuple values to arrays.

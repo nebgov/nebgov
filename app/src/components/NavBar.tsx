@@ -48,26 +48,26 @@ function formatGovernanceAmount(v: bigint): string {
 }
 
 // Route audit: /health is an API-only endpoint (no user page), so it remains intentionally unlinked.
-const NAV_LINKS = [
-  { name: "Proposals", href: "/", icon: LayoutDashboard },
-  { name: "Conviction", href: "/conviction", icon: Activity },
-  { name: "Optimistic", href: "/optimistic", icon: FastForward },
-  { name: "Governors", href: "/governors", icon: LayoutDashboard },
-  { name: "Notifications", href: "/notifications", icon: Bell },
-  { name: "Signals", href: "/signals", icon: Radio },
-  { name: "Rewards", href: "/rewards", icon: Gift },
-  { name: "Vote Escrow", href: "/vote-escrow", icon: Lock },
-  { name: "Bonds", href: "/bonds", icon: Wallet2 },
-  { name: "Guardian", href: "/guardian", icon: ShieldCheck },
-  { name: "Drafts", href: "/drafts", icon: FileText },
-  { name: "Delegates", href: "/delegates", icon: Users },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
-  { name: "Treasury", href: "/treasury", icon: Wallet2 },
-  { name: "Strategies", href: "/treasury/strategies", icon: TrendingUp },
-  { name: "Governance Tuning", href: "/governance-tuning", icon: SlidersHorizontal },
-  { name: "Security", href: "/security", icon: Shield },
-  { name: "Settings", href: "/settings", icon: Settings },
+const getNavLinks = (t: any) => [
+  { name: t("proposals"), href: "/", icon: LayoutDashboard },
+  { name: t("conviction"), href: "/conviction", icon: Activity },
+  { name: t("optimistic"), href: "/optimistic", icon: FastForward },
+  { name: t("governors"), href: "/governors", icon: LayoutDashboard },
+  { name: t("notifications"), href: "/notifications", icon: Bell },
+  { name: t("signals"), href: "/signals", icon: Radio },
+  { name: t("rewards"), href: "/rewards", icon: Gift },
+  { name: t("voteEscrow"), href: "/vote-escrow", icon: Lock },
+  { name: t("bonds"), href: "/bonds", icon: Wallet2 },
+  { name: t("guardian"), href: "/guardian", icon: ShieldCheck },
+  { name: t("drafts"), href: "/drafts", icon: FileText },
+  { name: t("delegates"), href: "/delegates", icon: Users },
+  { name: t("analytics"), href: "/analytics", icon: BarChart3 },
+  { name: t("leaderboard"), href: "/leaderboard", icon: Trophy },
+  { name: t("treasury"), href: "/treasury", icon: Wallet2 },
+  { name: t("strategies"), href: "/treasury/strategies", icon: TrendingUp },
+  { name: t("governanceTuning"), href: "/governance-tuning", icon: SlidersHorizontal },
+  { name: t("security"), href: "/security", icon: Shield },
+  { name: t("settings"), href: "/settings", icon: Settings },
 ];
 
 const VOTE_ESCROW_ENABLED = Boolean(process.env.NEXT_PUBLIC_VOTE_ESCROW_ADDRESS);
@@ -77,7 +77,8 @@ const VISIBLE_NAV_LINKS = NAV_LINKS.filter(
 );
 
 export function NavBar() {
-  const t = useTranslations("nav");
+  const t = useTranslations("navBar");
+  const tCommon = useTranslations("common");
   const pathname = usePathname();
   const { address, publicKey, isConnected, isConnecting, connect, disconnect } =
     useWallet();
@@ -91,6 +92,7 @@ export function NavBar() {
   const { theme, setTheme } = useTheme();
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+  const NAV_LINKS = getNavLinks(t);
 
   useEffect(() => {
     setIsMenuOpen(false);
@@ -167,14 +169,14 @@ export function NavBar() {
               N
             </div>
             <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 mr-4">
-              NebGov
+              {t("nebGov")}
             </span>
           </Link>
 
           <div
             className="hidden md:flex items-center gap-1"
             role="navigation"
-            aria-label="Main"
+            aria-label={t("mainNavigation")}
           >
             {VISIBLE_NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
@@ -207,7 +209,7 @@ export function NavBar() {
           <NotificationBell />
           <button
             onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            aria-label={t(`switchToTheme.${theme === "dark" ? "light" : "dark"}`)}
             className="p-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
             {theme === "dark" ? (
@@ -217,7 +219,7 @@ export function NavBar() {
             )}
           </button>
           <select
-            aria-label="Select language"
+            aria-label={t("selectLanguage")}
             className="p-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-xs font-medium bg-transparent border-none cursor-pointer"
             defaultValue="en"
             onChange={(e) => {
@@ -286,7 +288,7 @@ export function NavBar() {
                     >
                       <div className="px-4 py-3 border-b border-gray-50 mb-1">
                         <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-1">
-                          Active Wallet
+                          {t("activeWallet")}
                         </p>
                         <p
                           className="text-sm font-mono text-gray-600 truncate"
@@ -302,7 +304,7 @@ export function NavBar() {
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
                       >
                         <Copy className="w-4 h-4" aria-hidden />
-                        Copy address
+                        {t("copyAddress")}
                       </button>
 
                       <Link
@@ -311,7 +313,7 @@ export function NavBar() {
                         className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
                       >
                         <User className="w-4 h-4" aria-hidden />
-                        My Profile
+                        {t("myProfile")}
                       </Link>
 
                       <div className="h-px bg-gray-100 my-1" aria-hidden />
@@ -322,7 +324,7 @@ export function NavBar() {
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                       >
                         <LogOut className="w-4 h-4" aria-hidden />
-                        Disconnect
+                        {t("disconnect")}
                       </button>
                     </div>
                   </>
@@ -334,7 +336,7 @@ export function NavBar() {
                 disabled={isConnecting}
                 className="text-sm px-6 py-2.5 rounded-full font-semibold transition-all shadow-md shadow-indigo-100 hover:shadow-lg hover:shadow-indigo-200 active:scale-95 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isConnecting ? "Connecting…" : "Connect Wallet"}
+                {isConnecting ? t("connecting") : t("connectWallet")}
               </button>
             )}
           </div>
@@ -342,7 +344,7 @@ export function NavBar() {
           {/* Mobile hamburger */}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+            aria-label={isMenuOpen ? t("closeMenu") : t("openMenu")}
             aria-expanded={isMenuOpen}
             className="md:hidden p-2 rounded-xl text-gray-600 hover:bg-gray-100 transition-colors"
           >
@@ -361,7 +363,7 @@ export function NavBar() {
           className="fixed inset-0 z-[100] md:hidden"
           role="dialog"
           aria-modal
-          aria-label="Navigation menu"
+          aria-label={t("navigationMenu")}
         >
           {/* Backdrop */}
           <div
@@ -372,10 +374,10 @@ export function NavBar() {
 
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-900 shadow-2xl flex flex-col">
             <div className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
-              <span className="text-lg font-bold text-gray-900 dark:text-white">Menu</span>
+              <span className="text-lg font-bold text-gray-900 dark:text-white">{t("menu")}</span>
               <button
                 onClick={() => setIsMenuOpen(false)}
-                aria-label="Close menu"
+                aria-label={t("closeMenu")}
                 className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
               >
                 <X className="w-6 h-6" aria-hidden />
@@ -384,10 +386,10 @@ export function NavBar() {
 
             <nav
               className="flex-1 overflow-y-auto p-4 space-y-1"
-              aria-label="Mobile navigation"
+              aria-label={t("mobileNavigation")}
             >
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-2 mb-3">
-                Navigation
+                {t("navigation")}
               </p>
               {VISIBLE_NAV_LINKS.map((link) => {
                 const isActive = pathname === link.href;
@@ -431,7 +433,7 @@ export function NavBar() {
                     className={`w-5 h-5 flex-shrink-0 ${pathname === "/profile" ? "text-indigo-600" : "text-gray-400 dark:text-gray-500"}`}
                     aria-hidden
                   />
-                  My Profile
+                  {t("myProfile")}
                 </Link>
               )}
             </nav>
@@ -443,12 +445,12 @@ export function NavBar() {
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex-shrink-0" />
                     <span className="text-base font-medium text-gray-900 dark:text-white truncate max-w-[140px]">
-                      {address || "Connected"}
+                      {address || t("connected")}
                     </span>
                     <button
                       onClick={copyAddress}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-                      aria-label="Copy Address"
+                      aria-label={t("copyAddress")}
                     >
                       <Copy className="w-4 h-4" aria-hidden />
                     </button>
@@ -458,7 +460,7 @@ export function NavBar() {
                     onClick={handleDisconnect}
                     className="text-red-600 hover:text-red-700 font-medium text-base transition-colors flex items-center gap-1.5"
                   >
-                    Disconnect
+                    {t("disconnect")}
                     <LogOut className="w-4 h-4" aria-hidden />
                   </button>
                 </div>
@@ -471,7 +473,7 @@ export function NavBar() {
                   disabled={isConnecting}
                   className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-semibold shadow-md hover:bg-indigo-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isConnecting ? "Connecting…" : "Connect Wallet"}
+                  {isConnecting ? t("connecting") : t("connectWallet")}
                 </button>
               )}
             </div>

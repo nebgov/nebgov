@@ -7,6 +7,16 @@ jest.mock("../../lib/hooks/useLedgerClock", () => ({
   useLedgerClock: jest.fn(),
 }));
 
+jest.mock("next-intl", () => ({
+  useTranslations: (ns: string) => (key: string) => {
+    const map: Record<string, Record<string, string>> = {
+      time: { estimated: "(estimated)" },
+    };
+    return map[ns]?.[key] ?? key;
+  },
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
 const mockUseLedgerClock = useLedgerClock as jest.Mock;
 
 // Ledgers close every 5.5s, so 720 ledgers is 66 minutes.
@@ -98,6 +108,8 @@ describe("CountdownTimer", () => {
 
       act(() => {
         jest.advanceTimersByTime(60_000);
+        // Also advance system time so Date.now() reflects the passage of time
+        jest.setSystemTime(new Date("2026-10-19T12:01:00Z"));
       });
 
       expect(screen.getByText("1h 5m")).toBeInTheDocument();

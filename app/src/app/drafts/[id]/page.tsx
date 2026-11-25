@@ -11,6 +11,7 @@ import { useLedgerClock } from "../../../lib/hooks/useLedgerClock";
 import { CoSponsorModal } from "../../../components/CoSponsorModal";
 import { Skeleton } from "../../../components/ui/Skeleton";
 import { getTimerInfo } from "../../../lib/utils/ledgerTime";
+import { useTranslations } from "next-intl";
 
 function formatAddress(address: string): string {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
@@ -31,6 +32,7 @@ export default function DraftDetailPage() {
   const { currentLedger } = useLedgerClock();
   const [showCoSponsorModal, setShowCoSponsorModal] = useState(false);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("drafts");
 
   if (draftId === null) {
     return (
@@ -120,22 +122,22 @@ export default function DraftDetailPage() {
         <>
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              Draft #{draft.id.toString()}
+              {t("draftNumber", { id: draft.id.toString() })}
             </h1>
             <div className="flex gap-2">
               {draft.finalized && (
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-800">
-                  Finalized
+                  {t("finalized")}
                 </span>
               )}
               {draft.cancelled && (
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                  Cancelled
+                  {t("cancelled")}
                 </span>
               )}
               {isExpired && (
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-orange-100 text-orange-800">
-                  Expired
+                  {t("expired")}
                 </span>
               )}
             </div>
@@ -145,15 +147,15 @@ export default function DraftDetailPage() {
               draft.finalized || draft.cancelled ? "mb-4" : "mb-1"
             }`}
           >
-            Created by {formatAddress(draft.creator)}
+            {t("createdBy", { address: formatAddress(draft.creator) })}
           </p>
           {!draft.finalized && !draft.cancelled && (
             <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
               {isExpired
-                ? `Expired at ledger ${draft.expiryLedger}`
+                ? t("expiredAtLedger", { ledger: draft.expiryLedger })
                 : expiryTimer
                   ? `${expiryTimer.label} ${expiryTimer.countdown} (ledger ${draft.expiryLedger})`
-                  : `Expires at ledger ${draft.expiryLedger}`}
+                  : t("expiresAtLedger", { ledger: draft.expiryLedger })}
             </p>
           )}
           <p className="text-gray-700 dark:text-gray-200 mb-6 whitespace-pre-wrap">
@@ -163,10 +165,10 @@ export default function DraftDetailPage() {
           <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                Co-sponsor power
+                {t("coSponsorPower")}
               </span>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {draft.totalPower.toString()} pledged
+                {draft.totalPower.toString()} {t("pledged")}
               </span>
             </div>
             <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
@@ -177,7 +179,7 @@ export default function DraftDetailPage() {
                 </li>
               ))}
               {draft.coSponsors.length === 0 && (
-                <li className="text-gray-400 dark:text-gray-500">No co-sponsors yet.</li>
+                <li className="text-gray-400 dark:text-gray-500">{t("noCoSponsors")}</li>
               )}
             </ul>
           </div>
@@ -188,30 +190,30 @@ export default function DraftDetailPage() {
                 <button
                   onClick={() => setShowCoSponsorModal(true)}
                   disabled={busy || isExpired}
-                  title={isExpired ? "This draft has expired and can no longer be co-sponsored." : undefined}
+                  title={isExpired ? t("expiredTooltipCoSponsor") : undefined}
                   className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  Co-Sponsor
+                  {t("coSponsorButton")}
                 </button>
               )}
               {alreadyCoSponsored && (
                 <button
                   onClick={handleWithdraw}
                   disabled={busy || isExpired}
-                  title={isExpired ? "This draft has expired and pledges can no longer be withdrawn." : undefined}
+                  title={isExpired ? t("expiredTooltipWithdraw") : undefined}
                   className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                 >
-                  Withdraw Pledge
+                  {t("withdrawPledge")}
                 </button>
               )}
               {isCreator && (
                 <button
                   onClick={handleFinalize}
                   disabled={busy || isExpired}
-                  title={isExpired ? "This draft has expired and can no longer be finalized." : undefined}
+                  title={isExpired ? t("expiredTooltipFinalize") : undefined}
                   className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                 >
-                  Finalize
+                  {t("finalize")}
                 </button>
               )}
               {isCreator && (
@@ -220,7 +222,7 @@ export default function DraftDetailPage() {
                   disabled={busy}
                   className="px-4 py-2 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
                 >
-                  Cancel Draft
+                  {t("cancelDraft")}
                 </button>
               )}
             </div>

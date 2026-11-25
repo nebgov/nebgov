@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import {
   getAddressLabel,
   setCustomLabel,
@@ -27,6 +28,7 @@ export function AddressDisplay({
   showFullOnHover = true,
   className = "",
 }: AddressDisplayProps) {
+  const t = useTranslations("addressDisplay");
   const label = getAddressLabel(address);
   const displayAddress = truncate ? truncateAddress(address) : address;
   const [showMenu, setShowMenu] = useState(false);
@@ -59,11 +61,11 @@ export function AddressDisplay({
   const handleExport = () => {
     const data = exportCustomLabels();
     navigator.clipboard.writeText(data);
-    alert("Labels exported to clipboard");
+    alert(t("labelsExportedToClipboard"));
   };
 
   const handleImport = () => {
-    const data = prompt("Paste exported labels JSON:");
+    const data = prompt(t("pasteExportedLabels"));
     if (data && importCustomLabels(data)) {
       window.location.reload();
     }
@@ -107,13 +109,13 @@ export function AddressDisplay({
                 }}
                 className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
               >
-                Edit label &quot;{label}&quot;
+                {t("editLabel")} &quot;{label}&quot;
               </button>
               <button
                 onClick={handleRemoveLabel}
                 className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
-                Remove label
+                {t("removeLabel")}
               </button>
             </>
           ) : (
@@ -122,7 +124,7 @@ export function AddressDisplay({
                 type="text"
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="Enter label..."
+                placeholder={t("enterLabel")}
                 className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
                 onKeyDown={(e) => e.key === "Enter" && handleSaveLabel()}
               />
@@ -131,7 +133,7 @@ export function AddressDisplay({
                 disabled={!newLabel.trim()}
                 className="mt-2 w-full px-2 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
               >
-                Save Label
+                {t("saveLabel")}
               </button>
             </div>
           )}
@@ -140,13 +142,13 @@ export function AddressDisplay({
               onClick={handleExport}
               className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              Export labels
+              {t("exportLabels")}
             </button>
             <button
               onClick={handleImport}
               className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              Import labels
+              {t("importLabels")}
             </button>
           </div>
         </div>

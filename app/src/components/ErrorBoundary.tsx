@@ -1,6 +1,7 @@
 "use client";
 
 import React, { type ErrorInfo, type ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import { getErrorMessage, reportFrontendError } from "../lib/frontend-error";
 import { ErrorState } from "./ErrorState";
 
@@ -78,3 +79,5 @@ export class ErrorBoundary extends React.Component<
     return this.props.children;
   }
 }
+
+export default ErrorBoundary;

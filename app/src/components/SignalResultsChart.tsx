@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "next-intl";
 import type { SignalingPollResults } from "@nebgov/sdk";
 
 interface Props {
@@ -6,6 +9,7 @@ interface Props {
 
 /** Weighted-by-voting-power bar chart for a signaling poll's live/final results. No charting library — plain divs. */
 export function SignalResultsChart({ results }: Props) {
+  const t = useTranslations("signalResultsChart");
   const max = results.totals.reduce((m, t) => (t > m ? t : m), 1n);
 
   return (
@@ -34,9 +38,12 @@ export function SignalResultsChart({ results }: Props) {
         );
       })}
       <p className="text-xs text-gray-500 dark:text-gray-400 pt-1">
-        {results.totalVotes} signal{results.totalVotes === 1 ? "" : "s"} · {results.totalWeight.toString()}{" "}
-        total weighted power
-        {results.finalized ? " · final" : " · live, before finalization"}
+        {t("signalCount", {
+          count: results.totalVotes.toString(),
+          plural: results.totalVotes === 1n ? "" : "s",
+        })}{" "}
+        · {results.totalWeight.toString()} {t("totalWeightedPower")}
+        {results.finalized ? ` · ${t("final")}` : ` · ${t("liveBeforeFinalization")}`}
       </p>
     </div>
   );

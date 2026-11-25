@@ -6,6 +6,28 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StakeConvictionModal } from "../StakeConvictionModal";
 
+jest.mock("next-intl", () => ({
+  useTranslations: (ns: string) => (key: string, vars?: Record<string, unknown>) => {
+    const maps: Record<string, Record<string, string>> = {
+      conviction: {
+        supportProposalTitle: `Support proposal #${vars?.id ?? ""}`,
+        modalDescription: "Your voting power remains yours. Conviction grows while it stays committed.",
+        movingStakeWarning: `You currently support proposal #${vars?.activeId ?? ""}. Staking here automatically withdraws that stake first.`,
+        stakeButton: "Stake",
+        withdrawButton: "Withdraw",
+      },
+      common: { cancel: "Cancel" },
+      forms: { yourVotingPower: "Voting power" },
+    };
+    return maps[ns]?.[key] ?? key;
+  },
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
+jest.mock("../hooks/useFocusTrap", () => ({
+  useFocusTrap: () => ({ current: null }),
+}));
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;

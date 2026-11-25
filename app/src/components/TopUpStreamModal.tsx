@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import type { TreasuryClient, TreasuryBudgetStream } from "../lib/treasury-client";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -26,6 +27,7 @@ export function TopUpStreamModal({
   onClose,
   onToppedUp,
 }: TopUpStreamModalProps) {
+  const t = useTranslations("topUpStreamModal");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -36,22 +38,22 @@ export function TopUpStreamModal({
     try {
       parsed = BigInt(amount);
     } catch {
-      setError("Enter a valid whole number amount.");
+      setError(t("enterValidWholeNumber"));
       return;
     }
     if (parsed <= 0n) {
-      setError("Amount must be greater than zero.");
+      setError(t("amountGreaterThanZero"));
       return;
     }
 
     setBusy(true);
     try {
       await client.topUpStream(signerPublicKey, Number(stream.id), parsed, signUnsignedXdr);
-      toast.success("Stream topped up");
+      toast.success(t("streamToppedUp"));
       onToppedUp();
       onClose();
     } catch (err) {
-      toast.error(`Top-up failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t("topUpFailed")}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -69,20 +71,20 @@ export function TopUpStreamModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex items-start justify-between mb-1">
           <h2 id="topup-stream-modal-title" className="text-lg font-semibold">
-            Top Up Stream
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("close")}
           >
             ✕
           </button>
         </div>
-        <p className="text-xs text-gray-500 mb-4">{stream.name} — Additional Allocation</p>
+        <p className="text-xs text-gray-500 mb-4">{stream.name} — {t("additionalAllocation")}</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500">Amount</label>
+            <label className="text-xs text-gray-500">{t("amount")}</label>
             <input
               type="text"
               value={amount}
@@ -101,14 +103,14 @@ export function TopUpStreamModal({
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 rounded-md py-2 text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="submit"
               disabled={busy || !!error}
               className="flex-1 bg-indigo-600 text-white rounded-md py-2 text-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              {busy ? "Topping Up..." : "Top Up Stream"}
+              {busy ? t("toppingUp") : t("topUpStream")}
             </button>
           </div>
         </form>

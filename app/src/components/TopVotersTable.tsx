@@ -1,6 +1,7 @@
 "use client";
 
 import { AddressDisplay } from "./AddressDisplay";
+import { useTranslations } from "next-intl";
 import { Skeleton } from "./ui/Skeleton";
 import type { TopVoter } from "../hooks/useAnalytics";
 
@@ -9,23 +10,19 @@ interface TopVotersTableProps {
   loading?: boolean;
 }
 
-/**
- * Top-voters ranking (issue #765), sourced from the indexer's
- * `/analytics/top-voters` endpoint (aggregated from indexed `VoteCast`
- * events — the contract itself has no global voter ranking).
- */
 export function TopVotersTable({ voters, loading }: TopVotersTableProps) {
+  const t = useTranslations("analytics");
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-4">Top Voters</h3>
+      <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-4">{t("topVoters")}</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
               <th className="py-2 pr-4 font-medium">#</th>
-              <th className="py-2 pr-4 font-medium">Voter</th>
-              <th className="py-2 pr-4 font-medium">Proposals voted</th>
-              <th className="py-2 font-medium">Total weight cast</th>
+              <th className="py-2 pr-4 font-medium">{t("voter")}</th>
+              <th className="py-2 pr-4 font-medium">{t("proposalsVoted")}</th>
+              <th className="py-2 font-medium">{t("totalWeightCast")}</th>
             </tr>
           </thead>
           <tbody>
@@ -49,7 +46,7 @@ export function TopVotersTable({ voters, loading }: TopVotersTableProps) {
             ) : voters.length === 0 ? (
               <tr>
                 <td colSpan={4} className="py-4 text-center text-gray-400 dark:text-gray-500">
-                  No votes recorded yet.
+                  {t("noVotesRecorded")}
                 </td>
               </tr>
             ) : (

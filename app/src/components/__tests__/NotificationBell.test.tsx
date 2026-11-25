@@ -15,7 +15,9 @@ jest.mock("../lib/wallet-context", () => ({
 }));
 
 jest.mock("next/link", () => {
-  return ({ children, href }: any) => <a href={href}>{children}</a>;
+  return function NextLinkMock({ children, href }: any) {
+    return <a href={href}>{children}</a>;
+  };
 });
 
 import { useNotifications } from "../hooks/useNotifications";

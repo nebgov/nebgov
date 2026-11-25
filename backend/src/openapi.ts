@@ -123,7 +123,7 @@ registry.registerPath({
   path: '/signaling/polls',
   description: 'List all signaling polls',
   parameters: [
-    { name: 'status', in: 'query', schema: z.enum(['active', 'closed']).optional() },
+    { name: 'status', in: 'query', schema: z.enum(['active', 'closed']).optional() as any },
   ],
   responses: {
     200: { description: 'List of polls', content: { 'application/json': { schema: z.array(pollResponseSchema) } } },
@@ -135,7 +135,7 @@ registry.registerPath({
   method: 'get',
   path: '/signaling/polls/{id}',
   description: 'Get a specific signaling poll',
-  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() }],
+  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() as any }],
   responses: {
     200: { description: 'Poll details', content: { 'application/json': { schema: pollResponseSchema } } },
     404: { description: 'Poll not found' },
@@ -147,7 +147,7 @@ registry.registerPath({
   method: 'post',
   path: '/signaling/polls/{id}/vote',
   description: 'Cast a gasless vote on a signaling poll',
-  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() }],
+  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() as any }],
   request: { body: { content: { 'application/json': { schema: castVoteSchema } } } },
   responses: {
     201: { description: 'Vote recorded', content: { 'application/json': { schema: voteResponseSchema } } },
@@ -162,7 +162,7 @@ registry.registerPath({
   method: 'get',
   path: '/signaling/polls/{id}/results',
   description: 'Get live or finalized poll results',
-  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() }],
+  parameters: [{ name: 'id', in: 'path', required: true, schema: z.number().int() as any }],
   responses: {
     200: { description: 'Poll results', content: { 'application/json': { schema: resultsResponseSchema } } },
     404: { description: 'Poll not found' },
@@ -175,9 +175,9 @@ registry.registerPath({
   path: '/signaling/polls/{id}/votes',
   description: 'Get paginated vote list for auditability',
   parameters: [
-    { name: 'id', in: 'path', required: true, schema: z.number().int() },
-    { name: 'limit', in: 'query', schema: z.coerce.number().int().min(1).max(200).optional().default(50) },
-    { name: 'offset', in: 'query', schema: z.coerce.number().int().min(0).optional().default(0) },
+    { name: 'id', in: 'path', required: true, schema: z.number().int() as any },
+    { name: 'limit', in: 'query', schema: z.coerce.number().int().min(1).max(200).optional().default(50) as any },
+    { name: 'offset', in: 'query', schema: z.coerce.number().int().min(0).optional().default(0) as any },
   ],
   responses: {
     200: { description: 'Paginated vote list', content: { 'application/json': { schema: votesListResponseSchema } } },

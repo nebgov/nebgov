@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { GovernorClient, VoteSupport, VoteType, computeQuadraticWeight, type Network } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
 import { useGovernorConfig } from "@/hooks/useGovernorConfig";
+import { useTranslations, useFormatter } from "next-intl";
 
 interface Props {
   open?: boolean;
@@ -58,6 +59,13 @@ export function VotingModal({
 }: Props) {
   const { isConnected, connect, publicKey, signTransaction } = useWallet();
   const { divisor } = useGovernorConfig();
+  const t = useTranslations("voting");
+  const tProposal = useTranslations("proposal");
+  const tForms = useTranslations("forms");
+  const tActions = useTranslations("actions");
+  const tCommon = useTranslations("common");
+  const format = useFormatter();
+  
   const resolvedOpen = open ?? isOpen ?? false;
   const resolvedProposalId = typeof proposalId === "bigint" ? proposalId : BigInt(proposalId);
   const resolvedDelegatee = delegatee ?? publicKey ?? null;
@@ -172,7 +180,7 @@ export function VotingModal({
 
   async function handleConfirm() {
     if (support === null) {
-      toast.error("Select a vote option first.");
+      toast.error(t("selectOptionFirst"));
       return;
     }
 
@@ -180,13 +188,13 @@ export function VotingModal({
       try {
         await connect();
       } catch (e) {
-        toast.error("Please connect your wallet to continue.");
+        toast.error(t("connectToContinue"));
         return;
       }
     }
 
     if (!resolvedDelegatee) {
-      toast.error("Delegate first before casting a vote.");
+      toast.error(t("delegateFirst"));
       return;
     }
 
@@ -194,7 +202,7 @@ export function VotingModal({
     try {
       const client = getGovernorClientFromEnv();
       if (!signTransaction) {
-        throw new Error("Connect your wallet to sign the vote.");
+        throw new Error(t("connectToSign"));
       }
       await client.castVoteWithSign(
         publicKey,
@@ -203,7 +211,7 @@ export function VotingModal({
         signTransaction,
       );
       toast.success(
-        "Vote submitted!",
+        t("voteSubmitted"),
         { duration: 8000 },
       );
       onVoted?.();
@@ -213,11 +221,11 @@ export function VotingModal({
       const msg = err instanceof Error ? err.message : String(err);
       const errStr = msg.toLowerCase();
       
-      let errorMessage = `Failed to submit vote: ${msg}`;
+      let errorMessage = t("voteFailed", { error: msg });
       if (errStr.includes("proposalnotactive") || 
           errStr.includes("proposal not active") ||
           errStr.includes("error(contract, #28)")) {
-        errorMessage = "Voting has ended for this proposal";
+        errorMessage = t("votingEnded");
       }
       
       toast.error(errorMessage);
@@ -241,13 +249,13 @@ export function VotingModal({
       >
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h2 id="voting-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">Cast Your Vote</h2>
-            <p id="voting-modal-description" className="text-sm text-gray-500 dark:text-gray-300">Confirm and sign your vote on-chain.</p>
+            <h2 id="voting-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">{t("castYourVote")}</h2>
+            <p id="voting-modal-description" className="text-sm text-gray-500 dark:text-gray-300">{t("subtitle")}</p>
           </div>
           <button 
             onClick={onClose} 
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close voting modal"
+            aria-label={t("closeModal")}
           >
             ✕
           </button>
@@ -255,18 +263,18 @@ export function VotingModal({
 
         {/* Delegation check */}
         <div className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg p-3 mb-4">
-          <p className="text-sm text-gray-600 dark:text-gray-300">Delegation</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">{tForms("delegation")}</p>
           {resolvedDelegatee ? (
-            <p className="text-sm text-gray-700 dark:text-gray-200 mt-1">Delegated to <span className="font-mono">{resolvedDelegatee}</span></p>
+            <p className="text-sm text-gray-700 dark:text-gray-200 mt-1">{tForms("delegatedTo")} <span className="font-mono">{resolvedDelegatee}</span></p>
           ) : (
             <div className="mt-2 flex items-center gap-3">
-              <p className="text-sm text-red-600">You have not delegated voting power yet.</p>
+              <p className="text-sm text-red-600">{t("notDelegated")}</p>
               <button
                 onClick={onOpenDelegate}
                 className="ml-auto text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                aria-label="Open delegation modal"
+                aria-label={t("openDelegateModal")}
               >
-                Delegate now
+                {tActions("delegateNow")}
               </button>
             </div>
           )}
@@ -274,37 +282,37 @@ export function VotingModal({
 
         {/* Voting power */}
         <div className="mb-4">
-          <p className="text-sm text-gray-500">Your voting power</p>
+          <p className="text-sm text-gray-500">{tForms("yourVotingPower")}</p>
           {isQuadratic ? (
             <div>
               <p className="text-base font-medium text-gray-900 dark:text-gray-100">
-                {tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} tokens
+                {format.number(tokenAmount, { maximumFractionDigits: 6 })} {t("tokens")}
                 {percentOfSupply !== null ? (
-                  <span className="text-sm text-gray-500"> ({percentOfSupply}%)</span>
+                  <span className="text-sm text-gray-500"> ({format.number(percentOfSupply)}%)</span>
                 ) : null}
               </p>
               <div className="mt-1 flex items-center gap-2">
                 <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
-                  Vote weight: {quadraticWeight!.toLocaleString()} (quadratic)
+                  {t("voteWeightQuadratic", { weight: format.number(quadraticWeight!) })}
                 </p>
                 <span
                   className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-[10px] cursor-help focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  title="Quadratic voting: your vote weight is floor(√balance). A balance of 10,000 tokens gives a weight of 100, not 10,000. This reduces the influence of large token holders."
-                  aria-label="Quadratic voting explanation"
+                  title={t("quadraticExplanation")}
+                  aria-label={t("quadraticExplanation")}
                   tabIndex={0}
                 >
                   ?
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-0.5">
-                Formula: floor(√{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })}) = {quadraticWeight!.toLocaleString()}
+                {t("quadraticFormula", { balance: format.number(tokenAmount, { maximumFractionDigits: 6 }), weight: format.number(quadraticWeight!) })}
               </p>
             </div>
           ) : (
             <p className="text-base font-medium text-gray-900 dark:text-gray-100">
-              {tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} tokens
+              {format.number(tokenAmount, { maximumFractionDigits: 6 })} {t("tokens")}
               {percentOfSupply !== null ? (
-                <span className="text-sm text-gray-500"> ({percentOfSupply}%)</span>
+                <span className="text-sm text-gray-500"> ({format.number(percentOfSupply)}%)</span>
               ) : null}
             </p>
           )}
@@ -312,26 +320,26 @@ export function VotingModal({
 
         <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Estimated fee
+            {t("estimatedFee")}
           </p>
           <p className="mt-1 text-sm text-gray-800">
             {estimatingFee
-              ? "Estimating..."
+              ? t("estimating")
               : estimatedFeeXlm !== null
-                ? `~${estimatedFeeXlm.toFixed(6)} XLM`
-                : estimateError ?? "Unavailable"}
+                ? `~${format.number(estimatedFeeXlm, { minimumFractionDigits: 6, maximumFractionDigits: 6 })} XLM`
+                : estimateError ?? t("feeUnavailable")}
           </p>
         </div>
 
         {/* Vote options */}
         <fieldset className="mb-4">
-          <legend className="sr-only">Vote options</legend>
-          <div className="flex gap-3" role="radiogroup" aria-label="Vote options">
+          <legend className="sr-only">{t("voteOptions")}</legend>
+          <div className="flex gap-3" role="radiogroup" aria-label={t("voteOptions")}>
             {[
-              { label: "For", value: VoteSupport.For, color: "border-green-500 text-green-700 bg-green-50" },
-              { label: "Against", value: VoteSupport.Against, color: "border-red-500 text-red-700 bg-red-50" },
-              { label: "Abstain", value: VoteSupport.Abstain, color: "border-gray-400 text-gray-600 bg-gray-50" },
-            ].map(({ label, value, color }) => (
+              { label: tProposal("for"), value: VoteSupport.For, color: "border-green-500 text-green-700 bg-green-50", ariaLabel: t("voteFor") },
+              { label: tProposal("against"), value: VoteSupport.Against, color: "border-red-500 text-red-700 bg-red-50", ariaLabel: t("voteAgainst") },
+              { label: tProposal("abstain"), value: VoteSupport.Abstain, color: "border-gray-400 text-gray-600 bg-gray-50", ariaLabel: t("voteAbstain") },
+            ].map(({ label, value, color, ariaLabel }) => (
               <button
                 key={label}
                 onClick={() => setSupport(value)}
@@ -340,7 +348,7 @@ export function VotingModal({
                 }`}
                 role="radio"
                 aria-checked={support === value}
-                aria-label={`Vote ${label}`}
+                aria-label={ariaLabel}
               >
                 {label}
               </button>
@@ -349,19 +357,19 @@ export function VotingModal({
         </fieldset>
 
         <label htmlFor="vote-reason" className="block text-sm text-gray-600 dark:text-gray-300 mb-2">
-          Optional reason <span className="text-xs text-gray-400">(max 256)</span>
+          {t("optionalReasonLabel")} <span className="text-xs text-gray-400">{t("optionalReasonMax")}</span>
         </label>
         <textarea
           id="vote-reason"
           value={reason}
           onChange={(e) => setReason(e.target.value.slice(0, 256))}
-          placeholder="I support this because..."
+          placeholder={t("reasonPlaceholder")}
           className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           rows={4}
           aria-describedby="reason-help"
         />
         <div id="reason-help" className="sr-only">
-          Optional field to provide reasoning for your vote. Maximum 256 characters.
+          {t("reasonHelpText")}
         </div>
         
         <div className="flex items-center gap-3">
@@ -371,19 +379,19 @@ export function VotingModal({
               className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             aria-describedby={!resolvedDelegatee ? "delegation-required" : undefined}
           >
-            {submitting ? "Submitting vote..." : "Confirm & Sign"}
+            {submitting ? t("submittingVote") : t("confirmSign")}
           </button>
           <button 
             onClick={onClose} 
             className="px-4 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            Cancel
+            {tCommon("cancel")}
           </button>
         </div>
         
         {!resolvedDelegatee && (
           <div id="delegation-required" className="sr-only">
-            You must delegate your voting power before you can vote.
+            {t("mustDelegate")}
           </div>
         )}
       </div>

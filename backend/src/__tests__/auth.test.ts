@@ -45,7 +45,8 @@ describe("Auth Routes", () => {
 
   describe("POST /auth/login", () => {
     it("should create a new user and return access token with refresh cookie", async () => {
-      const response = await loginRequest().expect(200);
+      const response = await loginRequest();
+      expect(response.status).toBe(200);
 
       expect(response.body).toHaveProperty("accessToken");
       expect(response.body).toHaveProperty("user_id");
@@ -75,12 +76,14 @@ describe("Auth Routes", () => {
 
     it("should return existing user on subsequent login", async () => {
       // First login
-      const firstResponse = await loginRequest().expect(200);
+      const firstResponse = await loginRequest();
+      expect(firstResponse.status).toBe(200);
 
       const firstUserId = firstResponse.body.user_id;
 
       // Second login
-      const secondResponse = await loginRequest().expect(200);
+      const secondResponse = await loginRequest();
+      expect(secondResponse.status).toBe(200);
 
       expect(secondResponse.body.user_id).toBe(firstUserId);
 

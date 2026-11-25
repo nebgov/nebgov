@@ -2,6 +2,7 @@ import { registerGuardianCouncil } from "./guardianCouncil.js";
 import { registerTimelock } from "./timelock.js";
 import { registerRecurringStreams } from "./recurringStreams.js";
 import { registerVoteCommitReveal } from "./commitReveal.js";
+import { registerProposalAmendments } from "./proposalAmendments.js";
 import { Command } from "commander";
 import {
   GovernorClient,

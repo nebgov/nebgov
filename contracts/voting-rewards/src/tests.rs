@@ -680,3 +680,39 @@ fn available_pool_reflects_a_correctly_negative_result_when_allocated_exceeds_ba
     assert!(result.is_err());
 }
 
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn sweep_epoch_reports_overflow_in_unclaimed_amount() {
+    let env = Env::default();
+    let f = setup(&env);
+    let epoch = f.client.get_epoch(&0).unwrap();
+    f.token_admin_client.mint(&f.contract_id, &POOL_FUNDING);
+    advance_to(&env, epoch.end_ledger);
+    let root = BytesN::from_array(&env, &[7u8; 32]);
+    f.client.publish_epoch_root(&f.admin, &0, &root, &1);
+    env.as_contract(&f.contract_id, || {
+        let mut stored: Epoch = env.storage().persistent().get(&DataKey::Epoch(0)).unwrap();
+        stored.claimed_amount = i128::MIN;
+        env.storage().persistent().set(&DataKey::Epoch(0), &stored);
+    });
+    advance_to(&env, epoch.end_ledger + SWEEP_GRACE_PERIOD_LEDGERS);
+    f.client.sweep_epoch(&f.admin, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn sweep_epoch_reports_overflow_in_allocated_pool() {
+    let env = Env::default();
+    let f = setup(&env);
+    let epoch = f.client.get_epoch(&0).unwrap();
+    f.token_admin_client.mint(&f.contract_id, &POOL_FUNDING);
+    advance_to(&env, epoch.end_ledger);
+    let root = BytesN::from_array(&env, &[7u8; 32]);
+    f.client.publish_epoch_root(&f.admin, &0, &root, &1);
+    env.as_contract(&f.contract_id, || {
+        env.storage().instance().set(&DataKey::RewardsPool, &i128::MIN);
+    });
+    advance_to(&env, epoch.end_ledger + SWEEP_GRACE_PERIOD_LEDGERS);
+    f.client.sweep_epoch(&f.admin, &0);
+}
+

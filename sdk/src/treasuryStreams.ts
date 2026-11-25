@@ -27,7 +27,7 @@ export enum TreasuryStreamsErrorCode {
   StreamNotDue = 12,
   InsufficientBalance = 13,
   ArithmeticOverflow = 14,
-  StreamCompleted = 15,
+  PauseCheckpointMissing = 15,
   SimulationFailed = 100,
   TransactionFailed = 101,
   TransactionTimeout = 102,
@@ -39,7 +39,7 @@ const TREASURY_STREAMS_MESSAGES: Partial<Record<TreasuryStreamsErrorCode, string
   [TreasuryStreamsErrorCode.NotAuthorized]: "Caller is not authorized to manage this stream",
   [TreasuryStreamsErrorCode.InvalidAmount]: "Amount per interval must be positive",
   [TreasuryStreamsErrorCode.InvalidInterval]: "Interval must be at least one ledger",
-  [TreasuryStreamsErrorCode.InvalidSchedule]: "End ledger must be after the start ledger and in the future",
+  [TreasuryStreamsErrorCode.InvalidSchedule]: "End ledger must be in the future and at least one interval after the start ledger",
   [TreasuryStreamsErrorCode.StreamNotFound]: "No stream exists with this id",
   [TreasuryStreamsErrorCode.StreamCancelled]: "Stream has been cancelled",
   [TreasuryStreamsErrorCode.StreamPaused]: "Stream is paused",
@@ -48,7 +48,7 @@ const TREASURY_STREAMS_MESSAGES: Partial<Record<TreasuryStreamsErrorCode, string
   [TreasuryStreamsErrorCode.StreamNotDue]: "No interval has come due on this stream yet",
   [TreasuryStreamsErrorCode.InsufficientBalance]: "The streams contract does not hold enough of the asset",
   [TreasuryStreamsErrorCode.ArithmeticOverflow]: "Arithmetic overflow in stream accounting",
-  [TreasuryStreamsErrorCode.StreamCompleted]: "Stream has paid its last interval and is finished",
+  [TreasuryStreamsErrorCode.PauseCheckpointMissing]: "Paused stream has no pause checkpoint; operator repair is required",
 };
 
 export class TreasuryStreamsError extends Error {
@@ -77,8 +77,6 @@ export interface TreasuryStream {
   totalStreamed: bigint;
   paused: boolean;
   cancelled: boolean;
-  /** Set once the stream has paid its last whole interval; it pays nothing more. */
-  completed: boolean;
   createdBy: string;
 }
 
@@ -109,7 +107,6 @@ export function mapTreasuryStream(raw: any): TreasuryStream {
     totalStreamed: BigInt(raw.total_streamed ?? 0),
     paused: Boolean(raw.paused),
     cancelled: Boolean(raw.cancelled),
-    completed: Boolean(raw.completed),
     createdBy: raw.created_by,
   };
 }
@@ -218,7 +215,7 @@ export class TreasuryStreamsClient {
     )).hash;
   }
 
-  /** Cancel a stream permanently. Execute any due intervals first, since they are forfeited. */
+  /** Cancel a stream permanently, settling accrued whole intervals atomically. */
   async cancelStream(requester: Keypair, streamId: number): Promise<string> {
     return (await this.submit(
       requester,

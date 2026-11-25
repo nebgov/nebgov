@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import { VotesClient, type Network } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useTranslations } from "next-intl";
 
 interface Props {
   open: boolean;
@@ -66,6 +67,9 @@ export function DelegateModal({
   const [submitting, setSubmitting] = useState(false);
   const { isConnected, publicKey, signTransaction } = useWallet();
   const dialogRef = useFocusTrap<HTMLDivElement>(open, onClose);
+  const t = useTranslations("delegation");
+  const tCommon = useTranslations("common");
+  const tErrors = useTranslations("errors");
 
   useEffect(() => {
     setDelegatee(prefillAddress ?? "");
@@ -80,11 +84,11 @@ export function DelegateModal({
 
   function validateDelegatee(value: string) {
     if (!value.trim()) {
-      setDelegateeError("Address is required.");
+      setDelegateeError(t("addressRequired"));
       return false;
     }
     if (!isValidStellarAddress(value)) {
-      setDelegateeError("Invalid Stellar address.");
+      setDelegateeError(tErrors("invalidStellarAddress"));
       return false;
     }
     setDelegateeError("");
@@ -98,16 +102,16 @@ export function DelegateModal({
     setSubmitting(true);
     try {
       if (!isConnected || !publicKey) {
-        throw new Error("Connect your wallet first.");
+        throw new Error(tErrors("connectWalletFirst"));
       }
 
       const client = getVotesClientFromEnv();
       const txHash = await client.delegateWithSign(publicKey, delegatee.trim(), signTransaction);
       toast.success(
         <div>
-          Delegation submitted!{" "}
+          {t("delegationSubmitted")}{" "}
           <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="underline">
-            View on Explorer →
+            {t("viewOnExplorer")}
           </a>
         </div>,
         { duration: 8000 },
@@ -116,7 +120,7 @@ export function DelegateModal({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Delegation failed: ${msg}`);
+      toast.error(`${t("delegationFailed")}: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -124,7 +128,7 @@ export function DelegateModal({
 
   async function handleUndelegate() {
     if (!isConnected || !publicKey) {
-      toast.error("Connect your wallet first.");
+      toast.error(tErrors("connectWalletFirst"));
       return;
     }
 
@@ -134,9 +138,9 @@ export function DelegateModal({
       const txHash = await client.undelegateWithSign(publicKey, signTransaction);
       toast.success(
         <div>
-          Undelegation submitted!{" "}
+          {t("undelegationSubmitted")}{" "}
           <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="underline">
-            View on Explorer →
+            {t("viewOnExplorer")}
           </a>
         </div>,
         { duration: 8000 },
@@ -145,7 +149,7 @@ export function DelegateModal({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Undelegation failed: ${msg}`);
+      toast.error(`${t("undelegationFailed")}: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -163,26 +167,24 @@ export function DelegateModal({
       <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div className="flex items-start justify-between mb-1">
           <h2 id="delegate-modal-title" className="text-lg font-bold text-gray-900">
-            Delegate Voting Power
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={tCommon("close")}
           >
             ✕
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Delegate to yourself to activate your voting power, or choose another
-          address.
+          {t("description")}
         </p>
 
         {isDelegatingAway && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            You are currently delegating to{" "}
-            <span className="font-mono">{currentDelegatee}</span>. Use
-            undelegation to move power back to yourself.
+            {t("currentlyDelegatingTo")}{" "}
+            <span className="font-mono">{currentDelegatee}</span>. {t("useUndelegation")}
           </div>
         )}
 
@@ -190,8 +192,8 @@ export function DelegateModal({
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-gray-500 font-mono">
               {publicKey
-                ? `You: ${publicKey.slice(0, 4)}...${publicKey.slice(-4)}`
-                : "Not connected"}
+                ? `${t("you")}: ${publicKey.slice(0, 4)}...${publicKey.slice(-4)}`
+                : t("notConnected")}
             </span>
             <button
               type="button"
@@ -199,13 +201,13 @@ export function DelegateModal({
               onClick={() => publicKey && setDelegatee(publicKey)}
               className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Delegate to myself
+              {t("delegateToMyself")}
             </button>
           </div>
 
           <input
             type="text"
-            placeholder="Stellar address (G...)"
+            placeholder={t("addressPlaceholder")}
             value={delegatee}
             onChange={(e) => { setDelegatee(e.target.value); setDelegateeError(""); }}
             onBlur={(e) => validateDelegatee(e.target.value)}
@@ -224,14 +226,14 @@ export function DelegateModal({
               onClick={onClose}
               className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50"
             >
-              Cancel
+              {tCommon("cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting || !!delegateeError || !delegatee.trim()}
               className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? "Delegating..." : "Delegate"}
+              {submitting ? t("delegating") : t("delegateButton")}
             </button>
           </div>
 
@@ -242,14 +244,14 @@ export function DelegateModal({
               disabled={submitting}
               className="w-full rounded-lg border border-amber-200 bg-amber-50 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
             >
-              {submitting ? "Updating..." : "Undelegate"}
+              {submitting ? t("updating") : t("undelegateButton")}
             </button>
           )}
 
           {onOpenGasless && (
             <div className="border-t border-gray-200 pt-4 mt-4">
               <p className="text-xs text-gray-500 mb-2">
-                Or delegate without paying gas
+                {t("orDelegateWithoutGas")}
               </p>
               <button
                 type="button"
@@ -257,10 +259,10 @@ export function DelegateModal({
                 disabled={submitting}
                 className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
               >
-                Delegate for free — we pay the fee
+                {t("delegateFree")}
               </button>
               <p className="text-xs text-gray-400 mt-1">
-                Sign off-chain, our relayer submits the transaction
+                {t("signOffChain")}
               </p>
             </div>
           )}
@@ -273,10 +275,10 @@ export function DelegateModal({
                 disabled={submitting}
                 className="w-full text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
               >
-                Split my delegation instead →
+                {t("splitDelegation")}
               </button>
               <p className="text-xs text-gray-400 mt-1 text-center">
-                Spread your voting power across multiple delegates by percentage
+                {t("splitDescription")}
               </p>
             </div>
           )}

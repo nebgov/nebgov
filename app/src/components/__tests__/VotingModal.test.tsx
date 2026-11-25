@@ -30,6 +30,55 @@ jest.mock("react-hot-toast", () => ({
   default: { success: jest.fn(), error: jest.fn() },
 }));
 
+// Return real en.json values for the keys VotingModal uses so text assertions pass unchanged.
+jest.mock("next-intl", () => ({
+  useTranslations: (ns: string) => (key: string, vars?: Record<string, unknown>) => {
+    const maps: Record<string, Record<string, string>> = {
+      voting: {
+        castYourVote: "Cast Your Vote",
+        subtitle: "Confirm and sign your vote on-chain.",
+        closeModal: "Close voting modal",
+        notDelegated: "You have not delegated voting power yet.",
+        openDelegateModal: "Open delegation modal",
+        tokens: "tokens",
+        voteWeightQuadratic: `Vote weight: ${vars?.weight ?? ""} (quadratic)`,
+        quadraticExplanation:
+          "Quadratic voting: your vote weight is floor(√balance). A balance of 10,000 tokens gives a weight of 100, not 10,000. This reduces the influence of large token holders.",
+        quadraticFormula: `Formula: floor(√${vars?.balance ?? ""}) = ${vars?.weight ?? ""}`,
+        estimatedFee: "Estimated fee",
+        estimating: "Estimating...",
+        feeUnavailable: "Unavailable",
+        voteOptions: "Vote options",
+        voteFor: "Vote For",
+        voteAgainst: "Vote Against",
+        voteAbstain: "Vote Abstain",
+        optionalReasonLabel: "Optional reason",
+        optionalReasonMax: "(max 256)",
+        reasonPlaceholder: "I support this because...",
+        reasonHelpText: "Optional field to provide reasoning for your vote. Maximum 256 characters.",
+        confirmSign: "Confirm & Sign",
+        submittingVote: "Submitting vote...",
+        mustDelegate: "You must delegate your voting power before you can vote.",
+        voteSubmitted: "Vote submitted!",
+        votingEnded: "Voting has ended for this proposal",
+        voteFailed: `Failed to submit vote: ${vars?.error ?? ""}`,
+        selectOptionFirst: "Select a vote option first.",
+        connectToContinue: "Please connect your wallet to continue.",
+        delegateFirst: "Delegate first before casting a vote.",
+        connectToSign: "Connect your wallet to sign the vote.",
+      },
+      proposal: { for: "For", against: "Against", abstain: "Abstain" },
+      forms: { yourVotingPower: "Your voting power", delegation: "Delegation", delegatedTo: "Delegated to" },
+      actions: { delegateNow: "Delegate now" },
+      common: { cancel: "Cancel" },
+    };
+    return maps[ns]?.[key] ?? key;
+  },
+  useFormatter: () => ({
+    number: (n: number, _opts?: unknown) => String(n),
+  }),
+}));
+
 const mockUseWallet = useWallet as unknown as jest.Mock;
 
 type WalletState = {
