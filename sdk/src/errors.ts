@@ -852,6 +852,7 @@ export enum ProposalBondsErrorCode {
   NotAuthorized = 9,
   InvalidBondAmount = 10,
   InvalidLockWindow = 11,
+  ProposerMismatch = 12,
 
   // SDK-level codes
   SimulationFailed = 100,
@@ -876,6 +877,7 @@ const PROPOSAL_BONDS_MESSAGES: Record<ProposalBondsErrorCode, string> = {
   [ProposalBondsErrorCode.NotAuthorized]: "Caller is not authorized to perform this action",
   [ProposalBondsErrorCode.InvalidBondAmount]: "Bond amount must be positive",
   [ProposalBondsErrorCode.InvalidLockWindow]: "Lock window must exceed grace period and be shorter than bond storage lifetime",
+  [ProposalBondsErrorCode.ProposerMismatch]: "The proposal belongs to another proposer",
   [ProposalBondsErrorCode.SimulationFailed]: "Simulation failed",
   [ProposalBondsErrorCode.TransactionFailed]: "Transaction failed",
   [ProposalBondsErrorCode.TransactionTimeout]: "Transaction timed out",

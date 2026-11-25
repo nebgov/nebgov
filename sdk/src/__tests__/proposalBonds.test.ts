@@ -18,28 +18,32 @@ describe("ProposalBondsClient", () => {
     it("round-trips address args as ScVal.scvAddress, not scvString", () => {
       const client = makeClient();
       const governorAddress = contractAddress;
+      const proposer = Keypair.random().publicKey();
       const recipient = Keypair.random().publicKey();
       const descriptionHash = "ab".repeat(32);
 
       const calldata = client.encodeSlashCalldata(
         governorAddress,
+        proposer,
         descriptionHash,
         recipient,
       );
 
       const decodedVec = xdr.ScVal.fromXDR(calldata).vec();
       expect(decodedVec).not.toBeNull();
-      const [govArg, hashArg, recipientArg] = decodedVec!;
+      const [govArg, proposerArg, hashArg, recipientArg] = decodedVec!;
 
       // The bug this guards against: encodeCalldata() has no per-arg type
       // hint, so a plain address string silently encodes as scvString
       // instead of scvAddress — the contract's `slash(caller: Address, ...,
       // recipient: Address)` would then trap on execution.
       expect(govArg.switch().name).toBe("scvAddress");
+      expect(proposerArg.switch().name).toBe("scvAddress");
       expect(recipientArg.switch().name).toBe("scvAddress");
       expect(hashArg.switch().name).toBe("scvBytes");
 
       expect(scValToNative(govArg)).toBe(governorAddress);
+      expect(scValToNative(proposerArg)).toBe(proposer);
       expect(scValToNative(recipientArg)).toBe(recipient);
       expect(Buffer.from(scValToNative(hashArg) as Uint8Array).toString("hex")).toBe(
         descriptionHash,

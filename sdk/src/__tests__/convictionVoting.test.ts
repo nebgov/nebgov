@@ -97,6 +97,14 @@ describe("ConvictionVotingClient", () => {
   });
 
   describe("submit-based mutations", () => {
+    it("submits config updates and admin rotation with typed arguments", async () => {
+      const client = makeClient();
+      expect(await client.updateConfig(mockKeypair, 8_000, 2_000, 200n, 9_000)).toBe("mock_hash");
+      expect(await client.setAdmin(mockKeypair, VALID_GADDR)).toBe("mock_hash");
+      expect(mockNativeToScVal).toHaveBeenCalledWith(200n, { type: "i128" });
+      expect(mockNativeToScVal).toHaveBeenCalledWith(VALID_GADDR, { type: "address" });
+    });
+
     it("createProposal builds the call and returns the numeric id", async () => {
       mockScValToNative.mockReturnValue(7n);
       const client = makeClient();

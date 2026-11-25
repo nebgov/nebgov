@@ -80,7 +80,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
     descriptionHash: string,
     expected: { proposer: string; amount: bigint; lockedLedger: number; state: BondState },
   ): Promise<void> {
-    const bond = await this.harness.proposalBondsClient.getBond(descriptionHash);
+    const bond = await this.harness.proposalBondsClient.getBond(expected.proposer, descriptionHash);
     if (!bond) throw new AssertionError(`${step}: expected a bond for ${descriptionHash}, got none`);
     this.expect(
       bond.proposer === expected.proposer,
@@ -148,7 +148,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
     // ── Step 1: no bond exists before any posting. ─────────────────────────
     const step1 = "pre-lock";
     this.expect(
-      (await proposalBondsClient.getBond(descriptionHash)) === null,
+      (await proposalBondsClient.getBond(proposer.publicKey, descriptionHash)) === null,
       `${step1}: no bond must exist for an unused description hash`,
     );
 
@@ -206,7 +206,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
     const step4 = "refund gate";
     // A Succeeded proposal is not yet terminal, so a refund is refused.
     await this.expectRejection(step4, BondError.ProposalNotTerminal, () =>
-      proposalBondsClient.refundBond(proposer.keypair, descriptionHash, bondedProposalId),
+      proposalBondsClient.refundBond(proposer.keypair, proposer.publicKey, descriptionHash, bondedProposalId),
     );
     // Once executed, the proposal is terminal but the post-terminal grace
     // window (a fixed period after `end_ledger`) still blocks the refund.
@@ -218,14 +218,14 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
       `${step4}: the scenario must still be inside the refund grace window to test the gate`,
     );
     await this.expectRejection(step4, BondError.RefundGraceNotElapsed, () =>
-      proposalBondsClient.refundBond(proposer.keypair, descriptionHash, bondedProposalId),
+      proposalBondsClient.refundBond(proposer.keypair, proposer.publicKey, descriptionHash, bondedProposalId),
     );
 
     // ── Step 5: refund the bond once the grace window elapses. ─────────────
     const step5 = "refund";
     await this.harness.advanceLedgers(refundEligibleLedger - this.harness.clock.sequence);
     const proposerBalanceBeforeRefund = await votesClient.getBaseVotes(proposer.publicKey);
-    await proposalBondsClient.refundBond(guardian.keypair, descriptionHash, bondedProposalId);
+    await proposalBondsClient.refundBond(guardian.keypair, proposer.publicKey, descriptionHash, bondedProposalId);
     await this.expectBond(step5, descriptionHash, {
       proposer: proposer.publicKey,
       amount: settings.bondAmount,
@@ -241,7 +241,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
       `${step5}: the registry must hold no funds after refund`,
     );
     await this.expectRejection(step5, BondError.BondNotLocked, () =>
-      proposalBondsClient.refundBond(guardian.keypair, descriptionHash, bondedProposalId),
+      proposalBondsClient.refundBond(guardian.keypair, proposer.publicKey, descriptionHash, bondedProposalId),
     );
 
     // ═══ Flow 2: bond posting + slashing on a governance-triggered cancel ══
@@ -250,6 +250,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
     const slashRecipient = (this.config.slashRecipient ?? guardian).publicKey;
     const slashCalldata = proposalBondsClient.encodeSlashCalldata(
       addresses.governor,
+      proposer.publicKey,
       slashDescriptionHash,
       slashRecipient,
     );
@@ -272,7 +273,7 @@ export class ProposalBondsLifecycleScenario extends BaseScenario {
       `${step6}: the second lock must debit ${settings.bondAmount} from the proposer`,
     );
     this.expect(
-      (await proposalBondsClient.getBond(descriptionHash))?.state === "Refunded",
+      (await proposalBondsClient.getBond(proposer.publicKey, descriptionHash))?.state === "Refunded",
       `${step6}: the first bond must remain Refunded`,
     );
 

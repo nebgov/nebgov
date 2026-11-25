@@ -27,6 +27,33 @@ export class ConvictionVotingClient {
     this.passphrase = getNetworkPassphrase(config.network);
   }
 
+  async updateConfig(
+    admin: Keypair,
+    decayBps: number,
+    maxRatioBps: number,
+    minThresholdConviction: bigint,
+    weightBps: number,
+  ): Promise<string> {
+    return (await this.submit(
+      admin,
+      "update_config",
+      nativeToScVal(admin.publicKey(), { type: "address" }),
+      nativeToScVal(decayBps, { type: "u32" }),
+      nativeToScVal(maxRatioBps, { type: "u32" }),
+      nativeToScVal(minThresholdConviction, { type: "i128" }),
+      nativeToScVal(weightBps, { type: "u32" }),
+    )).hash;
+  }
+
+  async setAdmin(admin: Keypair, newAdmin: string): Promise<string> {
+    return (await this.submit(
+      admin,
+      "set_admin",
+      nativeToScVal(admin.publicKey(), { type: "address" }),
+      nativeToScVal(newAdmin, { type: "address" }),
+    )).hash;
+  }
+
   async createProposal(
     proposer: Keypair,
     target: string,

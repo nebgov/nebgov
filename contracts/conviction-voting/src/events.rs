@@ -38,3 +38,24 @@ pub fn emit_proposal_cancelled(env: &Env, proposal_id: u64, caller: &Address) {
         caller.clone(),
     );
 }
+
+pub fn emit_config_updated(
+    env: &Env,
+    admin: &Address,
+    decay_bps: u32,
+    max_ratio_bps: u32,
+    min_threshold_conviction: i128,
+    weight_bps: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "ConfigUpdated"),),
+        (admin.clone(), decay_bps, max_ratio_bps, min_threshold_conviction, weight_bps),
+    );
+}
+
+pub fn emit_admin_changed(env: &Env, old_admin: &Address, new_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "AdminChanged"),),
+        (old_admin.clone(), new_admin.clone()),
+    );
+}

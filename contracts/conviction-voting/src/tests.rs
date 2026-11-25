@@ -106,6 +106,43 @@ fn setup(minimum: i128) -> Fixture {
     }
 }
 
+#[test]
+fn admin_can_update_config_and_rotate_authority() {
+    let f = setup(100);
+    let client = ConvictionVotingContractClient::new(&f.env, &f.contract_id);
+    let before = client.get_required_threshold(&100);
+    client.update_config(&f.admin, &8_000, &2_000, &200, &9_000);
+    assert!(client.get_required_threshold(&100) > before);
+
+    let replacement = Address::generate(&f.env);
+    client.set_admin(&f.admin, &replacement);
+    assert_eq!(
+        client.try_update_config(&f.admin, &8_000, &2_000, &300, &9_000),
+        Err(Ok(ConvictionVotingError::Unauthorized)),
+    );
+    client.update_config(&replacement, &8_000, &2_000, &300, &9_000);
+}
+
+#[test]
+fn update_config_reuses_initialize_bounds() {
+    let f = setup(100);
+    let client = ConvictionVotingContractClient::new(&f.env, &f.contract_id);
+    for (decay, ratio, minimum, weight) in [
+        (0, 2_000, 100, 10_000),
+        (10_000, 2_000, 100, 10_000),
+        (9_000, 0, 100, 10_000),
+        (9_000, 10_001, 100, 10_000),
+        (9_000, 2_000, 0, 10_000),
+        (9_000, 2_000, 100, 0),
+        (9_000, 2_000, 100, 10_001),
+    ] {
+        assert_eq!(
+            client.try_update_config(&f.admin, &decay, &ratio, &minimum, &weight),
+            Err(Ok(ConvictionVotingError::InvalidConfiguration)),
+        );
+    }
+}
+
 fn proposal(fixture: &Fixture, requested: i128) -> u64 {
     let mut args = Vec::<Val>::new(&fixture.env);
     args.push_back(fixture.treasury.clone().into_val(&fixture.env));

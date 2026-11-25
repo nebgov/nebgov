@@ -54,12 +54,12 @@ export default function BondsPage() {
     setRefundingHash(descriptionHash);
     try {
       const client = new ProposalBondsClient({ ...config, indexerUrl });
-      const proposalId = await client.getProposalIdForDescriptionHash(descriptionHash);
+      const proposalId = await client.getProposalIdForDescriptionHash(publicKey, descriptionHash);
       if (proposalId === null) {
         toast.error("Correlated proposal not found in the indexer yet.");
         return;
       }
-      await client.refundBondWithSign(publicKey, descriptionHash, proposalId, signTransaction);
+      await client.refundBondWithSign(publicKey, publicKey, descriptionHash, proposalId, signTransaction);
       toast.success("Bond refund submitted.");
       refetch();
     } catch (e: unknown) {

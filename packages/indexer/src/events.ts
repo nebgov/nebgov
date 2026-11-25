@@ -2070,7 +2070,7 @@ async function handleBondLocked(
   await pool.query(
     `INSERT INTO proposal_bonds (description_hash, proposer_address, amount, state, locked_ledger)
      VALUES ($1, $2, $3, 'locked', $4)
-     ON CONFLICT (description_hash) DO NOTHING`,
+     ON CONFLICT (proposer_address, description_hash) DO NOTHING`,
     [descriptionHash, proposer, amount, event.ledger],
   );
   invalidatePattern("proposal-bonds:");
@@ -2090,8 +2090,8 @@ async function handleBondRefunded(
   const amount = String(data[1] as bigint);
 
   await pool.query(
-    `UPDATE proposal_bonds SET state = 'refunded', refunded_ledger = $1 WHERE description_hash = $2`,
-    [event.ledger, descriptionHash],
+    `UPDATE proposal_bonds SET state = 'refunded', refunded_ledger = $1 WHERE description_hash = $2 AND proposer_address = $3`,
+    [event.ledger, descriptionHash, proposer],
   );
   invalidatePattern("proposal-bonds:");
   broadcast({
@@ -2111,8 +2111,8 @@ async function handleBondSlashed(
   const recipient = data[2] as string;
 
   await pool.query(
-    `UPDATE proposal_bonds SET state = 'slashed', slashed_ledger = $1, slash_recipient = $2 WHERE description_hash = $3`,
-    [event.ledger, recipient, descriptionHash],
+    `UPDATE proposal_bonds SET state = 'slashed', slashed_ledger = $1, slash_recipient = $2 WHERE description_hash = $3 AND proposer_address = $4`,
+    [event.ledger, recipient, descriptionHash, proposer],
   );
   invalidatePattern("proposal-bonds:");
   broadcast({
