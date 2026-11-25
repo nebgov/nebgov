@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { VotesClient, RegistryDelegatorInfo, Network } from "@nebgov/sdk";
 import { AddressDisplay } from "./AddressDisplay";
 import { formatVotingPower } from "../lib/utils";
@@ -19,6 +20,7 @@ interface DelegatorListProps {
  * {@link VotesClient.getRegistryDelegators}.
  */
 export function DelegatorList({ delegatee, pageSize = 10, className = "" }: DelegatorListProps) {
+  const t = useTranslations("delegatorList");
   const [offset, setOffset] = useState(0);
   const [delegators, setDelegators] = useState<RegistryDelegatorInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,7 @@ export function DelegatorList({ delegatee, pageSize = 10, className = "" }: Dele
       const page = await votesClient.getRegistryDelegators(delegatee, offset, pageSize);
       setDelegators(page);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load delegators");
+      setError(err instanceof Error ? err.message : t("failedToLoadDelegators"));
     } finally {
       setLoading(false);
     }
@@ -105,7 +107,7 @@ export function DelegatorList({ delegatee, pageSize = 10, className = "" }: Dele
   }
 
   if (delegators.length === 0 && offset === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No current delegators.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">{t("noCurrentDelegators")}</p>;
   }
 
   return (
@@ -132,11 +134,11 @@ export function DelegatorList({ delegatee, pageSize = 10, className = "" }: Dele
               )}
               <span>{formatVotingPower(d.delegatedPower)}</span>
               <span className="mx-1">·</span>
-              <span>ledger #{d.delegatedAtLedger}</span>
+              <span>{t("ledger")} #{d.delegatedAtLedger}</span>
               {d.chainDepth > 1 && (
                 <>
                   <span className="mx-1">·</span>
-                  <span>depth {d.chainDepth}</span>
+                  <span>{t("depth")} {d.chainDepth}</span>
                 </>
               )}
             </div>
@@ -150,17 +152,17 @@ export function DelegatorList({ delegatee, pageSize = 10, className = "" }: Dele
           disabled={offset === 0}
           className="text-xs px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
         >
-          ← Previous
+          ← {t("previous")}
         </button>
         <span className="text-xs text-gray-500 dark:text-gray-400">
-          Showing {offset + 1}–{offset + delegators.length}
+          {t("showing")} {offset + 1}–{offset + delegators.length}
         </span>
         <button
           onClick={() => setOffset((o) => o + pageSize)}
           disabled={delegators.length < pageSize}
           className="text-xs px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
         >
-          Next →
+          {t("next")} →
         </button>
       </div>
     </div>

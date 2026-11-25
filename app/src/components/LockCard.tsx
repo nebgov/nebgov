@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { VoteEscrowLock } from "@nebgov/sdk";
 
 interface LockCardProps {
@@ -9,6 +10,7 @@ interface LockCardProps {
 }
 
 export function LockCard({ lock, currentVotingPower, loading }: LockCardProps) {
+  const t = useTranslations("lockCard");
   if (loading) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
@@ -26,7 +28,7 @@ export function LockCard({ lock, currentVotingPower, loading }: LockCardProps) {
   if (!lock) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-6 text-center dark:border-gray-800 dark:bg-gray-950">
-        <p className="text-sm text-gray-600 dark:text-gray-400">No active lock</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{t("noActiveLock")}</p>
       </div>
     );
   }
@@ -47,59 +49,59 @@ export function LockCard({ lock, currentVotingPower, loading }: LockCardProps) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
       <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-50">
-        Your Lock
+        {t("yourLock")}
       </h3>
 
       <div className="space-y-3">
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Locked Amount</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("lockedAmount")}</span>
           <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
-            {lock.amount.toString()} tokens
+            {lock.amount.toString()} {t("tokens")}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Multiplier</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("multiplier")}</span>
           <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
             {((Number(lock.initial_voting_power) / Number(lock.amount)) * 100) / 100}x
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Voting Power</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("votingPower")}</span>
           <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
             {currentVotingPower.toString()}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Duration</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("duration")}</span>
           <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
-            {durationLedgers} ledgers
+            {durationLedgers} {t("ledgers")}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Unlock Ledger</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("unlockLedger")}</span>
           <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
             {lock.end_ledger}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{t("status")}</span>
           <span className="text-sm font-medium">
             {lock.withdrawn ? (
-              <span className="text-red-600 dark:text-red-400">Withdrawn</span>
+              <span className="text-red-600 dark:text-red-400">{t("withdrawn")}</span>
             ) : (
-              <span className="text-green-600 dark:text-green-400">Active</span>
+              <span className="text-green-600 dark:text-green-400">{t("active")}</span>
             )}
           </span>
         </div>
 
         <div className="mt-4 pt-4">
           <div className="mb-2 flex justify-between">
-            <span className="text-xs text-gray-600 dark:text-gray-400">Decay Progress</span>
+            <span className="text-xs text-gray-600 dark:text-gray-400">{t("decayProgress")}</span>
             <span className="text-xs font-medium text-gray-900 dark:text-gray-50">
               {decayPercentage}%
             </span>

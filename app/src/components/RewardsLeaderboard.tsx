@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { useEpochLeaderboard } from "../hooks/useVotingRewards";
 import { Skeleton } from "./ui/Skeleton";
 
@@ -29,6 +30,7 @@ export function RewardsLeaderboard({
   limit = 10,
   onRefetchReady,
 }: RewardsLeaderboardProps) {
+  const t = useTranslations("rewardsLeaderboard");
   const { rows, loading, error, refetch } = useEpochLeaderboard(epochId, limit);
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export function RewardsLeaderboard({
   if (epochId === null) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        No published epoch to rank yet.
+        {t("noPublishedEpoch")}
       </p>
     );
   }
@@ -60,7 +62,7 @@ export function RewardsLeaderboard({
   if (rows.length === 0) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Nobody voted during epoch {epochId.toString()}.
+        {t("noVotersInEpoch", { epochId: epochId.toString() })}
       </p>
     );
   }
@@ -69,7 +71,7 @@ export function RewardsLeaderboard({
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <caption className="sr-only">
-          Top voting-reward earners for epoch {epochId.toString()}
+          {t("topVotingRewardEarners", { epochId: epochId.toString() })}
         </caption>
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -77,13 +79,13 @@ export function RewardsLeaderboard({
               #
             </th>
             <th scope="col" className="py-2 pr-4">
-              Voter
+              {t("voter")}
             </th>
             <th scope="col" className="py-2 pr-4 text-right">
-              Reward
+              {t("reward")}
             </th>
             <th scope="col" className="py-2 text-right">
-              Status
+              {t("status")}
             </th>
           </tr>
         </thead>
@@ -102,7 +104,7 @@ export function RewardsLeaderboard({
                   {formatAddress(row.address)}
                   {isYou && (
                     <span className="ml-2 text-xs font-sans text-indigo-600 dark:text-indigo-300">
-                      you
+                      {t("you")}
                     </span>
                   )}
                 </td>
@@ -110,7 +112,7 @@ export function RewardsLeaderboard({
                   {formatAmount(row.amount)}
                 </td>
                 <td className="py-2 text-right text-xs text-gray-500 dark:text-gray-400">
-                  {row.claimed ? "Claimed" : "Unclaimed"}
+                  {row.claimed ? t("claimed") : t("unclaimed")}
                 </td>
               </tr>
             );

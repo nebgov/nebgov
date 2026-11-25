@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { CoSponsorshipClient } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
 import { readGovernorConfig } from "../lib/nebgov-env";
+import { useTranslations } from "next-intl";
 
 interface Props {
   draftId: bigint;
@@ -24,6 +25,9 @@ function explorerTxUrl(txHash: string): string {
 export function CoSponsorModal({ draftId, onClose, onSuccess }: Props) {
   const { isConnected, connect, publicKey, signTransaction } = useWallet();
   const [submitting, setSubmitting] = useState(false);
+  const t = useTranslations("coSponsor");
+  const tCommon = useTranslations("common");
+  const tActions = useTranslations("actions");
 
   async function handleConfirm() {
     let pk = publicKey;
@@ -83,24 +87,23 @@ export function CoSponsorModal({ draftId, onClose, onSuccess }: Props) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h2 id="co-sponsor-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
-              Co-Sponsor Draft #{draftId.toString()}
+              {t("title", { id: draftId.toString() })}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-300">
-              Pledge your current voting power toward this draft.
+              {t("subtitle")}
             </p>
           </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={tCommon("close")}
           >
             ✕
           </button>
         </div>
 
         <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-          Once the draft&apos;s accumulated co-sponsor power meets the governor&apos;s proposal
-          threshold, the creator can finalize it into a real governance proposal.
+          {t("description")}
         </p>
 
         <div className="flex justify-end gap-3">
@@ -109,14 +112,14 @@ export function CoSponsorModal({ draftId, onClose, onSuccess }: Props) {
             disabled={submitting}
             className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
           >
-            Cancel
+            {tCommon("cancel")}
           </button>
           <button
             onClick={handleConfirm}
             disabled={submitting}
             className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {submitting ? "Submitting…" : "Co-Sponsor"}
+            {submitting ? tActions("submitting") : t("confirmButton")}
           </button>
         </div>
       </div>

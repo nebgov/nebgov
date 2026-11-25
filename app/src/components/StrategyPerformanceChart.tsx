@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 interface StrategyPerformanceChartProps {
   points: Array<{ amount: bigint; ledger: number }>;
   label?: string;
@@ -10,12 +12,16 @@ interface StrategyPerformanceChartProps {
  * `ParticipationTrendChart`. */
 export function StrategyPerformanceChart({
   points,
-  label = "Principal deposited over time",
+  label,
 }: StrategyPerformanceChartProps) {
+  const t = useTranslations("strategyPerformanceChart");
+  const defaultLabel = t("principalDepositedOverTime");
+  const finalLabel = label ?? defaultLabel;
+
   if (!points || points.length < 2) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Not enough deposit history yet to plot a trend.
+        {t("notEnoughDepositHistory")}
       </p>
     );
   }
@@ -39,7 +45,7 @@ export function StrategyPerformanceChart({
       viewBox={`0 0 ${width} ${height}`}
       className="w-full h-20"
       role="img"
-      aria-label={label}
+      aria-label={finalLabel}
     >
       <polyline
         points={coords}

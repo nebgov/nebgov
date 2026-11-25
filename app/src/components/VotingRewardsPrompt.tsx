@@ -1,23 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { Gift } from "lucide-react";
 import { useClaimableRewards } from "../hooks/useVotingRewards";
 
 interface VotingRewardsPromptProps {
-  /** The connected wallet, or `null` when nobody is connected. */
   address: string | null;
 }
 
-/**
- * Closes the loop between casting a vote and knowing it pays (Issue #1011).
- *
- * Rendered inside the proposal voting UI, it only appears once a wallet is
- * connected *and* actually has something unclaimed — an empty nudge on every
- * proposal page would be noise, and a prompt to a voter with nothing waiting
- * would be a broken promise.
- */
 export function VotingRewardsPrompt({ address }: VotingRewardsPromptProps) {
+  const t = useTranslations("rewards");
   const { totalUnclaimed, unclaimed, loading, error } = useClaimableRewards(address);
 
   if (!address || loading || error || unclaimed.length === 0) return null;
@@ -36,11 +29,10 @@ export function VotingRewardsPrompt({ address }: VotingRewardsPromptProps) {
         />
         <div>
           <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
-            Voting earns rewards — you have {formatted} unclaimed
+            {t("votingEarnsRewards", { amount: formatted })}
           </p>
           <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
-            Across {unclaimed.length} epoch{unclaimed.length === 1 ? "" : "s"}. Voting on this
-            proposal counts toward the current one.
+            {t("acrossEpochs", { count: unclaimed.length })}
           </p>
         </div>
       </div>
@@ -48,7 +40,7 @@ export function VotingRewardsPrompt({ address }: VotingRewardsPromptProps) {
         href="/rewards"
         className="inline-flex shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
       >
-        Claim rewards
+        {t("claimRewards")}
       </Link>
     </div>
   );

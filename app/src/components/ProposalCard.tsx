@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ProposalState } from "@nebgov/sdk";
 import { ProposalStateBadge } from "./ProposalStateBadge";
 import { useGovernorConfig } from "@/hooks/useGovernorConfig";
+import { useTranslations, useFormatter } from "next-intl";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 
@@ -17,6 +18,9 @@ export interface ProposalCardProps {
 
 export function ProposalCard({ id, description, state, votesFor, votesAgainst }: ProposalCardProps) {
   const { divisor } = useGovernorConfig();
+  const t = useTranslations("proposalCard");
+  const tProposal = useTranslations("proposal");
+  const format = useFormatter();
 
   return (
     <Link
@@ -25,15 +29,15 @@ export function ProposalCard({ id, description, state, votesFor, votesAgainst }:
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-400 mb-1">Proposal #{id.toString()}</p>
+          <p className="text-xs text-gray-400 mb-1">{t("proposalNumber", { id: id.toString() })}</p>
           <h2 className="text-lg font-semibold text-gray-900 truncate">
             <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
               {description}
             </ReactMarkdown>
           </h2>
           <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
-            <span>For: {(Number(votesFor) / divisor).toLocaleString()}</span>
-            <span>Against: {(Number(votesAgainst) / divisor).toLocaleString()}</span>
+            <span>{tProposal("for")}: {format.number(Number(votesFor) / divisor)}</span>
+            <span>{tProposal("against")}: {format.number(Number(votesAgainst) / divisor)}</span>
           </div>
         </div>
         <ProposalStateBadge state={state} />

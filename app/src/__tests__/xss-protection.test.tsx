@@ -15,6 +15,11 @@ jest.mock('@/hooks/useGovernorConfig', () => ({
   useGovernorConfig: () => ({ divisor: 10000000 }),
 }));
 
+jest.mock('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
 // Mock next/link to avoid router context issues
 jest.mock('next/link', () => {
   const MockLink = ({ children, href }: any) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { AddressDisplay } from "./AddressDisplay";
 
 interface DelegationChainProps {
@@ -15,14 +16,16 @@ interface DelegationChainProps {
  * the address is not currently delegating to anyone else.
  */
 export function DelegationChain({ chain, className = "" }: DelegationChainProps) {
+  const t = useTranslations("delegationChain");
+
   if (chain.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No delegation chain found.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">{t("noDelegationChainFound")}</p>;
   }
 
   if (chain.length === 1) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Not delegating to anyone else.
+        {t("notDelegatingToAnyone")}
       </p>
     );
   }

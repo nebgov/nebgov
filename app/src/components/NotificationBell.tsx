@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { useNotifications } from "../hooks/useNotifications";
 import { useWallet } from "../lib/wallet-context";
+import { useTranslations } from "next-intl";
 
 function timeAgo(iso: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -17,6 +18,7 @@ function timeAgo(iso: string): string {
 }
 
 export function NotificationBell() {
+  const t = useTranslations("notificationBell");
   const { isConnected } = useWallet();
   const { unreadCount, notifications, markRead } = useNotifications();
   const [open, setOpen] = useState(false);
@@ -30,7 +32,7 @@ export function NotificationBell() {
     <div className="relative" ref={containerRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+        aria-label={unreadCount > 0 ? t("unreadNotifications", { count: unreadCount }) : t("notifications")}
         aria-expanded={open}
         aria-haspopup="menu"
         className="relative p-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -56,13 +58,13 @@ export function NotificationBell() {
           >
             <div className="px-4 py-2 border-b border-gray-50 dark:border-gray-800">
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">
-                Notifications
+                {t("notifications")}
               </p>
             </div>
 
             {unread.length === 0 ? (
               <p className="px-4 py-6 text-sm text-gray-500 dark:text-gray-400 text-center">
-                You&apos;re all caught up.
+                {t("allCaughtUp")}
               </p>
             ) : (
               <ul>
@@ -89,7 +91,7 @@ export function NotificationBell() {
                 onClick={() => setOpen(false)}
                 className="block px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
               >
-                View all
+                {t("viewAll")}
               </Link>
             </div>
           </div>

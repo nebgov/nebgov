@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import type { JsonMergePatch } from "@nebgov/sdk/amendments";
 
 interface AmendmentDiffViewerProps {
@@ -13,12 +14,14 @@ interface AmendmentDiffViewerProps {
  * Highlights changes between amendment versions
  */
 export function AmendmentDiffViewer({ diff, loading = false }: AmendmentDiffViewerProps) {
+  const t = useTranslations("amendmentDiffViewer");
+
   if (loading) {
-    return <div className="p-4 text-gray-600">Loading diff...</div>;
+    return <div className="p-4 text-gray-600">{t("loadingDiff")}</div>;
   }
 
   if (!diff || diff.length === 0) {
-    return <div className="p-4 text-gray-600">No changes between versions</div>;
+    return <div className="p-4 text-gray-600">{t("noChanges")}</div>;
   }
 
   return (
@@ -36,7 +39,7 @@ export function AmendmentDiffViewer({ diff, loading = false }: AmendmentDiffView
                     : "bg-green-100 text-green-800"
               }`}
             >
-              {patch.op}
+              {t(`operation.${patch.op}`)}
             </span>
           </div>
 

@@ -16,6 +16,7 @@ import { getErrorMessage, reportFrontendError } from "../lib/frontend-error";
 import { ProposalStateBadge } from "../components/ProposalStateBadge";
 import { CountdownTimer } from "../components/CountdownTimer";
 import { useGovernorConfig } from "@/hooks/useGovernorConfig";
+import { useTranslations, useFormatter } from "next-intl";
 
 
 interface ProposalSummary {
@@ -58,6 +59,13 @@ function ProposalsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { divisor } = useGovernorConfig();
+  const t = useTranslations("home");
+  const tProposal = useTranslations("proposal");
+  const tCard = useTranslations("proposalCard");
+  const tActions = useTranslations("actions");
+  const tErrors = useTranslations("errors");
+  const tCommon = useTranslations("common");
+  const format = useFormatter();
 
   const search = searchParams.get("q") ?? "";
   const stateFilter = (searchParams.get("state") ?? "all") as
@@ -283,16 +291,16 @@ function ProposalsPageInner() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Proposals</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{t("title")}</h1>
           <p className="text-gray-500 mt-1">
-            Vote on governance decisions for this protocol.
+            {t("subtitle")}
           </p>
         </div>
         <Link
           href="/propose"
           className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
         >
-          New Proposal
+          {tActions("createProposal")}
         </Link>
       </div>
 
@@ -300,22 +308,22 @@ function ProposalsPageInner() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
           type="search"
-          placeholder="Search proposals…"
+          placeholder={t("searchPlaceholder")}
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          aria-label="Search proposals"
+          aria-label={t("searchPlaceholder")}
         />
         <select
           value={sort}
           onChange={(e) => setParam("sort", e.target.value, "newest")}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-          aria-label="Sort proposals"
+          aria-label={t("sortLabel")}
         >
-          <option value="newest">Newest</option>
-          <option value="oldest">Oldest</option>
-          <option value="most-votes">Most Votes</option>
-          <option value="least-votes">Least Votes</option>
+          <option value="newest">{t("sortNewest")}</option>
+          <option value="oldest">{t("sortOldest")}</option>
+          <option value="most-votes">{t("sortMostVotes")}</option>
+          <option value="least-votes">{t("sortLeastVotes")}</option>
         </select>
 
       </div>
@@ -324,7 +332,7 @@ function ProposalsPageInner() {
       <div
         className="flex flex-wrap gap-2 mb-6"
         role="group"
-        aria-label="Filter by status"
+        aria-label={t("filterByStatus")}
       >
         <button
           onClick={() => setParam("state", "all", "all")}
@@ -334,7 +342,7 @@ function ProposalsPageInner() {
               : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400"
           }`}
         >
-          All
+          {t("filterAll")}
         </button>
         {FILTER_STATES.map((s) => (
           <button
@@ -355,7 +363,7 @@ function ProposalsPageInner() {
       {/* Error */}
       {error && (
         <ErrorState
-          title="Error loading proposals"
+          title={tErrors("errorLoadingProposals")}
           message={error}
           onRetry={() => fetchProposals()}
           className="mb-6"
@@ -388,17 +396,17 @@ function ProposalsPageInner() {
             />
           </svg>
           <h3 className="mt-2 text-sm font-medium text-gray-900">
-            No proposals
+            {tProposal("noProposals")}
           </h3>
           <p className="mt-1 text-sm text-gray-500">
-            Get started by creating a new proposal.
+            {t("getStarted")}
           </p>
           <div className="mt-6">
             <Link
               href="/propose"
               className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
             >
-              New Proposal
+              {tActions("createProposal")}
             </Link>
           </div>
         </div>
@@ -408,13 +416,13 @@ function ProposalsPageInner() {
       {!loading && !error && proposals.length > 0 && filtered.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500 text-sm">
-            No proposals match your filters
+            {t("noMatchingProposals")}
           </p>
           <button
             onClick={() => router.push("?")}
             className="mt-3 text-indigo-600 text-sm hover:underline font-medium"
           >
-            Reset filters
+            {t("resetFilters")}
           </button>
         </div>
       )}
@@ -439,25 +447,25 @@ function ProposalsPageInner() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-400 mb-1">
-                        Proposal #{p.id.toString()}
+                        {tCard("proposalNumber", { id: p.id.toString() })}
                       </p>
                       <h2 className="text-lg font-semibold text-gray-900 truncate">
                         {p.description}
                       </h2>
                       <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
                         <span>
-                          For: {(Number(p.votesFor) / divisor).toLocaleString()}
+                          {tProposal("for")}: {format.number(Number(p.votesFor) / divisor)}
                         </span>
                         <span>
-                          Against:{" "}
-                          {(Number(p.votesAgainst) / divisor).toLocaleString()}
+                          {tProposal("against")}:{" "}
+                          {format.number(Number(p.votesAgainst) / divisor)}
                         </span>
                         {participationPct !== null && (
                           <span
                             className="text-xs text-gray-400"
-                            title="(for + against + abstain) / total supply"
+                            title={t("participationTooltip")}
                           >
-                            {participationPct.toFixed(1)}% participation
+                            {t("participationPercent", { percent: format.number(participationPct, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
                           </span>
                         )}
                       </div>
@@ -484,7 +492,7 @@ function ProposalsPageInner() {
                 disabled={loadingMore}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loadingMore ? "Loading..." : "Load More"}
+                {loadingMore ? tCommon("loading") : t("loadMore")}
               </button>
             </div>
           )}

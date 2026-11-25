@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import type { TreasuryBudgetStream } from "../lib/treasury-client";
 import { StreamUtilizationBar } from "./StreamUtilizationBar";
@@ -9,6 +10,7 @@ interface StreamCardProps {
 }
 
 export function StreamCard({ stream }: StreamCardProps) {
+  const t = useTranslations("streamCard");
   const remaining = stream.totalAllocated - stream.totalSpent;
   const utilizationBps = stream.totalAllocated > 0n
     ? Number((stream.totalSpent * 10000n) / stream.totalAllocated)
@@ -21,10 +23,10 @@ export function StreamCard({ stream }: StreamCardProps) {
       : "bg-gray-100 text-gray-500";
 
   const statusLabel = stream.isRevoked
-    ? "Revoked"
+    ? t("revoked")
     : stream.isActive
-      ? "Active"
-      : "Inactive";
+      ? t("active")
+      : t("inactive");
 
   return (
     <Link href={`/treasury/streams/${stream.id.toString()}`}>
@@ -41,11 +43,11 @@ export function StreamCard({ stream }: StreamCardProps) {
 
         <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
           <div>
-            <span className="text-gray-400">Owner:</span>
+            <span className="text-gray-400">{t("owner")}:</span>
             <div className="font-mono truncate">{stream.owner}</div>
           </div>
           <div>
-            <span className="text-gray-400">Spends:</span>
+            <span className="text-gray-400">{t("spends")}:</span>
             <span className="font-medium">{stream.spendCount}</span>
           </div>
         </div>

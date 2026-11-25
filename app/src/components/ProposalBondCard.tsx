@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import { ProposalBondsClient, type ProposalBond } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function ProposalBondCard({ descriptionHash, proposer }: Props) {
+  const t = useTranslations("proposalBondCard");
   const { isConnected, publicKey, signTransaction } = useWallet();
   const [bond, setBond] = useState<ProposalBond | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,7 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-            Proposal Bond
+            {t("title")}
           </h2>
           <BondStatusBadge state={bond.state} />
         </div>
@@ -81,11 +83,11 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
     setLocking(true);
     try {
       await client.lockBondWithSign(publicKey, descriptionHash, signTransaction);
-      toast.success("Proposal bond locked.");
+      toast.success(t("bondLocked"));
       const refreshed = await client.getBond(descriptionHash);
       setBond(refreshed);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Locking the bond failed");
+      toast.error(e instanceof Error ? e.message : t("lockingFailed"));
     } finally {
       setLocking(false);
     }
@@ -96,10 +98,10 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1">
-            Proposal Bond
+            {t("title")}
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            This proposal has no bond locked yet.
+            {t("noBondLocked")}
           </p>
         </div>
         <button
@@ -107,7 +109,7 @@ export function ProposalBondCard({ descriptionHash, proposer }: Props) {
           disabled={locking}
           className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
-          {locking ? "Locking..." : "Lock Bond"}
+          {locking ? t("locking") : t("lockBond")}
         </button>
       </div>
     </div>

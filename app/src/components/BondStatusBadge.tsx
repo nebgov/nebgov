@@ -1,23 +1,26 @@
-import { BondState } from "@nebgov/sdk";
+"use client";
 
-const STATE_CONFIG: Record<BondState, { color: string; icon: string; label: string }> = {
+import { BondState } from "@nebgov/sdk";
+import { useTranslations } from "next-intl";
+
+const STATE_CONFIG: Record<BondState, { color: string; icon: string; key: string }> = {
   Locked: {
     color:
       "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
     icon: "🔒",
-    label: "Locked",
+    key: "locked",
   },
   Refunded: {
     color:
       "bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800",
     icon: "✓",
-    label: "Refunded",
+    key: "refunded",
   },
   Slashed: {
     color:
       "bg-red-100 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800",
     icon: "✕",
-    label: "Slashed",
+    key: "slashed",
   },
 };
 
@@ -26,19 +29,20 @@ interface Props {
 }
 
 export function BondStatusBadge({ state }: Props) {
+  const t = useTranslations("bonds");
   const meta = STATE_CONFIG[state];
 
   if (!meta) {
     return (
       <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700">
-        Unknown
+        {t("unknown")}
       </span>
     );
   }
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-medium ${meta.color}`}>
-      {meta.icon} {meta.label}
+      {meta.icon} {t(meta.key)}
     </span>
   );
 }

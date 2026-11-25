@@ -3,6 +3,24 @@ import renderer from "react-test-renderer";
 import { ProposalState } from "@nebgov/sdk";
 import { ProposalStateBadge } from "../ProposalStateBadge";
 
+jest.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
+jest.mock("@nebgov/sdk", () => ({
+  ProposalState: {
+    Pending: "Pending",
+    Active: "Active",
+    Succeeded: "Succeeded",
+    Defeated: "Defeated",
+    Queued: "Queued",
+    Executed: "Executed",
+    Cancelled: "Cancelled",
+    Expired: "Expired",
+  },
+}));
+
 const STATES = [
   ProposalState.Pending,
   ProposalState.Active,

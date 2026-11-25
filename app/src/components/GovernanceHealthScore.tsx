@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { AllTimeStats } from "@nebgov/sdk";
 import { Skeleton } from "./ui/Skeleton";
 
@@ -16,6 +17,8 @@ interface GovernanceHealthScoreProps {
  * shows what the indexer *can* compute live from its own indexed data.
  */
 export function GovernanceHealthScore({ stats, loading }: GovernanceHealthScoreProps) {
+  const t = useTranslations("governanceHealthScore");
+  
   if (loading || !stats) {
     return (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
@@ -27,18 +30,18 @@ export function GovernanceHealthScore({ stats, loading }: GovernanceHealthScoreP
 
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">Governance activity</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">{t("title")}</p>
       <p className="text-3xl font-bold mt-1 text-gray-900 dark:text-white">
         {String(stats.totalProposals)}
       </p>
-      <p className="text-xs text-gray-500 dark:text-gray-400">total proposals</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{t("totalProposalsLabel")}</p>
       <div className="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex justify-between">
-          <span>Total votes cast</span>
+          <span>{t("totalVotesCast")}</span>
           <span>{String(stats.totalVotesCast)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Unique voters</span>
+          <span>{t("uniqueVoters")}</span>
           <span>{String(stats.uniqueVoters)}</span>
         </div>
       </div>

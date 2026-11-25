@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import type { TreasuryClient, TreasuryBudgetStream } from "../lib/treasury-client";
 import { isValidStellarAddress } from "../lib/utils/stellarAddress";
@@ -23,6 +24,7 @@ export function StreamSpendModal({
   onClose,
   onSpent,
 }: StreamSpendModalProps) {
+  const t = useTranslations("streamSpendModal");
   const [recipient, setRecipient] = useState("");
   const [recipientError, setRecipientError] = useState("");
   const [amount, setAmount] = useState("");
@@ -35,11 +37,11 @@ export function StreamSpendModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipient || !amount) {
-      toast.error("Please fill in recipient and amount");
+      toast.error(t("fillRecipientAndAmount"));
       return;
     }
     if (!isValidStellarAddress(recipient)) {
-      setRecipientError("Invalid Stellar address.");
+      setRecipientError(t("invalidStellarAddress"));
       return;
     }
 
@@ -47,15 +49,15 @@ export function StreamSpendModal({
     try {
       amt = BigInt(amount);
     } catch {
-      toast.error("Enter a whole-number amount");
+      toast.error(t("enterWholeNumberAmount"));
       return;
     }
     if (amt > remaining) {
-      toast.error("Amount exceeds remaining budget");
+      toast.error(t("amountExceedsRemaining"));
       return;
     }
     if (amt > stream.maxSingleSpend) {
-      toast.error(`Amount exceeds max single spend (${stream.maxSingleSpend.toString()})`);
+      toast.error(t("amountExceedsMaxSingleSpend", { max: stream.maxSingleSpend.toString() }));
       return;
     }
 
@@ -69,11 +71,11 @@ export function StreamSpendModal({
         memo,
         signUnsignedXdr,
       );
-      toast.success("Stream spend executed successfully");
+      toast.success(t("spendExecutedSuccessfully"));
       onSpent();
       onClose();
     } catch (err) {
-      toast.error(`Spend failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t("spendFailed")}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSubmitting(false);
     }
@@ -91,29 +93,29 @@ export function StreamSpendModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex items-start justify-between mb-1">
           <h2 id="stream-spend-modal-title" className="text-lg font-semibold">
-            Spend from Stream
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("close")}
           >
             ✕
           </button>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          {stream.name} — Remaining: {remaining.toString()} / Max: {stream.maxSingleSpend.toString()}
+          {stream.name} — {t("remaining", { amount: remaining.toString(), max: stream.maxSingleSpend.toString() })}
         </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500">Recipient Address</label>
+            <label className="text-xs text-gray-500">{t("recipientAddress")}</label>
             <input
               type="text"
               value={recipient}
               onChange={(e) => { setRecipient(e.target.value); setRecipientError(""); }}
               onBlur={(e) => {
                 if (e.target.value && !isValidStellarAddress(e.target.value))
-                  setRecipientError("Invalid Stellar address.");
+                  setRecipientError(t("invalidStellarAddress"));
                 else setRecipientError("");
               }}
               placeholder="G..."
@@ -125,7 +127,7 @@ export function StreamSpendModal({
             {recipientError && <p className="text-xs text-red-500 mt-1">{recipientError}</p>}
           </div>
           <div>
-            <label className="text-xs text-gray-500">Amount</label>
+            <label className="text-xs text-gray-500">{t("amount")}</label>
             <input
               type="text"
               value={amount}
@@ -136,12 +138,12 @@ export function StreamSpendModal({
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Memo (optional)</label>
+            <label className="text-xs text-gray-500">{t("memoOptional")}</label>
             <input
               type="text"
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              placeholder="Q1 infrastructure payment"
+              placeholder={t("memoPlaceholder")}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
           </div>
@@ -151,14 +153,14 @@ export function StreamSpendModal({
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 rounded-md py-2 text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting || !stream.isActive || !!recipientError}
               className="flex-1 bg-indigo-600 text-white rounded-md py-2 text-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? "Spending..." : "Execute Spend"}
+              {submitting ? t("spending") : t("executeSpend")}
             </button>
           </div>
         </form>

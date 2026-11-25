@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import type { TopDelegate } from "@nebgov/sdk";
 import { useWallet } from "../lib/wallet-context";
@@ -44,6 +45,7 @@ export function GaslessDelegateModal({
   prefillAddress,
   topDelegates,
 }: Props) {
+  const t = useTranslations("gaslessDelegateModal");
   const [delegatee, setDelegatee] = useState(prefillAddress || "");
   const [delegateeError, setDelegateeError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -60,11 +62,11 @@ export function GaslessDelegateModal({
 
   function validateDelegatee(value: string) {
     if (!value.trim()) {
-      setDelegateeError("Address is required.");
+      setDelegateeError(t("addressRequired"));
       return false;
     }
     if (!isValidStellarAddress(value)) {
-      setDelegateeError("Invalid Stellar address.");
+      setDelegateeError(t("invalidStellarAddress"));
       return false;
     }
     setDelegateeError("");
@@ -78,7 +80,7 @@ export function GaslessDelegateModal({
     setSubmitting(true);
     try {
       if (!isConnected || !publicKey) {
-        toast.error("Connect your wallet first.");
+        toast.error(t("connectWalletFirst"));
         return;
       }
 
@@ -92,21 +94,21 @@ export function GaslessDelegateModal({
       }
 
       if (!preflight.ok) {
-        setDelegateeError(preflight.error ?? "Unable to validate this delegation.");
+        setDelegateeError(preflight.error ?? t("unableToValidate"));
         return;
       }
 
       const result = await delegateGasless(delegatee.trim(), expiryPreset);
       toast.success(
         <div>
-          Delegated for free — the protocol paid the fee.{" "}
+          {t("delegatedForFree")}{" "}
           <a
             href={explorerTxUrl(result.txHash)}
             target="_blank"
             rel="noreferrer"
             className="underline"
           >
-            View on Explorer →
+            {t("viewOnExplorer")} →
           </a>
         </div>,
         { duration: 8000 },
@@ -115,7 +117,7 @@ export function GaslessDelegateModal({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Gasless delegation failed: ${msg}`);
+      toast.error(`${t("gaslessDelegationFailed")}: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -124,21 +126,21 @@ export function GaslessDelegateModal({
   async function handleInvalidatePermits() {
     try {
       if (!isConnected || !publicKey) {
-        toast.error("Connect your wallet first.");
+        toast.error(t("connectWalletFirst"));
         return;
       }
 
       const result = await invalidateAllPermits();
       toast.success(
         <div>
-          Pending gasless permits were invalidated.{" "}
+          {t("permitsInvalidated")}{" "}
           <a
             href={explorerTxUrl(result.txHash)}
             target="_blank"
             rel="noreferrer"
             className="underline"
           >
-            View on Explorer →
+            {t("viewOnExplorer")} →
           </a>
         </div>,
         { duration: 8000 },
@@ -146,7 +148,7 @@ export function GaslessDelegateModal({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Permit invalidation failed: ${msg}`);
+      toast.error(`${t("permitsInvalidationFailed")}: ${msg}`);
     }
   }
 
@@ -162,19 +164,18 @@ export function GaslessDelegateModal({
       <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div className="flex items-start justify-between mb-1">
           <h2 id="gasless-delegate-modal-title" className="text-lg font-bold text-gray-900">
-            Delegate for free — we pay the fee
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("closeLabel")}
           >
             ✕
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Sign a delegation permit with your wallet. No transaction, no gas —
-          our relayer submits it and pays the network fee for you.
+          {t("subtitle")}
         </p>
 
         {!isConnected && (
@@ -183,18 +184,18 @@ export function GaslessDelegateModal({
             onClick={() => void connect()}
             className="w-full mb-4 border border-indigo-200 bg-indigo-50 text-indigo-700 py-2 rounded-lg text-sm font-medium hover:bg-indigo-100"
           >
-            Connect wallet to continue
+            {t("connectWallet")}
           </button>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1.5">
-              Delegate to
+              {t("delegateToLabel")}
             </label>
             <input
               type="text"
-              placeholder="Stellar address (G...)"
+              placeholder={t("addressPlaceholder")}
               value={delegatee}
               onChange={(e) => { setDelegatee(e.target.value); setDelegateeError(""); }}
               onBlur={(e) => validateDelegatee(e.target.value)}
@@ -224,7 +225,7 @@ export function GaslessDelegateModal({
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1.5">
-              Permit expires in
+              {t("permitExpiresLabel")}
             </label>
             <div className="grid grid-cols-4 gap-2">
               {EXPIRY_PRESETS.map((preset) => (
@@ -250,14 +251,14 @@ export function GaslessDelegateModal({
               onClick={onClose}
               className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting || !delegatee.trim() || !!delegateeError || !isConnected}
               className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
             >
-              {submitting ? "Signing…" : "Delegate for free"}
+              {submitting ? t("signing") : t("delegateForFreeButton")}
             </button>
           </div>
 
@@ -267,7 +268,7 @@ export function GaslessDelegateModal({
             disabled={submitting || !isConnected || !publicKey}
             className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
           >
-            {submitting ? "Submitting…" : "Invalidate pending gasless permits"}
+            {submitting ? t("submitting") : t("invalidatePermits")}
           </button>
         </form>
       </div>

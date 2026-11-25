@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { useTranslations } from "next-intl";
 import type { TreasuryStrategiesClient } from "@nebgov/sdk";
 import type { StrategyRow } from "../hooks/useTreasuryStrategies";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -43,6 +44,7 @@ export function WithdrawalRequestModal({
   const [claimableLedger, setClaimableLedger] = useState<number | null>(null);
   const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
   const { currentLedger } = useLedgerClock(rpcUrl);
+  const t = useTranslations("treasury");
 
   const timer =
     claimableLedger != null ? getTimerInfo("Claimable in", claimableLedger, currentLedger) : null;
@@ -109,12 +111,12 @@ export function WithdrawalRequestModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex items-start justify-between mb-1">
           <h2 id="withdrawal-request-modal-title" className="text-lg font-semibold">
-            Request Withdrawal
+            {t("requestWithdrawal")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("close")}
           >
             ✕
           </button>

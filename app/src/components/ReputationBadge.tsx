@@ -1,4 +1,5 @@
 import { ProposerReputation } from "@nebgov/sdk";
+import { useTranslations } from "next-intl";
 
 type Tier = "elite" | "trusted" | "new" | "caution" | "penalized";
 
@@ -43,14 +44,15 @@ interface Props {
 }
 
 export function ReputationBadge({ reputation }: Props) {
+  const t = useTranslations("reputation");
   const tier = tierFor(reputation);
   const meta = TIER_CONFIG[tier];
   const streak =
     reputation.consecutiveSuccessful > 0
-      ? `${reputation.consecutiveSuccessful} succeeded in a row`
+      ? t("successStreak", { count: reputation.consecutiveSuccessful })
       : reputation.consecutiveFailed > 0
-        ? `${reputation.consecutiveFailed} failed in a row`
-        : "no streak";
+        ? t("failStreak", { count: reputation.consecutiveFailed })
+        : t("noStreak");
 
   const tooltip = `Score: ${reputation.reputationScore} | Proposals: ${reputation.totalProposals} | Streak: ${streak}`;
 
@@ -59,7 +61,7 @@ export function ReputationBadge({ reputation }: Props) {
       className={`px-3 py-1 rounded-full text-xs font-medium ${meta.color}`}
       title={tooltip}
     >
-      {meta.icon} {meta.label}
+      {meta.icon} {t(`tier.${tier}`)}
     </span>
   );
 }

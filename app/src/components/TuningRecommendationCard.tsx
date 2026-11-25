@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { GovernorClient, type TuningRecommendation } from "@nebgov/sdk";
 import { xdr } from "@stellar/stellar-sdk";
 import { readGovernorConfig } from "../lib/nebgov-env";
@@ -34,6 +35,7 @@ export function TuningRecommendationCard({
   const config = useMemo(() => readGovernorConfig(), []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("tuning");
 
   const quorumChanged =
     recommendation.recommendedQuorumNumerator !== recommendation.currentQuorumNumerator;
@@ -58,10 +60,7 @@ export function TuningRecommendationCard({
         currentSettings.quorumNumerator !== recommendation.currentQuorumNumerator ||
         currentSettings.proposalThreshold !== recommendation.currentProposalThreshold
       ) {
-        throw new Error(
-          `Governor settings have changed on-chain since this recommendation was computed ` +
-            `(${new Date(recommendation.computedAt).toLocaleString()}). Refresh recommendations before proposing.`,
-        );
+        throw new Error(t("settingsChanged"));
       }
 
       const nextSettings = {
@@ -85,7 +84,7 @@ export function TuningRecommendationCard({
       });
       router.push(`/propose?${q.toString()}`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Could not build update_config proposal");
+      setError(e instanceof Error ? e.message : t("buildUpdateConfigFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +94,7 @@ export function TuningRecommendationCard({
     <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          Latest recommendation
+          {t("latestRecommendation")}
         </h3>
         <span className="text-xs text-gray-400 dark:text-gray-500">
           {new Date(recommendation.computedAt).toLocaleString()}
@@ -143,7 +142,7 @@ export function TuningRecommendationCard({
 
       {recommendation.autoProposed ? (
         <p className="text-sm text-indigo-600 dark:text-indigo-300">
-          Already submitted on-chain{recommendation.proposalId !== null ? ` as proposal #${recommendation.proposalId}` : ""}.
+          {t("alreadySubmitted")}{recommendation.proposalId !== null ? ` ${t("asProposal")} #${recommendation.proposalId}` : ""}.
         </p>
       ) : (
         <button
@@ -153,10 +152,10 @@ export function TuningRecommendationCard({
           className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting
-            ? "Verifying calldata..."
+            ? t("verifying")
             : !hasChange
-            ? "No parameter change to propose"
-            : "Propose This Change"}
+            ? t("noChangeToPropose")
+            : t("proposeChange")}
         </button>
       )}
     </div>

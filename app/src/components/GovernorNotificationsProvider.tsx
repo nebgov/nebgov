@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import {
   GovernorClient,
   ProposalState,
@@ -49,15 +50,19 @@ function showSystemNotification(title: string, body: string, tag: string) {
 }
 
 function recordAndNotify(
+  t: any,
   toggles: NotificationToggles,
   toggleKey: keyof NotificationToggles,
   kind: Parameters<typeof appendNotificationHistory>[0]["kind"],
   proposalId: bigint,
-  title: string,
-  body: string,
-  ledger?: number
+  titleKey: string,
+  bodyKey: string,
+  ledger?: number,
+  bodyParams?: Record<string, any>
 ) {
   if (!toggles[toggleKey]) return;
+  const title = t(titleKey, { id: proposalId.toString() });
+  const body = t(bodyKey, bodyParams);
   appendNotificationHistory({
     kind,
     proposalId: proposalId.toString(),
@@ -69,6 +74,7 @@ function recordAndNotify(
 }
 
 function handleStateTransition(
+  t: any,
   prev: ProposalState,
   next: ProposalState,
   id: bigint,
@@ -77,12 +83,13 @@ function handleStateTransition(
 ) {
   if (prev === ProposalState.Pending && next === ProposalState.Active) {
     recordAndNotify(
+      t,
       toggles,
       "active",
       "active",
       id,
-      `Proposal #${id} is active`,
-      "Voting is open for this proposal.",
+      "proposalActive",
+      "votingIsOpen",
       latestLedger
     );
     return;
@@ -90,12 +97,13 @@ function handleStateTransition(
 
   if (prev === ProposalState.Active && next === ProposalState.Succeeded) {
     recordAndNotify(
+      t,
       toggles,
       "outcome",
       "passed",
       id,
-      `Proposal #${id} passed`,
-      "The proposal succeeded.",
+      "proposalPassed",
+      "proposalSucceeded",
       latestLedger
     );
     return;
@@ -103,12 +111,13 @@ function handleStateTransition(
 
   if (prev === ProposalState.Active && next === ProposalState.Defeated) {
     recordAndNotify(
+      t,
       toggles,
       "outcome",
       "failed",
       id,
-      `Proposal #${id} failed`,
-      "The proposal was defeated.",
+      "proposalFailed",
+      "proposalDefeated",
       latestLedger
     );
     return;
@@ -116,12 +125,13 @@ function handleStateTransition(
 
   if (prev === ProposalState.Succeeded && next === ProposalState.Queued) {
     recordAndNotify(
+      t,
       toggles,
       "queued",
       "queued",
       id,
-      `Proposal #${id} queued`,
-      "Queued for execution in the timelock.",
+      "proposalQueued",
+      "queuedForExecution",
       latestLedger
     );
     return;
@@ -129,18 +139,20 @@ function handleStateTransition(
 
   if (prev === ProposalState.Queued && next === ProposalState.Executed) {
     recordAndNotify(
+      t,
       toggles,
       "executed",
       "executed",
       id,
-      `Proposal #${id} executed`,
-      "On-chain execution completed.",
+      "proposalExecuted",
+      "onChainExecutionCompleted",
       latestLedger
     );
   }
 }
 
 function maybeNotifyVotingEndsSoon(
+  t: any,
   toggles: NotificationToggles,
   id: bigint,
   state: ProposalState,
@@ -158,13 +170,15 @@ function maybeNotifyVotingEndsSoon(
   if (votingSoonFired.has(key)) return;
   votingSoonFired.add(key);
   recordAndNotify(
+    t,
     toggles,
     "voting_ends_soon",
     "voting_ends_soon",
     id,
-    `Proposal #${id}: voting ends soon`,
-    `Voting closes in ${left} ledger(s).`,
-    latestLedger
+    "proposalVotingEndsSoon",
+    "votingClosesInLedgers",
+    latestLedger,
+    { count: left }
   );
 }
 
@@ -173,6 +187,7 @@ export function GovernorNotificationsProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const t = useTranslations("governorNotificationsProvider");
   const { isConnected, publicKey } = useWallet();
   const prevStatesRef = useRef<Map<string, ProposalState>>(new Map());
   const votingSoonFiredRef = useRef<Set<string>>(new Set());
@@ -240,13 +255,13 @@ export function GovernorNotificationsProvider({
         appendNotificationHistory({
           kind: "created_self",
           proposalId: parsed.proposalId.toString(),
-          title: `Your proposal #${parsed.proposalId} was created`,
-          body: "It was submitted on-chain from your wallet.",
+          title: t("yourProposalCreatedTitle", { id: parsed.proposalId.toString() }),
+          body: t("proposalSubmittedFromWallet"),
           ledger: event.ledger,
         });
         showSystemNotification(
-          `Proposal #${parsed.proposalId} created`,
-          "Your wallet submitted this proposal.",
+          t("proposalCreatedNotification", { id: parsed.proposalId.toString() }),
+          t("walletSubmittedThisProposal"),
           `nebgov-created-${parsed.proposalId}`
         );
       },
@@ -284,6 +299,7 @@ export function GovernorNotificationsProvider({
           if (isBootstrap) {
             prevMap.set(pid, state);
             maybeNotifyVotingEndsSoon(
+              t,
               toggles,
               id,
               state,
@@ -297,6 +313,7 @@ export function GovernorNotificationsProvider({
           const prev = prevMap.get(pid);
           if (prev !== undefined && prev !== state) {
             handleStateTransition(
+              t,
               prev,
               state,
               id,
@@ -307,6 +324,7 @@ export function GovernorNotificationsProvider({
           prevMap.set(pid, state);
 
           maybeNotifyVotingEndsSoon(
+            t,
             toggles,
             id,
             state,
@@ -345,12 +363,12 @@ export function GovernorNotificationsProvider({
                 appendNotificationHistory({
                   kind: "created_self",
                   proposalId: id.toString(),
-                  title: `Your proposal #${id} was created`,
-                  body: "It was submitted on-chain from your wallet.",
+                  title: t("yourProposalCreatedTitle", { id: id.toString() }),
+                  body: t("proposalSubmittedFromWallet"),
                 });
                 showSystemNotification(
-                  `Proposal #${id} created`,
-                  "Your wallet submitted this proposal.",
+                  t("proposalCreatedNotification", { id: id.toString() }),
+                  t("walletSubmittedThisProposal"),
                   `nebgov-created-${id}`
                 );
               }
@@ -366,6 +384,7 @@ export function GovernorNotificationsProvider({
       unsubStream?.();
       window.clearInterval(pollTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, publicKey]);
 
   return <>{children}</>;

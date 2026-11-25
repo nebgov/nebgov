@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import { isValidStellarAddress } from "../lib/utils/stellarAddress";
 import type { SplitDelegation } from "@nebgov/sdk";
@@ -44,6 +45,7 @@ function explorerTxUrl(txHash: string): string {
 }
 
 export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddress }: Props) {
+  const t = useTranslations("splitDelegationEditor");
   const { publicKey } = useWallet();
   const { delegateSplit, submitting } = useSplitDelegation(publicKey ?? undefined);
   const [rows, setRows] = useState<Row[]>([newRow(prefillAddress)]);
@@ -60,10 +62,10 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
 
   const rowErrors = rows.map((r) => {
     if (!r.delegatee.trim() && !r.percent.trim()) return null; // untouched trailing row
-    if (!r.delegatee.trim()) return "Address is required.";
-    if (!isValidStellarAddress(r.delegatee)) return "Invalid Stellar address.";
+    if (!r.delegatee.trim()) return t("addressRequired");
+    if (!isValidStellarAddress(r.delegatee)) return t("invalidStellarAddress");
     const pct = Number(r.percent);
-    if (!r.percent.trim() || Number.isNaN(pct) || pct <= 0) return "Enter a percentage > 0.";
+    if (!r.percent.trim() || Number.isNaN(pct) || pct <= 0) return t("enterPercentageGreaterThanZero");
     return null;
   });
 
@@ -130,9 +132,9 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
       const hash = await delegateSplit(splits);
       toast.success(
         <div>
-          Split delegation submitted!{" "}
+          {t("splitDelegationSubmitted")}{" "}
           <a href={explorerTxUrl(hash)} target="_blank" rel="noreferrer" className="underline">
-            View on Explorer →
+            {t("viewOnExplorer")}
           </a>
         </div>,
         { duration: 8000 },
@@ -141,7 +143,7 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Split delegation failed: ${msg}`);
+      toast.error(`${t("splitDelegationFailed")}: ${msg}`);
     }
   }
 
@@ -157,18 +159,18 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
       <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl">
         <div className="flex items-start justify-between mb-1">
           <h2 id="split-delegation-title" className="text-lg font-bold text-gray-900">
-            Split Delegation
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("close")}
           >
             ✕
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Spread your voting power across multiple delegates by percentage.
+          {t("description")}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -179,7 +181,7 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
               <div key={row.key} className="flex items-start gap-2">
                 <input
                   type="text"
-                  placeholder="Stellar address (G...)"
+                  placeholder={t("addressPlaceholder")}
                   value={row.delegatee}
                   onChange={(e) => updateRow(row.key, { delegatee: e.target.value })}
                   className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono ${
@@ -204,7 +206,7 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
                   onClick={() => removeRow(row.key)}
                   disabled={rows.length === 1}
                   className="text-gray-400 hover:text-red-500 p-2 disabled:opacity-30"
-                  aria-label="Remove row"
+                  aria-label={t("removeRow")}
                 >
                   ✕
                 </button>
@@ -215,7 +217,7 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
           {(rowErrors.some((e) => e) || duplicateAddresses.size > 0) && (
             <p className="text-xs text-red-500">
               {duplicateAddresses.size > 0
-                ? "Duplicate delegatee addresses aren't allowed."
+                ? t("noDuplicateDelegatees")
                 : rowErrors.find((e) => e)}
             </p>
           )}
@@ -226,14 +228,14 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
               onClick={addRow}
               className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
-              + Add delegatee
+              {t("addDelegatee")}
             </button>
             <button
               type="button"
               onClick={splitEvenly}
               className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
             >
-              Split evenly
+              {t("splitEvenly")}
             </button>
           </div>
 
@@ -244,11 +246,11 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
                 : "bg-amber-50 text-amber-800 border border-amber-200"
             }`}
           >
-            <span>Total allocated</span>
+            <span>{t("totalAllocated")}</span>
             <span className="font-medium">
               {totalPercent.toFixed(2)}%{" "}
               {Math.abs(remaining) >= 0.001 &&
-                `(${remaining > 0 ? remaining.toFixed(2) + "% remaining" : Math.abs(remaining).toFixed(2) + "% over"})`}
+                `(${remaining > 0 ? t("remaining", { amount: remaining.toFixed(2) }) : t("over", { amount: Math.abs(remaining).toFixed(2) })})`}
             </span>
           </div>
 
@@ -258,18 +260,18 @@ export function SplitDelegationEditor({ open, onClose, onDelegated, prefillAddre
               onClick={onClose}
               className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting || !isValid || !publicKey}
               className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? "Delegating..." : "Split Delegate"}
+              {submitting ? t("delegating") : t("splitDelegate")}
             </button>
           </div>
           {!publicKey && (
-            <p className="text-xs text-gray-400 text-center">Connect your wallet first.</p>
+            <p className="text-xs text-gray-400 text-center">{t("connectWalletFirst")}</p>
           )}
         </form>
       </div>

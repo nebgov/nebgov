@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ProposalAmendment } from "@nebgov/sdk/amendments";
 import { AmendmentDiffViewer } from "./AmendmentDiffViewer";
 
@@ -29,6 +30,7 @@ export function AmendmentTimeline({
   diff,
   onFetchDiff,
 }: AmendmentTimelineProps) {
+  const t = useTranslations("amendmentTimeline");
   const [selectedVersion, setSelectedVersion] = useState(currentVersion);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -91,9 +93,9 @@ export function AmendmentTimeline({
       {/* Amendment List */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-lg">Amendment Timeline</h3>
+          <h3 className="font-semibold text-lg">{t("title")}</h3>
           <p className="text-sm text-gray-600">
-            Currently viewing: <span className="font-mono">Version {currentVersion}</span>
+            {t("currentlyViewing")}: <span className="font-mono">{t("versionLabel", { version: currentVersion })}</span>
           </p>
         </div>
 
@@ -109,19 +111,19 @@ export function AmendmentTimeline({
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono bg-gray-200 px-2 py-1 rounded text-sm">
-                      v{amendment.version}
+                      {t("versionShort", { version: amendment.version })}
                     </span>
                     {amendment.version === currentVersion && (
                       <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">
-                        Current
+                        {t("currentBadge")}
                       </span>
                     )}
                   </div>
                   <p className="text-sm text-gray-600 mb-2">
-                    By: <span className="font-mono">{amendment.amended_by.slice(0, 16)}...</span>
+                    {t("by")}: <span className="font-mono">{amendment.amended_by.slice(0, 16)}...</span>
                   </p>
                   <p className="text-sm text-gray-700">
-                    {amendment.reason || amendment.description || "No description"}
+                    {amendment.reason || amendment.description || t("noDescription")}
                   </p>
                 </div>
 
@@ -130,7 +132,7 @@ export function AmendmentTimeline({
                     onClick={() => handleCompare(amendment.version)}
                     className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium"
                   >
-                    Compare
+                    {t("compareButton")}
                   </button>
 
                   {isProposer && isPending && amendment.version !== currentVersion && onPublish && (
@@ -139,7 +141,7 @@ export function AmendmentTimeline({
                       disabled={publishing}
                       className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium disabled:opacity-50"
                     >
-                      {publishing ? "Publishing..." : "Publish"}
+                      {publishing ? t("publishingButton") : t("publishButton")}
                     </button>
                   )}
                 </div>
@@ -152,7 +154,7 @@ export function AmendmentTimeline({
       {/* Diff Viewer */}
       {diff && (
         <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-semibold mb-4">Changes</h4>
+          <h4 className="font-semibold mb-4">{t("changesHeading")}</h4>
           <AmendmentDiffViewer diff={diff} />
         </div>
       )}
@@ -165,7 +167,7 @@ export function AmendmentTimeline({
               onClick={() => setShowForm(!showForm)}
               className="font-semibold text-blue-600 hover:text-blue-700"
             >
-              {showForm ? "Cancel" : "+ Create Amendment"}
+              {showForm ? t("cancelButton") : t("createAmendmentButton")}
             </button>
           </div>
 
@@ -173,13 +175,13 @@ export function AmendmentTimeline({
             <form onSubmit={handleSubmitAmendment} className="p-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
+                  {t("descriptionLabel")}
                 </label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-serif"
-                  placeholder="Updated proposal description"
+                  placeholder={t("descriptionPlaceholder")}
                   rows={4}
                 />
               </div>
@@ -187,52 +189,52 @@ export function AmendmentTimeline({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Target Address
+                    {t("targetAddressLabel")}
                   </label>
                   <input
                     type="text"
                     value={formData.target_address}
                     onChange={(e) => setFormData({ ...formData, target_address: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-                    placeholder="C..."
+                    placeholder={t("targetAddressPlaceholder")}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Function Name
+                    {t("functionNameLabel")}
                   </label>
                   <input
                     type="text"
                     value={formData.function_name}
                     onChange={(e) => setFormData({ ...formData, function_name: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="function_name"
+                    placeholder={t("functionNamePlaceholder")}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Calldata</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t("calldataLabel")}</label>
                 <input
                   type="text"
                   value={formData.calldata_hex}
                   onChange={(e) => setFormData({ ...formData, calldata_hex: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-                  placeholder="0x..."
+                  placeholder={t("calldataPlaceholder")}
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason for Amendment
+                  {t("reasonLabel")}
                 </label>
                 <input
                   type="text"
                   value={formData.reason}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="e.g., Fixed typo, Clarified intent"
+                  placeholder={t("reasonPlaceholder")}
                 />
               </div>
 
@@ -241,7 +243,7 @@ export function AmendmentTimeline({
                 disabled={submitting}
                 className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
               >
-                {submitting ? "Submitting..." : "Submit Amendment"}
+                {submitting ? t("submittingButton") : t("submitButton")}
               </button>
             </form>
           )}

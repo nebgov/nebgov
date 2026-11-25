@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import type { TuningConfig } from "@nebgov/sdk";
 
 interface GovernanceTuningConfigEditorProps {
@@ -12,6 +13,7 @@ export function GovernanceTuningConfigEditor({
   config,
   onUpdate,
 }: GovernanceTuningConfigEditorProps) {
+  const t = useTranslations("governanceTuningConfigEditor");
   const [minQuorumNumerator, setMinQuorumNumerator] = useState(config.minQuorumNumerator);
   const [maxQuorumNumerator, setMaxQuorumNumerator] = useState(config.maxQuorumNumerator);
   const [maxQuorumDeltaBps, setMaxQuorumDeltaBps] = useState(config.maxQuorumDeltaBps);
@@ -51,7 +53,7 @@ export function GovernanceTuningConfigEditor({
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update config");
+      setError(err instanceof Error ? err.message : t("failedToUpdateConfig"));
     } finally {
       setSubmitting(false);
     }
@@ -66,13 +68,13 @@ export function GovernanceTuningConfigEditor({
       )}
       {success && (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-900/20 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-          Config updated successfully.
+          {t("configUpdatedSuccessfully")}
         </p>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Min quorum numerator</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("minQuorumNumerator")}</span>
           <input
             type="number"
             value={minQuorumNumerator}
@@ -81,7 +83,7 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Max quorum numerator</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("maxQuorumNumerator")}</span>
           <input
             type="number"
             value={maxQuorumNumerator}
@@ -90,7 +92,7 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Max quorum delta (bps)</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("maxQuorumDeltaBps")}</span>
           <input
             type="number"
             value={maxQuorumDeltaBps}
@@ -99,7 +101,7 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Min proposal threshold</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("minProposalThreshold")}</span>
           <input
             type="text"
             value={minProposalThreshold}
@@ -108,17 +110,17 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Max proposal threshold</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("maxProposalThreshold")}</span>
           <input
             type="text"
             value={maxProposalThreshold}
             onChange={(e) => setMaxProposalThreshold(e.target.value)}
-            placeholder="No limit"
+            placeholder={t("noLimit")}
             className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Max threshold delta (bps)</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("maxThresholdDeltaBps")}</span>
           <input
             type="number"
             value={maxThresholdDeltaBps}
@@ -127,7 +129,7 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Trailing window (snapshots)</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("trailingWindow")}</span>
           <input
             type="number"
             value={trailingWindow}
@@ -136,7 +138,7 @@ export function GovernanceTuningConfigEditor({
           />
         </label>
         <label className="block text-sm">
-          <span className="font-medium text-gray-700 dark:text-gray-200">Interval (ms)</span>
+          <span className="font-medium text-gray-700 dark:text-gray-200">{t("intervalMs")}</span>
           <input
             type="number"
             value={intervalMs}
@@ -153,7 +155,7 @@ export function GovernanceTuningConfigEditor({
           onChange={(e) => setAutoPropose(e.target.checked)}
           className="h-4 w-4 rounded border-gray-300 dark:border-gray-700"
         />
-        <span className="font-medium text-gray-700 dark:text-gray-200">Auto-propose recommendations</span>
+        <span className="font-medium text-gray-700 dark:text-gray-200">{t("autoPropose")}</span>
       </label>
 
       <button
@@ -161,7 +163,7 @@ export function GovernanceTuningConfigEditor({
         disabled={submitting}
         className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {submitting ? "Saving..." : "Save Config"}
+        {submitting ? t("saving") : t("saveConfig")}
       </button>
     </form>
   );

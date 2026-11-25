@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   useNotifications,
   type CreateRuleParams,
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
+  const t = useTranslations("notificationRuleBuilder");
   const { createRule } = useNotifications();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -73,7 +75,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
     setError(null);
     try {
       const params: CreateRuleParams = {
-        name: name.trim() || TRIGGER_OPTIONS.find((t) => t.value === triggerType)?.label || "Untitled rule",
+        name: name.trim() || TRIGGER_OPTIONS.find((t) => t.value === triggerType)?.label || t("untitledRule"),
         trigger_type: triggerType,
         trigger_config: config,
         channels,
@@ -84,7 +86,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
       onCreated?.();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create rule");
+      setError(err instanceof Error ? err.message : t("failedToCreateRule"));
     } finally {
       setSubmitting(false);
     }
@@ -102,10 +104,10 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
       <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New notification rule</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t("newNotificationRule")}</h2>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("close")}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <X className="w-5 h-5" aria-hidden />
@@ -117,7 +119,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
             <div key={label} className="flex-1">
               <div className={`h-1 rounded-full ${i <= step ? "bg-indigo-600" : "bg-gray-200 dark:bg-gray-700"}`} />
               <p className={`text-[11px] mt-1 ${i === step ? "text-indigo-600 font-medium" : "text-gray-400"}`}>
-                {label}
+                {t(`step${label}`)}
               </p>
             </div>
           ))}
@@ -156,12 +158,12 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
           {step === 2 && (
             <div className="space-y-3">
               <ChannelRow
-                label="In-app"
+                label={t("inApp")}
                 checked={channels.some((c) => c.type === "in_app")}
                 onToggle={(v) => toggleChannel("in_app", v)}
               />
               <ChannelRow
-                label="Email"
+                label={t("email")}
                 checked={channels.some((c) => c.type === "email")}
                 onToggle={(v) => toggleChannel("email", v)}
               >
@@ -176,7 +178,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
                 )}
               </ChannelRow>
               <ChannelRow
-                label="Webhook"
+                label={t("webhook")}
                 checked={channels.some((c) => c.type === "webhook")}
                 onToggle={(v) => toggleChannel("webhook", v)}
               >
@@ -191,14 +193,14 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
                 )}
               </ChannelRow>
               <ChannelRow
-                label="Telegram"
+                label={t("telegram")}
                 checked={channels.some((c) => c.type === "telegram")}
                 onToggle={(v) => toggleChannel("telegram", v)}
               >
                 {channels.find((c) => c.type === "telegram") && (
                   <input
                     type="text"
-                    placeholder="Chat ID"
+                    placeholder={t("chatIdPlaceholder")}
                     value={(channels.find((c) => c.type === "telegram") as { chat_id: string }).chat_id}
                     onChange={(e) => updateChannelField("telegram", "chat_id", e.target.value)}
                     className="mt-2 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm"
@@ -211,7 +213,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
           {step === 3 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Rule name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("ruleName")}</label>
                 <input
                   type="text"
                   value={name}
@@ -222,7 +224,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Cooldown between notifications (seconds)
+                  {t("cooldownBetweenNotifications")}
                 </label>
                 <input
                   type="number"
@@ -243,7 +245,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
             disabled={step === 0}
             className="text-sm font-medium text-gray-500 disabled:opacity-40"
           >
-            Back
+            {t("back")}
           </button>
           {step < STEPS.length - 1 ? (
             <button
@@ -251,7 +253,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
               disabled={step === 2 && !canProceedFromChannels}
               className="px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
             >
-              Next
+              {t("next")}
             </button>
           ) : (
             <button
@@ -259,7 +261,7 @@ export function NotificationRuleBuilder({ onClose, onCreated }: Props) {
               disabled={submitting}
               className="px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
             >
-              {submitting ? "Creating…" : "Create rule"}
+              {submitting ? t("creating") : t("createRule")}
             </button>
           )}
         </div>
@@ -304,6 +306,8 @@ function TriggerConfigFields({
   config: TriggerConfig;
   onChange: (config: TriggerConfig) => void;
 }) {
+  const t = useTranslations("notificationRuleBuilder.triggerConfig");
+
   function set(field: keyof TriggerConfig, value: string) {
     onChange({ ...config, [field]: value === "" ? undefined : value });
   }
@@ -312,58 +316,58 @@ function TriggerConfigFields({
 
   if (triggerType === "proposal_created") {
     fields.push(
-      <TextField key="proposer" label="Proposer address (optional)" value={config.proposer ?? ""} onChange={(v) => set("proposer", v)} />,
+      <TextField key="proposer" label={t("proposerAddressOptional")} value={config.proposer ?? ""} onChange={(v) => set("proposer", v)} />,
     );
   }
   if (triggerType === "proposal_state_changed") {
     fields.push(
       <div key="to_state">
-        <label className="block text-xs font-medium text-gray-500 mb-1">New state</label>
+        <label className="block text-xs font-medium text-gray-500 mb-1">{t("newState")}</label>
         <select
           value={config.to_state ?? ""}
           onChange={(e) => set("to_state", e.target.value)}
           className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm"
         >
-          <option value="">Any</option>
-          <option value="Queued">Queued</option>
-          <option value="Executed">Executed</option>
-          <option value="Cancelled">Cancelled</option>
+          <option value="">{t("any")}</option>
+          <option value="Queued">{t("queued")}</option>
+          <option value="Executed">{t("executed")}</option>
+          <option value="Cancelled">{t("cancelled")}</option>
         </select>
       </div>,
     );
   }
   if (triggerType === "vote_cast") {
     fields.push(
-      <TextField key="proposal_id" label="Proposal ID (optional)" value={config.proposal_id?.toString() ?? ""} onChange={(v) => set("proposal_id", v)} />,
-      <TextField key="voter" label="Voter address (optional)" value={config.voter ?? ""} onChange={(v) => set("voter", v)} />,
+      <TextField key="proposal_id" label={t("proposalIdOptional")} value={config.proposal_id?.toString() ?? ""} onChange={(v) => set("proposal_id", v)} />,
+      <TextField key="voter" label={t("voterAddressOptional")} value={config.voter ?? ""} onChange={(v) => set("voter", v)} />,
     );
   }
   if (triggerType === "proposal_ending_soon") {
     fields.push(
-      <TextField key="ledgers_remaining" label="Ledgers remaining threshold" value={config.ledgers_remaining?.toString() ?? "500"} onChange={(v) => set("ledgers_remaining", v)} />,
+      <TextField key="ledgers_remaining" label={t("ledgersRemainingThreshold")} value={config.ledgers_remaining?.toString() ?? "500"} onChange={(v) => set("ledgers_remaining", v)} />,
     );
   }
   if (triggerType === "proposal_vote_threshold") {
     fields.push(
-      <TextField key="threshold_bps" label="Threshold (basis points of quorum)" value={config.threshold_bps?.toString() ?? "8000"} onChange={(v) => set("threshold_bps", v)} />,
+      <TextField key="threshold_bps" label={t("thresholdBpsOfQuorum")} value={config.threshold_bps?.toString() ?? "8000"} onChange={(v) => set("threshold_bps", v)} />,
     );
   }
   if (triggerType === "delegation_received" || triggerType === "delegation_lost") {
     fields.push(
-      <TextField key="delegatee" label="Your delegatee address (optional — leave blank to match everyone)" value={config.delegatee ?? ""} onChange={(v) => set("delegatee", v)} />,
+      <TextField key="delegatee" label={t("yourDelegateeAddressOptional")} value={config.delegatee ?? ""} onChange={(v) => set("delegatee", v)} />,
     );
   }
   if (triggerType === "treasury_stream_spend") {
     fields.push(
-      <TextField key="stream_id" label="Stream ID (optional)" value={config.stream_id?.toString() ?? ""} onChange={(v) => set("stream_id", v)} />,
-      <TextField key="min_amount" label="Minimum amount in token base units (optional)" value={config.min_amount?.toString() ?? ""} onChange={(v) => set("min_amount", v)} />,
+      <TextField key="stream_id" label={t("streamIdOptional")} value={config.stream_id?.toString() ?? ""} onChange={(v) => set("stream_id", v)} />,
+      <TextField key="min_amount" label={t("minimumAmountOptional")} value={config.min_amount?.toString() ?? ""} onChange={(v) => set("min_amount", v)} />,
     );
   }
 
   if (fields.length === 0) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        This trigger has no additional configuration — it fires for every matching event.
+        {t("noAdditionalConfiguration")}
       </p>
     );
   }

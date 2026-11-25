@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import toast from "react-hot-toast";
 import type { TreasuryClient } from "../lib/treasury-client";
 import { isValidStellarAddress } from "../lib/utils/stellarAddress";
@@ -23,6 +24,7 @@ export function CreateStreamModal({
   onClose,
   onCreated,
 }: CreateStreamModalProps) {
+  const t = useTranslations("createStreamModal");
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");
   const [ownerError, setOwnerError] = useState("");
@@ -38,11 +40,11 @@ export function CreateStreamModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !owner || !totalAllocated || !maxSingleSpend || !startLedger || !endLedger) {
-      toast.error("Please fill in all required fields");
+      toast.error(t("fillAllRequiredFields"));
       return;
     }
     if (!isValidStellarAddress(owner)) {
-      setOwnerError("Invalid Stellar address.");
+      setOwnerError(t("invalidStellarAddress"));
       return;
     }
 
@@ -61,11 +63,11 @@ export function CreateStreamModal({
         BigInt(proposalId),
         signUnsignedXdr,
       );
-      toast.success("Budget stream created successfully");
+      toast.success(t("streamCreatedSuccessfully"));
       onCreated();
       onClose();
     } catch (err) {
-      toast.error(`Failed to create stream: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t("failedToCreateStream")}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSubmitting(false);
     }
@@ -83,40 +85,40 @@ export function CreateStreamModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-4">
           <h2 id="create-stream-modal-title" className="text-lg font-semibold">
-            Create Budget Stream
+            {t("title")}
           </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Close"
+            aria-label={t("closeLabel")}
           >
             ✕
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500">Stream Name (symbol)</label>
+            <label className="text-xs text-gray-500">{t("streamNameLabel")}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="engineering"
+              placeholder={t("streamNamePlaceholder")}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               required
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Owner Address</label>
+            <label className="text-xs text-gray-500">{t("ownerAddressLabel")}</label>
             <input
               type="text"
               value={owner}
               onChange={(e) => { setOwner(e.target.value); setOwnerError(""); }}
               onBlur={(e) => {
                 if (e.target.value && !isValidStellarAddress(e.target.value))
-                  setOwnerError("Invalid Stellar address.");
+                  setOwnerError(t("invalidStellarAddress"));
                 else setOwnerError("");
               }}
-              placeholder="G..."
+              placeholder={t("ownerAddressPlaceholder")}
               className={`w-full border rounded-md px-3 py-2 text-sm font-mono ${
                 ownerError ? "border-red-400" : "border-gray-300"
               }`}
@@ -126,23 +128,23 @@ export function CreateStreamModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500">Total Allocated</label>
+              <label className="text-xs text-gray-500">{t("totalAllocatedLabel")}</label>
               <input
                 type="text"
                 value={totalAllocated}
                 onChange={(e) => setTotalAllocated(e.target.value)}
-                placeholder="1000000"
+                placeholder={t("totalAllocatedPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 required
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Max Single Spend</label>
+              <label className="text-xs text-gray-500">{t("maxSingleSpendLabel")}</label>
               <input
                 type="text"
                 value={maxSingleSpend}
                 onChange={(e) => setMaxSingleSpend(e.target.value)}
-                placeholder="500000"
+                placeholder={t("maxSingleSpendPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 required
               />
@@ -150,23 +152,23 @@ export function CreateStreamModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500">Start Ledger</label>
+              <label className="text-xs text-gray-500">{t("startLedgerLabel")}</label>
               <input
                 type="number"
                 value={startLedger}
                 onChange={(e) => setStartLedger(e.target.value)}
-                placeholder="1"
+                placeholder={t("startLedgerPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 required
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">End Ledger</label>
+              <label className="text-xs text-gray-500">{t("endLedgerLabel")}</label>
               <input
                 type="number"
                 value={endLedger}
                 onChange={(e) => setEndLedger(e.target.value)}
-                placeholder="100000"
+                placeholder={t("endLedgerPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 required
               />
@@ -174,22 +176,22 @@ export function CreateStreamModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500">Cooldown (ledgers)</label>
+              <label className="text-xs text-gray-500">{t("cooldownLabel")}</label>
               <input
                 type="number"
                 value={cooldownLedgers}
                 onChange={(e) => setCooldownLedgers(e.target.value)}
-                placeholder="0"
+                placeholder={t("cooldownPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Proposal ID</label>
+              <label className="text-xs text-gray-500">{t("proposalIdLabel")}</label>
               <input
                 type="number"
                 value={proposalId}
                 onChange={(e) => setProposalId(e.target.value)}
-                placeholder="0"
+                placeholder={t("proposalIdPlaceholder")}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               />
             </div>
@@ -200,14 +202,14 @@ export function CreateStreamModal({
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 rounded-md py-2 text-sm hover:bg-gray-50"
             >
-              Cancel
+              {t("cancelButton")}
             </button>
             <button
               type="submit"
               disabled={submitting || !!ownerError}
               className="flex-1 bg-indigo-600 text-white rounded-md py-2 text-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? "Creating..." : "Create Stream"}
+              {submitting ? t("creatingButton") : t("createButton")}
             </button>
           </div>
         </form>

@@ -17,6 +17,25 @@ jest.mock("../../lib/nebgov-env", () => ({
   readGovernorConfig: jest.fn(),
 }));
 
+// Return real en.json values for the keys used in CoSponsorModal.
+jest.mock("next-intl", () => ({
+  useTranslations: (ns: string) => (key: string, vars?: Record<string, string>) => {
+    const map: Record<string, Record<string, string>> = {
+      coSponsor: {
+        title: `Co-Sponsor Draft #${vars?.id ?? ""}`,
+        subtitle: "Pledge your current voting power toward this draft.",
+        description:
+          "Once the draft's accumulated co-sponsor power meets the governor's proposal threshold, the creator can finalize it into a real governance proposal.",
+        confirmButton: "Co-Sponsor",
+      },
+      common: { cancel: "Cancel", close: "Close" },
+      actions: { submitting: "Submitting…" },
+    };
+    return map[ns]?.[key] ?? key;
+  },
+  useFormatter: () => ({ number: (n: number) => String(n) }),
+}));
+
 import { CoSponsorModal } from "../CoSponsorModal";
 import { useWallet } from "../../lib/wallet-context";
 import { readGovernorConfig } from "../../lib/nebgov-env";
