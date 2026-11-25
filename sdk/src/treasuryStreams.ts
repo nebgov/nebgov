@@ -215,18 +215,7 @@ export class TreasuryStreamsClient {
     )).hash;
   }
 
-  /** Repair a paused stream from before pause checkpoints were recorded. */
-  async backfillPauseCheckpoint(requester: Keypair, streamId: number, pausedAt: number): Promise<string> {
-    return (await this.submit(
-      requester,
-      "backfill_pause_checkpoint",
-      nativeToScVal(requester.publicKey(), { type: "address" }),
-      nativeToScVal(streamId, { type: "u64" }),
-      nativeToScVal(pausedAt, { type: "u32" }),
-    )).hash;
-  }
-
-  /** Cancel a stream permanently. Execute any due intervals first, since they are forfeited. */
+  /** Cancel a stream permanently, settling accrued whole intervals atomically. */
   async cancelStream(requester: Keypair, streamId: number): Promise<string> {
     return (await this.submit(
       requester,
